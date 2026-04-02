@@ -81,6 +81,7 @@ def test_index_lists_existing_reports(tmp_path: Path) -> None:
     assert "Nuovo backtest" in body
     assert "SPY" in body
     assert "Buy &amp; hold" in body
+    assert "data-expandable-panel" in body
 
 
 def test_create_backtest_redirects_to_report(monkeypatch, tmp_path: Path) -> None:
@@ -134,3 +135,4 @@ def test_report_detail_renders_chart_and_trade_table(tmp_path: Path) -> None:
     assert "Delta vs hold" in body
     assert "Spese totali" in body
     assert "Prime 20 operazioni" in body
+    assert 'id="panel-backdrop"' in body

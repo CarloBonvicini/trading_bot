@@ -32,6 +32,10 @@ body {
     linear-gradient(180deg, #f8f4ea 0%, var(--bg) 100%);
 }
 
+body.panel-expanded {
+  overflow: hidden;
+}
+
 .ambient {
   position: fixed;
   width: 24rem;
@@ -52,6 +56,20 @@ body {
   top: 12rem;
   right: -8rem;
   background: rgba(162, 28, 175, 0.22);
+}
+
+.panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  background: rgba(27, 27, 24, 0.26);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+
+.panel-backdrop.is-visible {
+  opacity: 1;
 }
 
 .shell-header,
@@ -135,6 +153,79 @@ body {
   padding: 1.8rem;
   border-radius: var(--radius-xl);
   animation: rise-in 500ms ease both;
+}
+
+.panel-expandable {
+  position: relative;
+  cursor: zoom-in;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.panel-expandable:hover {
+  transform: translateY(-2px);
+}
+
+.panel-expandable::after {
+  content: "Espandi";
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(27, 27, 24, 0.08);
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero-panel.panel-expandable::after {
+  top: 1.35rem;
+}
+
+.panel-expandable.is-expanded {
+  position: fixed;
+  inset: 3vh auto auto 50%;
+  transform: translateX(-50%);
+  width: min(1320px, 96vw);
+  max-height: 94vh;
+  overflow: auto;
+  z-index: 10;
+  cursor: auto;
+  background: rgba(255, 250, 243, 0.98);
+  box-shadow: 0 28px 100px rgba(27, 27, 24, 0.28);
+}
+
+.panel-expandable.is-expanded::after {
+  display: none;
+}
+
+.panel-expand-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 0.85rem;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(27, 27, 24, 0.84);
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.hero-panel .panel-expand-close {
+  top: 1.35rem;
+}
+
+.panel-expandable.is-expanded .panel-expand-close {
+  display: inline-flex;
 }
 
 .hero-copy {

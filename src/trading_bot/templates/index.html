@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Trading Bot Lab{% endblock %}
 {% block content %}
-  <section class="hero-panel">
+  <section class="hero-panel panel-expandable" data-expandable-panel>
     <div>
       <p class="eyebrow">ricerca prima del live</p>
       <h2>Avvia un backtest e confronta i report da browser</h2>
@@ -17,7 +17,7 @@
   </section>
 
   <section class="layout-grid">
-    <article class="panel panel-form">
+    <article class="panel panel-form panel-expandable" data-expandable-panel>
       <div class="panel-header">
         <p class="eyebrow">lancia un test</p>
         <h3>Nuovo backtest</h3>
@@ -103,7 +103,7 @@
       </form>
     </article>
 
-    <article class="panel panel-results">
+    <article class="panel panel-results panel-expandable" data-expandable-panel>
       <div class="panel-header">
         <p class="eyebrow">report recenti</p>
         <h3>Risultati salvati</h3>

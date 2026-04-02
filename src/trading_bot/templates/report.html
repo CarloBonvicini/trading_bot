@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ report.metadata.symbol or report.name }} - Trading Bot Lab{% endblock %}
 {% block content %}
-  <section class="hero-panel report-hero">
+  <section class="hero-panel report-hero panel-expandable" data-expandable-panel>
     <div>
       <p class="eyebrow">{{ report.metadata.strategy_label or report.metadata.strategy }}</p>
       <h2>{{ report.metadata.symbol or report.name }}</h2>
@@ -27,7 +27,7 @@
     {% endfor %}
   </section>
 
-  <section class="panel comparison-panel">
+  <section class="panel comparison-panel panel-expandable" data-expandable-panel>
     <div class="panel-header">
       <p class="eyebrow">confronto diretto</p>
       <h3>Strategia vs semplice buy &amp; hold</h3>
@@ -62,7 +62,7 @@
   </section>
 
   <section class="layout-grid report-layout">
-    <article class="panel chart-panel">
+    <article class="panel chart-panel panel-expandable" data-expandable-panel>
       <div class="panel-header">
         <p class="eyebrow">equity curve</p>
         <h3>Strategia vs buy &amp; hold</h3>
@@ -89,7 +89,7 @@
       </div>
     </article>
 
-    <article class="panel chart-panel">
+    <article class="panel chart-panel panel-expandable" data-expandable-panel>
       <div class="panel-header">
         <p class="eyebrow">rischio</p>
         <h3>Drawdown</h3>
@@ -110,7 +110,7 @@
   </section>
 
   <section class="layout-grid report-layout">
-    <article class="panel">
+    <article class="panel panel-expandable" data-expandable-panel>
       <div class="panel-header">
         <p class="eyebrow">trade preview</p>
         <h3>Prime 20 operazioni</h3>
@@ -145,7 +145,7 @@
       {% endif %}
     </article>
 
-    <article class="panel">
+    <article class="panel panel-expandable" data-expandable-panel>
       <div class="panel-header">
         <p class="eyebrow">recenti</p>
         <h3>Altri report</h3>
