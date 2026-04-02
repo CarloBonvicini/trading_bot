@@ -48,6 +48,16 @@
         <strong>{{ report.comparison.delta_pct }}%</strong>
         <span>{{ report.comparison.verdict }}</span>
       </article>
+      <article class="comparison-card">
+        <p>Spese totali</p>
+        <strong>{{ report.comparison.fees_paid }}</strong>
+        <span>{{ report.comparison.fees_pct_initial_capital }}% del capitale iniziale</span>
+      </article>
+      <article class="comparison-card">
+        <p>Equity senza fee</p>
+        <strong>{{ report.comparison.gross_strategy_final_equity }}</strong>
+        <span>Impatto fee {{ report.comparison.fee_drag_equity }}</span>
+      </article>
     </div>
   </section>
 

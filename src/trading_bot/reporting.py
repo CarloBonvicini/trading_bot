@@ -9,6 +9,7 @@ import pandas as pd
 SUMMARY_LABELS = {
     "initial_capital": "Capitale iniziale",
     "final_equity": "Equity finale",
+    "gross_final_equity": "Equity senza fee",
     "benchmark_final_equity": "Equity buy & hold",
     "total_return_pct": "Rendimento totale",
     "annual_return_pct": "Rendimento annuo",
@@ -19,6 +20,9 @@ SUMMARY_LABELS = {
     "exposure_pct": "Esposizione",
     "benchmark_return_pct": "Buy & hold",
     "excess_return_pct": "Delta vs hold",
+    "fees_paid": "Spese totali",
+    "fees_paid_pct_initial_capital": "Spese su capitale",
+    "fee_drag_equity": "Impatto fee",
 }
 
 REPORT_NAME_PATTERN = re.compile(
@@ -113,13 +117,16 @@ def build_summary_cards(summary: dict[str, object]) -> list[dict[str, object]]:
         "benchmark_return_pct",
         "excess_return_pct",
         "final_equity",
+        "gross_final_equity",
         "benchmark_final_equity",
+        "fees_paid",
+        "fees_paid_pct_initial_capital",
         "max_drawdown_pct",
         "sharpe_ratio",
     ):
         value = summary.get(key, "")
         suffix = "%" if key.endswith("_pct") else ""
-        if key.endswith("_equity"):
+        if key.endswith("_equity") or key == "fees_paid":
             display_value = f"{value:,.2f}" if isinstance(value, (float, int)) else str(value)
         else:
             display_value = f"{value}{suffix}" if suffix else str(value)
@@ -141,14 +148,26 @@ def build_comparison(summary: dict[str, object]) -> dict[str, object]:
         "hold_return_pct": summary.get("benchmark_return_pct", ""),
         "delta_pct": summary.get("excess_return_pct", ""),
         "strategy_final_equity": summary.get("final_equity", ""),
+        "gross_strategy_final_equity": summary.get("gross_final_equity", ""),
         "hold_final_equity": summary.get("benchmark_final_equity", ""),
+        "fees_paid": summary.get("fees_paid", ""),
+        "fees_pct_initial_capital": summary.get("fees_paid_pct_initial_capital", ""),
+        "fee_drag_equity": summary.get("fee_drag_equity", ""),
         "verdict": verdict,
     }
 
 
 def enrich_summary(summary: dict[str, object], report_dir: Path) -> dict[str, object]:
     enriched = dict(summary)
-    if "benchmark_return_pct" in enriched and "benchmark_final_equity" in enriched and "excess_return_pct" in enriched:
+    if (
+        "benchmark_return_pct" in enriched
+        and "benchmark_final_equity" in enriched
+        and "excess_return_pct" in enriched
+        and "fees_paid" in enriched
+        and "fees_paid_pct_initial_capital" in enriched
+        and "fee_drag_equity" in enriched
+        and "gross_final_equity" in enriched
+    ):
         return enriched
 
     initial_capital = float(enriched.get("initial_capital", 0.0))
@@ -157,10 +176,18 @@ def enrich_summary(summary: dict[str, object], report_dir: Path) -> dict[str, ob
     equity_curve = _read_equity_curve(report_dir)
     benchmark_final_equity = float(equity_curve["benchmark_equity"].iloc[-1])
     benchmark_return_pct = round(((benchmark_final_equity / initial_capital) - 1) * 100, 2) if initial_capital else 0.0
+    gross_equity = _ensure_gross_equity(equity_curve, initial_capital)
+    transaction_cost_amount = _ensure_transaction_cost_amount(equity_curve, initial_capital)
+    gross_final_equity = float(gross_equity.iloc[-1]) if len(gross_equity) else float(initial_capital)
+    fees_paid = float(transaction_cost_amount.sum())
 
     enriched["benchmark_final_equity"] = round(benchmark_final_equity, 2)
     enriched["benchmark_return_pct"] = benchmark_return_pct
     enriched["excess_return_pct"] = round(total_return_pct - benchmark_return_pct, 2)
+    enriched["gross_final_equity"] = round(gross_final_equity, 2)
+    enriched["fees_paid"] = round(fees_paid, 2)
+    enriched["fees_paid_pct_initial_capital"] = round((fees_paid / initial_capital) * 100, 2) if initial_capital else 0.0
+    enriched["fee_drag_equity"] = round(gross_final_equity - float(enriched.get("final_equity", 0.0)), 2)
     return enriched
 
 
@@ -294,3 +321,28 @@ def _read_json(path: Path) -> dict[str, object]:
 
 def _read_equity_curve(report_dir: Path) -> pd.DataFrame:
     return pd.read_csv(report_dir / "equity_curve.csv")
+
+
+def _ensure_gross_equity(equity_curve: pd.DataFrame, initial_capital: float) -> pd.Series:
+    if "gross_equity" in equity_curve.columns:
+        return equity_curve["gross_equity"].astype(float)
+
+    if "gross_strategy_return" in equity_curve.columns:
+        gross_returns = equity_curve["gross_strategy_return"].astype(float)
+    else:
+        gross_returns = equity_curve["position"].astype(float) * equity_curve["market_return"].astype(float)
+    return initial_capital * (1 + gross_returns).cumprod()
+
+
+def _ensure_transaction_cost_amount(equity_curve: pd.DataFrame, initial_capital: float) -> pd.Series:
+    if "transaction_cost_amount" in equity_curve.columns:
+        return equity_curve["transaction_cost_amount"].astype(float)
+
+    if "transaction_cost_rate" in equity_curve.columns:
+        transaction_cost_rate = equity_curve["transaction_cost_rate"].astype(float)
+    else:
+        gross_returns = equity_curve["position"].astype(float) * equity_curve["market_return"].astype(float)
+        transaction_cost_rate = (gross_returns - equity_curve["strategy_return"].astype(float)).clip(lower=0.0)
+
+    equity_before = equity_curve["equity"].astype(float).shift(1).fillna(initial_capital)
+    return equity_before * transaction_cost_rate

@@ -37,10 +37,14 @@ def run_backtest(
     daily_returns = close.pct_change().fillna(0.0)
     position_change = executed_position.diff().abs().fillna(executed_position.abs())
     transaction_cost = position_change * (fee_bps / 10_000.0)
-    strategy_returns = (executed_position * daily_returns) - transaction_cost
+    gross_strategy_return = executed_position * daily_returns
+    strategy_returns = gross_strategy_return - transaction_cost
 
     equity = initial_capital * (1 + strategy_returns).cumprod()
     benchmark_equity = initial_capital * (1 + daily_returns).cumprod()
+    gross_equity = initial_capital * (1 + gross_strategy_return).cumprod()
+    equity_before = equity.shift(1).fillna(initial_capital)
+    transaction_cost_amount = equity_before * transaction_cost
     drawdown = equity / equity.cummax() - 1
 
     equity_curve = pd.DataFrame(
@@ -49,8 +53,12 @@ def run_backtest(
             "signal": position,
             "position": executed_position,
             "market_return": daily_returns,
+            "gross_strategy_return": gross_strategy_return,
             "strategy_return": strategy_returns,
+            "transaction_cost_rate": transaction_cost,
+            "transaction_cost_amount": transaction_cost_amount,
             "equity": equity,
+            "gross_equity": gross_equity,
             "benchmark_equity": benchmark_equity,
             "drawdown": drawdown,
         }
@@ -90,7 +98,9 @@ def _build_summary(
 ) -> dict[str, float | int | str]:
     strategy_returns = equity_curve["strategy_return"]
     final_equity = float(equity_curve["equity"].iloc[-1])
+    gross_final_equity = float(equity_curve["gross_equity"].iloc[-1])
     benchmark_final_equity = float(equity_curve["benchmark_equity"].iloc[-1])
+    total_fees_paid = float(equity_curve["transaction_cost_amount"].sum())
     total_return = (final_equity / initial_capital) - 1
     benchmark_return = (benchmark_final_equity / initial_capital) - 1
     periods = len(equity_curve)
@@ -106,9 +116,13 @@ def _build_summary(
     return {
         "initial_capital": round(initial_capital, 2),
         "final_equity": round(final_equity, 2),
+        "gross_final_equity": round(gross_final_equity, 2),
         "total_return_pct": round(total_return * 100, 2),
         "benchmark_final_equity": round(benchmark_final_equity, 2),
         "excess_return_pct": round((total_return - benchmark_return) * 100, 2),
+        "fees_paid": round(total_fees_paid, 2),
+        "fees_paid_pct_initial_capital": round((total_fees_paid / initial_capital) * 100, 2),
+        "fee_drag_equity": round(gross_final_equity - final_equity, 2),
         "annual_return_pct": round(annual_return * 100, 2),
         "annual_volatility_pct": round(annual_volatility * 100, 2),
         "sharpe_ratio": round(float(sharpe_ratio), 3),

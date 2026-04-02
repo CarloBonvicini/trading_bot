@@ -16,6 +16,7 @@ def create_report_fixture(report_dir: Path) -> None:
             {
                 "initial_capital": 10000.0,
                 "final_equity": 12000.0,
+                "gross_final_equity": 12040.0,
                 "benchmark_final_equity": 11700.0,
                 "total_return_pct": 20.0,
                 "excess_return_pct": 3.0,
@@ -26,6 +27,9 @@ def create_report_fixture(report_dir: Path) -> None:
                 "trade_count": 4,
                 "exposure_pct": 45.0,
                 "benchmark_return_pct": 17.0,
+                "fees_paid": 32.5,
+                "fees_paid_pct_initial_capital": 0.33,
+                "fee_drag_equity": 40.0,
             }
         ),
         encoding="utf-8",
@@ -128,4 +132,5 @@ def test_report_detail_renders_chart_and_trade_table(tmp_path: Path) -> None:
     body = response.get_data(as_text=True)
     assert "Strategia vs buy &amp; hold" in body
     assert "Delta vs hold" in body
+    assert "Spese totali" in body
     assert "Prime 20 operazioni" in body

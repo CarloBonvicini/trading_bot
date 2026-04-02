@@ -39,5 +39,22 @@ def test_backtest_shifts_signal_to_avoid_lookahead() -> None:
 
     assert result.equity_curve["position"].tolist() == [0.0, 1.0, 1.0]
     assert round(result.summary["final_equity"], 2) == 1210.0
+    assert round(result.summary["gross_final_equity"], 2) == 1210.0
     assert round(result.summary["benchmark_final_equity"], 2) == 1210.0
     assert round(result.summary["excess_return_pct"], 2) == 0.0
+    assert round(result.summary["fees_paid"], 2) == 0.0
+    assert round(result.summary["fee_drag_equity"], 2) == 0.0
+
+
+def test_backtest_tracks_fees_paid() -> None:
+    data = pd.DataFrame(
+        {"close": [100.0, 110.0, 100.0]},
+        index=pd.date_range("2024-01-01", periods=3, freq="D"),
+    )
+    signal = pd.Series([1.0, 0.0, 0.0], index=data.index)
+
+    result = run_backtest(data=data, signal=signal, initial_capital=1_000.0, fee_bps=100.0)
+
+    assert result.summary["fees_paid"] > 0
+    assert result.summary["gross_final_equity"] > result.summary["final_equity"]
+    assert round(result.summary["fee_drag_equity"], 2) >= round(result.summary["fees_paid"], 2)
