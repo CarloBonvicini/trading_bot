@@ -148,25 +148,44 @@
     <article class="panel panel-expandable" data-expandable-panel>
       <div class="panel-header">
         <p class="eyebrow">recenti</p>
-        <h3>Altri report</h3>
+        <h3>Altri risultati</h3>
       </div>
       <div class="report-list report-list-compact">
-        {% for item in reports[:10] %}
-          <a class="report-card" href="{{ url_for('report_detail', report_name=item.name) }}">
+        {% for item in saved_items[:10] %}
+          <a class="report-card" href="{{ item.detail_url }}">
             <div class="report-card-head">
               <strong>{{ item.metadata.symbol or item.name }}</strong>
-              <span>{{ item.metadata.strategy_label or item.metadata.strategy or "Backtest" }}</span>
+              <span>
+                {% if item.artifact_type == "sweep" %}
+                  Sweep {{ item.metadata.strategy_label or item.metadata.strategy or "SMA" }}
+                {% else %}
+                  {{ item.metadata.strategy_label or item.metadata.strategy or "Backtest" }}
+                {% endif %}
+              </span>
             </div>
-            <div class="report-card-metrics">
-              <div>
-                <label>Total return</label>
-                <span>{{ item.summary.total_return_pct }}%</span>
+            {% if item.artifact_type == "sweep" %}
+              <div class="report-card-metrics">
+                <div>
+                  <label>Best return</label>
+                  <span>{{ item.summary.best_total_return_pct }}%</span>
+                </div>
+                <div>
+                  <label>Run</label>
+                  <span>{{ item.summary.run_count }}</span>
+                </div>
               </div>
-              <div>
-                <label>Trades</label>
-                <span>{{ item.summary.trade_count }}</span>
+            {% else %}
+              <div class="report-card-metrics">
+                <div>
+                  <label>Total return</label>
+                  <span>{{ item.summary.total_return_pct }}%</span>
+                </div>
+                <div>
+                  <label>Trades</label>
+                  <span>{{ item.summary.trade_count }}</span>
+                </div>
               </div>
-            </div>
+            {% endif %}
           </a>
         {% endfor %}
       </div>

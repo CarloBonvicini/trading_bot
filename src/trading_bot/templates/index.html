@@ -4,15 +4,15 @@
   <section class="hero-panel panel-expandable" data-expandable-panel>
     <div>
       <p class="eyebrow">ricerca prima del live</p>
-      <h2>Avvia un backtest e confronta i report da browser</h2>
+      <h2>Avvia un backtest o uno sweep e confronta i risultati da browser</h2>
       <p class="hero-copy">
         Questa dashboard locale usa il motore Python del progetto: scarica i dati,
-        esegue il backtest e salva un report consultabile subito.
+        esegue il backtest, prova combinazioni multiple e salva tutto in locale.
       </p>
     </div>
     <div class="hero-pill">
-      <span>{{ reports|length }}</span>
-      report disponibili
+      <span>{{ saved_items|length }}</span>
+      risultati disponibili
     </div>
   </section>
 
@@ -27,6 +27,7 @@
           <span>Simbolo</span>
           <input name="symbol" value="{{ form_values.symbol }}" placeholder="SPY o BTC-USD" required>
         </label>
+
         <div class="input-grid">
           <label>
             <span>Data iniziale</span>
@@ -37,7 +38,18 @@
             <input type="date" name="end" value="{{ form_values.end }}" required>
           </label>
         </div>
+
         <div class="input-grid">
+          <label>
+            <span>Modalita</span>
+            <select name="run_mode" id="run-mode-select">
+              {% for run_mode in run_modes %}
+                <option value="{{ run_mode }}" {% if form_values.run_mode == run_mode %}selected{% endif %}>
+                  {% if run_mode == "single" %}Test singolo{% else %}Sweep parametri{% endif %}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
           <label>
             <span>Intervallo</span>
             <select name="interval">
@@ -46,6 +58,9 @@
               {% endfor %}
             </select>
           </label>
+        </div>
+
+        <div class="input-grid">
           <label>
             <span>Strategia</span>
             <select name="strategy" id="strategy-select">
@@ -54,13 +69,13 @@
               {% endfor %}
             </select>
           </label>
-        </div>
-
-        <div class="input-grid">
           <label>
             <span>Capitale iniziale</span>
             <input type="number" step="100" min="100" name="initial_capital" value="{{ form_values.initial_capital }}">
           </label>
+        </div>
+
+        <div class="input-grid">
           <label>
             <span>Fee (bps)</span>
             <input type="number" step="0.1" min="0" name="fee_bps" value="{{ form_values.fee_bps }}">
@@ -68,21 +83,88 @@
         </div>
 
         <section class="strategy-fields" data-strategy="sma_cross">
-          <div class="section-label">Parametri SMA</div>
-          <div class="input-grid">
+          <div class="section-head">
+            <div>
+              <div class="section-label">Parametri SMA</div>
+              <p class="inline-note">
+                In sweep vengono testate tutte le combinazioni valide tra fast e slow usando inizio, fine e passo.
+              </p>
+            </div>
+            <span class="mode-badge" id="sma-mode-badge">Test singolo</span>
+          </div>
+
+          <div class="mode-fields" data-run-mode="single">
+            <div class="input-grid">
+              <label>
+                <span>Fast SMA</span>
+                <input type="number" min="1" name="fast" value="{{ form_values.fast }}">
+              </label>
+              <label>
+                <span>Slow SMA</span>
+                <input type="number" min="2" name="slow" value="{{ form_values.slow }}">
+              </label>
+            </div>
+          </div>
+
+          <div class="mode-fields mode-fields-stack" data-run-mode="sweep">
+            <div class="range-grid">
+              <article class="subsection-card">
+                <p class="subsection-title">Range Fast SMA</p>
+                <div class="triple-grid">
+                  <label>
+                    <span>Iniziale</span>
+                    <input type="number" min="1" name="fast_start" value="{{ form_values.fast_start }}">
+                  </label>
+                  <label>
+                    <span>Finale</span>
+                    <input type="number" min="1" name="fast_end" value="{{ form_values.fast_end }}">
+                  </label>
+                  <label>
+                    <span>Passo</span>
+                    <input type="number" min="1" name="fast_step" value="{{ form_values.fast_step }}">
+                  </label>
+                </div>
+              </article>
+
+              <article class="subsection-card">
+                <p class="subsection-title">Range Slow SMA</p>
+                <div class="triple-grid">
+                  <label>
+                    <span>Iniziale</span>
+                    <input type="number" min="2" name="slow_start" value="{{ form_values.slow_start }}">
+                  </label>
+                  <label>
+                    <span>Finale</span>
+                    <input type="number" min="2" name="slow_end" value="{{ form_values.slow_end }}">
+                  </label>
+                  <label>
+                    <span>Passo</span>
+                    <input type="number" min="1" name="slow_step" value="{{ form_values.slow_step }}">
+                  </label>
+                </div>
+              </article>
+            </div>
+
             <label>
-              <span>Fast SMA</span>
-              <input type="number" min="1" name="fast" value="{{ form_values.fast }}">
-            </label>
-            <label>
-              <span>Slow SMA</span>
-              <input type="number" min="2" name="slow" value="{{ form_values.slow }}">
+              <span>Ordina i risultati per</span>
+              <select name="sort_by">
+                {% for sort_key, sort_label in sweep_sort_options.items() %}
+                  <option value="{{ sort_key }}" {% if form_values.sort_by == sort_key %}selected{% endif %}>{{ sort_label }}</option>
+                {% endfor %}
+              </select>
             </label>
           </div>
         </section>
 
         <section class="strategy-fields" data-strategy="rsi_mean_reversion">
-          <div class="section-label">Parametri RSI</div>
+          <div class="section-head">
+            <div>
+              <div class="section-label">Parametri RSI</div>
+              <p class="inline-note">
+                Questa strategia al momento supporta solo il test singolo.
+              </p>
+            </div>
+          </div>
           <div class="input-grid">
             <label>
               <span>RSI period</span>
@@ -99,44 +181,71 @@
           </div>
         </section>
 
-        <button class="action-button" type="submit">Avvia backtest</button>
+        <button class="action-button" type="submit" id="submit-button">Avvia backtest</button>
       </form>
     </article>
 
     <article class="panel panel-results panel-expandable" data-expandable-panel>
       <div class="panel-header">
-        <p class="eyebrow">report recenti</p>
+        <p class="eyebrow">storico</p>
         <h3>Risultati salvati</h3>
       </div>
-      {% if reports %}
+      {% if saved_items %}
         <div class="report-list">
-          {% for report in reports %}
-            <a class="report-card" href="{{ url_for('report_detail', report_name=report.name) }}">
+          {% for item in saved_items %}
+            <a class="report-card" href="{{ item.detail_url }}">
               <div class="report-card-head">
-                <strong>{{ report.metadata.symbol or report.name }}</strong>
-                <span>{{ report.metadata.strategy_label or report.metadata.strategy or "Backtest" }}</span>
+                <strong>{{ item.metadata.symbol or item.name }}</strong>
+                <span>
+                  {% if item.artifact_type == "sweep" %}
+                    Sweep {{ item.metadata.strategy_label or item.metadata.strategy or "SMA" }}
+                  {% else %}
+                    {{ item.metadata.strategy_label or item.metadata.strategy or "Backtest" }}
+                  {% endif %}
+                </span>
               </div>
-              <div class="report-card-metrics">
-                <div>
-                  <label>Strategia</label>
-                  <span>{{ report.summary.total_return_pct }}%</span>
+              {% if item.artifact_type == "sweep" %}
+                <div class="report-card-metrics">
+                  <div>
+                    <label>Best return</label>
+                    <span>{{ item.summary.best_total_return_pct }}%</span>
+                  </div>
+                  <div>
+                    <label>Run valide</label>
+                    <span>{{ item.summary.run_count }}</span>
+                  </div>
+                  <div>
+                    <label>Best SMA</label>
+                    <span>{{ item.summary.best_fast }} / {{ item.summary.best_slow }}</span>
+                  </div>
+                  <div>
+                    <label>Delta hold</label>
+                    <span>{{ item.summary.best_excess_return_pct }}%</span>
+                  </div>
                 </div>
-                <div>
-                  <label>Buy &amp; hold</label>
-                  <span>{{ report.summary.benchmark_return_pct }}%</span>
+              {% else %}
+                <div class="report-card-metrics">
+                  <div>
+                    <label>Strategia</label>
+                    <span>{{ item.summary.total_return_pct }}%</span>
+                  </div>
+                  <div>
+                    <label>Buy &amp; hold</label>
+                    <span>{{ item.summary.benchmark_return_pct }}%</span>
+                  </div>
+                  <div>
+                    <label>Delta</label>
+                    <span>{{ item.summary.excess_return_pct }}%</span>
+                  </div>
+                  <div>
+                    <label>Max DD</label>
+                    <span>{{ item.summary.max_drawdown_pct }}%</span>
+                  </div>
                 </div>
-                <div>
-                  <label>Delta</label>
-                  <span>{{ report.summary.excess_return_pct }}%</span>
-                </div>
-                <div>
-                  <label>Max DD</label>
-                  <span>{{ report.summary.max_drawdown_pct }}%</span>
-                </div>
-              </div>
+              {% endif %}
               <div class="mini-chart-shell">
-                <svg viewBox="0 0 {{ report.preview_chart.width }} {{ report.preview_chart.height }}" class="mini-chart-svg" aria-label="Anteprima grafico strategia vs hold">
-                  {% for series in report.preview_chart.series %}
+                <svg viewBox="0 0 {{ item.preview_chart.width }} {{ item.preview_chart.height }}" class="mini-chart-svg" aria-label="Anteprima grafico risultato salvato">
+                  {% for series in item.preview_chart.series %}
                     <polyline points="{{ series.points }}" stroke="{{ series.color }}" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
                   {% endfor %}
                 </svg>
@@ -146,7 +255,7 @@
         </div>
       {% else %}
         <div class="empty-state">
-          <p>Nessun report ancora. Lancia il primo backtest dalla form qui a sinistra.</p>
+          <p>Nessun risultato ancora. Lancia il primo backtest o sweep dalla form qui a sinistra.</p>
         </div>
       {% endif %}
     </article>
@@ -154,17 +263,47 @@
 
   <script>
     const strategySelect = document.getElementById("strategy-select");
+    const runModeSelect = document.getElementById("run-mode-select");
+    const submitButton = document.getElementById("submit-button");
     const sections = Array.from(document.querySelectorAll(".strategy-fields"));
+    const modeSections = Array.from(document.querySelectorAll(".mode-fields"));
+    const sweepOption = runModeSelect.querySelector('option[value="sweep"]');
+    const smaModeBadge = document.getElementById("sma-mode-badge");
 
     function syncStrategyFields() {
-      const selected = strategySelect.value;
+      const selectedStrategy = strategySelect.value;
+      const sweepAvailable = selectedStrategy === "sma_cross";
+
+      sweepOption.disabled = !sweepAvailable;
+      if (!sweepAvailable && runModeSelect.value === "sweep") {
+        runModeSelect.value = "single";
+      }
+
+      const selectedMode = runModeSelect.value;
+
       sections.forEach((section) => {
-        const isActive = section.dataset.strategy === selected;
+        const isActive = section.dataset.strategy === selectedStrategy;
         section.classList.toggle("is-active", isActive);
       });
+
+      modeSections.forEach((section) => {
+        const parentSection = section.closest(".strategy-fields");
+        const strategyMatches = parentSection && parentSection.dataset.strategy === selectedStrategy;
+        const modeMatches = section.dataset.runMode === selectedMode;
+        section.classList.toggle("is-active", Boolean(strategyMatches && modeMatches));
+      });
+
+      if (smaModeBadge) {
+        smaModeBadge.textContent = selectedMode === "sweep" ? "Sweep multiplo" : "Test singolo";
+      }
+
+      if (submitButton) {
+        submitButton.textContent = selectedMode === "sweep" ? "Avvia sweep" : "Avvia backtest";
+      }
     }
 
     strategySelect.addEventListener("change", syncStrategyFields);
+    runModeSelect.addEventListener("change", syncStrategyFields);
     syncStrategyFields();
   </script>
 {% endblock %}

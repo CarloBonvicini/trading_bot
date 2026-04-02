@@ -30,50 +30,37 @@ REPORT_NAME_PATTERN = re.compile(
 )
 
 
-def list_reports(output_dir: str | Path) -> list[dict[str, object]]:
+def list_saved_items(output_dir: str | Path) -> list[dict[str, object]]:
     output_path = Path(output_dir)
     if not output_path.exists():
         return []
 
-    reports: list[dict[str, object]] = []
-    for report_dir in output_path.iterdir():
-        if not report_dir.is_dir():
+    items: list[dict[str, object]] = []
+    for item_dir in output_path.iterdir():
+        if not item_dir.is_dir():
             continue
-        summary_file = report_dir / "summary.json"
+        summary_file = item_dir / "summary.json"
         if not summary_file.exists():
             continue
-        summary = enrich_summary(_read_json(summary_file), report_dir)
-        metadata = read_report_metadata(report_dir)
-        equity_curve = _read_equity_curve(report_dir)
-        reports.append(
-            {
-                "name": report_dir.name,
-                "path": report_dir,
-                "summary": summary,
-                "metadata": metadata,
-                "created_at": metadata.get("created_at", ""),
-                "comparison": build_comparison(summary),
-                "preview_chart": build_line_chart(
-                    {
-                        "Strategy": sample_series(equity_curve["equity"], max_points=72),
-                        "Buy & hold": sample_series(equity_curve["benchmark_equity"], max_points=72),
-                    },
-                    colors={"Strategy": "#0f766e", "Buy & hold": "#c084fc"},
-                    width=300,
-                    height=94,
-                    padding=10,
-                ),
-            }
-        )
+        metadata = read_report_metadata(item_dir)
+        artifact_type = str(metadata.get("artifact_type", "report"))
+        if artifact_type == "sweep":
+            items.append(_build_sweep_list_item(item_dir=item_dir, metadata=metadata))
+        else:
+            items.append(_build_report_list_item(report_dir=item_dir, metadata=metadata))
 
-    reports.sort(
+    items.sort(
         key=lambda item: (
             str(item["created_at"]),
             item["name"],
         ),
         reverse=True,
     )
-    return reports
+    return items
+
+
+def list_reports(output_dir: str | Path) -> list[dict[str, object]]:
+    return [item for item in list_saved_items(output_dir) if item.get("artifact_type") == "report"]
 
 
 def load_report(output_dir: str | Path, report_name: str) -> dict[str, object]:
@@ -87,6 +74,7 @@ def load_report(output_dir: str | Path, report_name: str) -> dict[str, object]:
     trades = pd.read_csv(report_dir / "trades.csv")
 
     return {
+        "artifact_type": "report",
         "name": report_name,
         "path": report_dir,
         "summary": summary,
@@ -107,6 +95,68 @@ def load_report(output_dir: str | Path, report_name: str) -> dict[str, object]:
         "equity_curve_rows": equity_curve.tail(20).to_dict(orient="records"),
         "trades": trades.fillna("").to_dict(orient="records"),
         "trade_preview": trades.fillna("").head(20).to_dict(orient="records"),
+    }
+
+
+def load_sweep(output_dir: str | Path, sweep_name: str) -> dict[str, object]:
+    sweep_dir = Path(output_dir) / sweep_name
+    if not sweep_dir.exists():
+        raise FileNotFoundError(f"Sweep '{sweep_name}' not found.")
+
+    metadata = read_report_metadata(sweep_dir)
+    summary = _read_json(sweep_dir / "summary.json")
+    results = pd.read_csv(sweep_dir / "results.csv")
+    best_summary = enrich_summary(_read_json(sweep_dir / "best_summary.json"), sweep_dir)
+    best_equity_curve = _read_best_equity_curve(sweep_dir)
+    best_trades = pd.read_csv(sweep_dir / "best_trades.csv")
+
+    top_results = results.sort_values(by=["rank"], ascending=True).head(40).copy()
+    ranking_chart = build_line_chart(
+        {"Top total return": sample_series(top_results["total_return_pct"], max_points=40)},
+        colors={"Top total return": "#0f766e"},
+        width=860,
+        height=220,
+        padding=24,
+    )
+
+    return {
+        "artifact_type": "sweep",
+        "name": sweep_name,
+        "path": sweep_dir,
+        "metadata": metadata,
+        "summary": summary,
+        "summary_cards": build_sweep_summary_cards(summary),
+        "best_summary_cards": build_summary_cards(best_summary),
+        "best_parameters": {
+            "fast": summary.get("best_fast", ""),
+            "slow": summary.get("best_slow", ""),
+        },
+        "best_comparison": build_comparison(best_summary),
+        "best_equity_chart": build_line_chart(
+            {
+                "Strategy": best_equity_curve["equity"],
+                "Buy & hold": best_equity_curve["benchmark_equity"],
+            },
+            colors={"Strategy": "#0f766e", "Buy & hold": "#c084fc"},
+        ),
+        "best_drawdown_chart": build_line_chart(
+            {"Drawdown": best_equity_curve["drawdown"] * 100},
+            colors={"Drawdown": "#ef4444"},
+        ),
+        "ranking_chart": ranking_chart,
+        "top_results": top_results.to_dict(orient="records"),
+        "top_results_columns": [
+            "rank",
+            "fast",
+            "slow",
+            "total_return_pct",
+            "benchmark_return_pct",
+            "excess_return_pct",
+            "sharpe_ratio",
+            "max_drawdown_pct",
+            "fees_paid",
+        ],
+        "best_trade_preview": best_trades.fillna("").head(20).to_dict(orient="records"),
     }
 
 
@@ -131,6 +181,39 @@ def build_summary_cards(summary: dict[str, object]) -> list[dict[str, object]]:
         else:
             display_value = f"{value}{suffix}" if suffix else str(value)
         cards.append({"label": SUMMARY_LABELS.get(key, key), "value": display_value})
+    return cards
+
+
+def build_sweep_summary_cards(summary: dict[str, object]) -> list[dict[str, object]]:
+    labels = {
+        "run_count": "Combinazioni valide",
+        "invalid_combinations": "Combinazioni scartate",
+        "best_fast": "Best fast SMA",
+        "best_slow": "Best slow SMA",
+        "best_total_return_pct": "Best rendimento",
+        "best_sharpe_ratio": "Best Sharpe",
+        "best_max_drawdown_pct": "Best max drawdown",
+        "best_fees_paid": "Best spese",
+    }
+    cards: list[dict[str, object]] = []
+    for key in (
+        "run_count",
+        "invalid_combinations",
+        "best_fast",
+        "best_slow",
+        "best_total_return_pct",
+        "best_sharpe_ratio",
+        "best_max_drawdown_pct",
+        "best_fees_paid",
+    ):
+        value = summary.get(key, "")
+        if key.endswith("_pct"):
+            display_value = f"{value}%"
+        elif key.endswith("_paid"):
+            display_value = f"{value:,.2f}" if isinstance(value, (int, float)) else str(value)
+        else:
+            display_value = str(value)
+        cards.append({"label": labels[key], "value": display_value})
     return cards
 
 
@@ -202,6 +285,8 @@ def read_report_metadata(report_dir: Path) -> dict[str, object]:
         metadata.update(_metadata_from_report_name(report_dir.name))
     if "created_at" not in metadata:
         metadata["created_at"] = report_dir.stat().st_mtime
+    if "artifact_type" not in metadata:
+        metadata["artifact_type"] = "report"
     return metadata
 
 
@@ -321,6 +406,58 @@ def _read_json(path: Path) -> dict[str, object]:
 
 def _read_equity_curve(report_dir: Path) -> pd.DataFrame:
     return pd.read_csv(report_dir / "equity_curve.csv")
+
+
+def _read_best_equity_curve(sweep_dir: Path) -> pd.DataFrame:
+    return pd.read_csv(sweep_dir / "best_equity_curve.csv")
+
+
+def _build_report_list_item(report_dir: Path, metadata: dict[str, object]) -> dict[str, object]:
+    summary = enrich_summary(_read_json(report_dir / "summary.json"), report_dir)
+    equity_curve = _read_equity_curve(report_dir)
+    return {
+        "artifact_type": "report",
+        "name": report_dir.name,
+        "path": report_dir,
+        "summary": summary,
+        "metadata": metadata,
+        "created_at": metadata.get("created_at", ""),
+        "comparison": build_comparison(summary),
+        "detail_url": f"/reports/{report_dir.name}",
+        "preview_chart": build_line_chart(
+            {
+                "Strategy": sample_series(equity_curve["equity"], max_points=72),
+                "Buy & hold": sample_series(equity_curve["benchmark_equity"], max_points=72),
+            },
+            colors={"Strategy": "#0f766e", "Buy & hold": "#c084fc"},
+            width=300,
+            height=94,
+            padding=10,
+        ),
+    }
+
+
+def _build_sweep_list_item(item_dir: Path, metadata: dict[str, object]) -> dict[str, object]:
+    summary = _read_json(item_dir / "summary.json")
+    results = pd.read_csv(item_dir / "results.csv")
+    sorted_results = results.sort_values(by=["rank"], ascending=True) if "rank" in results.columns else results
+    preview_chart = build_line_chart(
+        {"Top total return": sample_series(sorted_results["total_return_pct"], max_points=50)},
+        colors={"Top total return": "#0f766e"},
+        width=300,
+        height=94,
+        padding=10,
+    )
+    return {
+        "artifact_type": "sweep",
+        "name": item_dir.name,
+        "path": item_dir,
+        "summary": summary,
+        "metadata": metadata,
+        "created_at": metadata.get("created_at", ""),
+        "detail_url": f"/sweeps/{item_dir.name}",
+        "preview_chart": preview_chart,
+    }
 
 
 def _ensure_gross_equity(equity_curve: pd.DataFrame, initial_capital: float) -> pd.Series:

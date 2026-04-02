@@ -287,7 +287,8 @@ body.panel-expanded {
 }
 
 .backtest-form,
-.strategy-fields {
+.strategy-fields,
+.mode-fields {
   display: grid;
   gap: 1rem;
 }
@@ -348,6 +349,69 @@ select:focus {
 
 .strategy-fields.is-active {
   display: grid;
+}
+
+.mode-fields {
+  display: none;
+}
+
+.mode-fields.is-active {
+  display: grid;
+}
+
+.mode-fields-stack {
+  gap: 1rem;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.inline-note {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(15, 118, 110, 0.1);
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.range-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.triple-grid {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.subsection-card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(27, 27, 24, 0.08);
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.subsection-title {
+  margin: 0;
+  font-weight: 700;
 }
 
 .action-button {
@@ -437,6 +501,10 @@ select:focus {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 1rem;
   margin-top: 1.2rem;
+}
+
+.stats-grid-tight {
+  margin-top: 0;
 }
 
 .stat-card {
@@ -574,6 +642,7 @@ td {
   .hero-panel,
   .shell-header,
   .report-card-head,
+  .section-head,
   .chart-meta,
   .chart-legend {
     flex-direction: column;
@@ -582,6 +651,8 @@ td {
 
   .input-grid,
   .strategy-fields .input-grid,
+  .range-grid,
+  .triple-grid,
   .report-card-metrics,
   .comparison-grid {
     grid-template-columns: 1fr;

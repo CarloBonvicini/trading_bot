@@ -5,17 +5,29 @@ from pathlib import Path
 
 from flask import Flask, abort, current_app, flash, redirect, render_template, request, send_file, url_for
 
-from trading_bot.reporting import SUMMARY_LABELS, list_reports, load_report
+from trading_bot.reporting import SUMMARY_LABELS, list_saved_items, load_report, load_sweep
 from trading_bot.services import (
     DEFAULT_REPORTS_DIR,
     INTERVAL_OPTIONS,
+    RUN_MODE_OPTIONS,
     STRATEGY_OPTIONS,
+    SWEEP_SORT_OPTIONS,
     BacktestRequest,
+    SweepRequest,
     as_form_values,
     run_backtest_request,
+    run_sma_sweep_request,
 )
 
 ALLOWED_REPORT_FILES = {"summary.json", "equity_curve.csv", "trades.csv", "metadata.json"}
+ALLOWED_SWEEP_FILES = {
+    "summary.json",
+    "results.csv",
+    "metadata.json",
+    "best_summary.json",
+    "best_equity_curve.csv",
+    "best_trades.csv",
+}
 
 
 def create_app(config: dict[str, object] | None = None) -> Flask:
@@ -34,7 +46,23 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
 
     @app.post("/backtests")
     def create_backtest():
+        run_mode = str(request.form.get("run_mode", "single")).strip().lower()
         try:
+            if run_mode == "sweep":
+                sweep_request = SweepRequest.from_mapping(request.form)
+                completed_sweep = run_sma_sweep_request(
+                    sweep_request=sweep_request,
+                    output_dir=current_app.config["REPORTS_DIR"],
+                )
+                flash(
+                    (
+                        f"Sweep completato: {completed_sweep.sweep_dir.name} "
+                        f"({completed_sweep.summary['run_count']} combinazioni valide)"
+                    ),
+                    "success",
+                )
+                return redirect(url_for("sweep_detail", sweep_name=completed_sweep.sweep_dir.name))
+
             backtest_request = BacktestRequest.from_mapping(request.form)
             completed = run_backtest_request(
                 backtest_request=backtest_request,
@@ -57,7 +85,21 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
         return render_template(
             "report.html",
             report=report,
-            reports=list_reports(current_app.config["REPORTS_DIR"]),
+            saved_items=list_saved_items(current_app.config["REPORTS_DIR"]),
+            summary_labels=SUMMARY_LABELS,
+        )
+
+    @app.get("/sweeps/<sweep_name>")
+    def sweep_detail(sweep_name: str) -> str:
+        try:
+            sweep = load_sweep(output_dir=current_app.config["REPORTS_DIR"], sweep_name=sweep_name)
+        except FileNotFoundError:
+            abort(404)
+
+        return render_template(
+            "sweep.html",
+            sweep=sweep,
+            saved_items=list_saved_items(current_app.config["REPORTS_DIR"]),
             summary_labels=SUMMARY_LABELS,
         )
 
@@ -68,6 +110,17 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
 
         report_dir = Path(current_app.config["REPORTS_DIR"]) / report_name
         file_path = report_dir / filename
+        if not file_path.exists():
+            abort(404)
+        return send_file(file_path, as_attachment=True)
+
+    @app.get("/sweeps/<sweep_name>/files/<filename>")
+    def download_sweep_file(sweep_name: str, filename: str):
+        if filename not in ALLOWED_SWEEP_FILES:
+            abort(404)
+
+        sweep_dir = Path(current_app.config["REPORTS_DIR"]) / sweep_name
+        file_path = sweep_dir / filename
         if not file_path.exists():
             abort(404)
         return send_file(file_path, as_attachment=True)
@@ -98,9 +151,11 @@ def _render_home(form_values: dict[str, object] | None = None, status: int = 200
     return render_template(
         "index.html",
         form_values=values,
-        reports=list_reports(current_app.config["REPORTS_DIR"]),
+        saved_items=list_saved_items(current_app.config["REPORTS_DIR"]),
         strategies=STRATEGY_OPTIONS,
         intervals=INTERVAL_OPTIONS,
+        run_modes=RUN_MODE_OPTIONS,
+        sweep_sort_options=SWEEP_SORT_OPTIONS,
     ), status
 
 

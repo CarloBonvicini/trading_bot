@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% block title %}{{ sweep.metadata.symbol or sweep.name }} - Sweep SMA{% endblock %}
+{% block content %}
+  {% set fast_space = sweep.metadata.parameter_space["fast"] %}
+  {% set slow_space = sweep.metadata.parameter_space["slow"] %}
+  <section class="hero-panel report-hero panel-expandable" data-expandable-panel>
+    <div>
+      <p class="eyebrow">sweep {{ sweep.metadata.strategy_label or sweep.metadata.strategy }}</p>
+      <h2>{{ sweep.metadata.symbol or sweep.name }}</h2>
+      <p class="hero-copy">
+        Periodo {{ sweep.metadata.start or "n/a" }} -> {{ sweep.metadata.end or "n/a" }},
+        intervallo {{ sweep.metadata.interval or "n/a" }},
+        fee {{ sweep.metadata.fee_bps or "n/a" }} bps.
+        Fast {{ fast_space["start"] }} -> {{ fast_space["end"] }} step {{ fast_space["step"] }},
+        slow {{ slow_space["start"] }} -> {{ slow_space["end"] }} step {{ slow_space["step"] }}.
+      </p>
+    </div>
+    <div class="hero-actions">
+      <a class="ghost-link" href="{{ url_for('download_sweep_file', sweep_name=sweep.name, filename='summary.json') }}">summary.json</a>
+      <a class="ghost-link" href="{{ url_for('download_sweep_file', sweep_name=sweep.name, filename='results.csv') }}">results.csv</a>
+      <a class="ghost-link" href="{{ url_for('download_sweep_file', sweep_name=sweep.name, filename='best_summary.json') }}">best_summary.json</a>
+      <a class="ghost-link" href="{{ url_for('download_sweep_file', sweep_name=sweep.name, filename='best_equity_curve.csv') }}">best_equity_curve.csv</a>
+    </div>
+  </section>
+
+  <section class="stats-grid">
+    {% for card in sweep.summary_cards %}
+      <article class="stat-card">
+        <p>{{ card.label }}</p>
+        <strong>{{ card.value }}</strong>
+      </article>
+    {% endfor %}
+  </section>
+
+  <section class="panel comparison-panel panel-expandable" data-expandable-panel>
+    <div class="panel-header">
+      <p class="eyebrow">migliore combinazione</p>
+      <h3>Best SMA vs semplice buy &amp; hold</h3>
+    </div>
+    <div class="comparison-grid">
+      <article class="comparison-card comparison-card-accent">
+        <p>Best parametri</p>
+        <strong>{{ sweep.best_parameters.fast }} / {{ sweep.best_parameters.slow }}</strong>
+        <span>Ordinati per {{ sweep.summary.sort_by }}</span>
+      </article>
+      <article class="comparison-card">
+        <p>Strategia</p>
+        <strong>{{ sweep.best_comparison.strategy_return_pct }}%</strong>
+        <span>Equity finale {{ sweep.best_comparison.strategy_final_equity }}</span>
+      </article>
+      <article class="comparison-card">
+        <p>Buy &amp; hold</p>
+        <strong>{{ sweep.best_comparison.hold_return_pct }}%</strong>
+        <span>Equity finale {{ sweep.best_comparison.hold_final_equity }}</span>
+      </article>
+      <article class="comparison-card">
+        <p>Delta vs hold</p>
+        <strong>{{ sweep.best_comparison.delta_pct }}%</strong>
+        <span>{{ sweep.best_comparison.verdict }}</span>
+      </article>
+      <article class="comparison-card">
+        <p>Spese totali</p>
+        <strong>{{ sweep.best_comparison.fees_paid }}</strong>
+        <span>{{ sweep.best_comparison.fees_pct_initial_capital }}% del capitale iniziale</span>
+      </article>
+    </div>
+  </section>
+
+  <section class="panel panel-expandable" data-expandable-panel>
+    <div class="panel-header">
+      <p class="eyebrow">snapshot</p>
+      <h3>Metriche del best run</h3>
+    </div>
+    <div class="stats-grid stats-grid-tight">
+      {% for card in sweep.best_summary_cards %}
+        <article class="stat-card">
+          <p>{{ card.label }}</p>
+          <strong>{{ card.value }}</strong>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="layout-grid report-layout">
+    <article class="panel chart-panel panel-expandable" data-expandable-panel>
+      <div class="panel-header">
+        <p class="eyebrow">best equity curve</p>
+        <h3>Best SMA vs buy &amp; hold</h3>
+      </div>
+      <div class="chart-shell">
+        <div class="chart-meta">
+          <span>max {{ sweep.best_equity_chart.max_label }}</span>
+          <span>min {{ sweep.best_equity_chart.min_label }}</span>
+        </div>
+        <svg viewBox="0 0 {{ sweep.best_equity_chart.width }} {{ sweep.best_equity_chart.height }}" class="chart-svg" aria-label="Best equity chart">
+          <line x1="24" y1="{{ sweep.best_equity_chart.zero_y }}" x2="{{ sweep.best_equity_chart.width - 24 }}" y2="{{ sweep.best_equity_chart.zero_y }}" class="chart-baseline"></line>
+          {% for series in sweep.best_equity_chart.series %}
+            <polyline points="{{ series.points }}" stroke="{{ series.color }}" fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+          {% endfor %}
+        </svg>
+        <div class="chart-legend">
+          {% for series in sweep.best_equity_chart.series %}
+            <div>
+              <span class="legend-dot" style="background: {{ series.color }}"></span>
+              {{ series.label }}: {{ series.latest }}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </article>
+
+    <article class="panel chart-panel panel-expandable" data-expandable-panel>
+      <div class="panel-header">
+        <p class="eyebrow">rischio</p>
+        <h3>Drawdown del best run</h3>
+      </div>
+      <div class="chart-shell">
+        <div class="chart-meta">
+          <span>max {{ sweep.best_drawdown_chart.max_label }}%</span>
+          <span>min {{ sweep.best_drawdown_chart.min_label }}%</span>
+        </div>
+        <svg viewBox="0 0 {{ sweep.best_drawdown_chart.width }} {{ sweep.best_drawdown_chart.height }}" class="chart-svg" aria-label="Best drawdown chart">
+          <line x1="24" y1="{{ sweep.best_drawdown_chart.zero_y }}" x2="{{ sweep.best_drawdown_chart.width - 24 }}" y2="{{ sweep.best_drawdown_chart.zero_y }}" class="chart-baseline"></line>
+          {% for series in sweep.best_drawdown_chart.series %}
+            <polyline points="{{ series.points }}" stroke="{{ series.color }}" fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+          {% endfor %}
+        </svg>
+      </div>
+    </article>
+  </section>
+
+  <section class="layout-grid report-layout">
+    <article class="panel chart-panel panel-expandable" data-expandable-panel>
+      <div class="panel-header">
+        <p class="eyebrow">classifica</p>
+        <h3>Top risultati ordinati</h3>
+      </div>
+      <div class="chart-shell">
+        <div class="chart-meta">
+          <span>max {{ sweep.ranking_chart.max_label }}%</span>
+          <span>min {{ sweep.ranking_chart.min_label }}%</span>
+        </div>
+        <svg viewBox="0 0 {{ sweep.ranking_chart.width }} {{ sweep.ranking_chart.height }}" class="chart-svg" aria-label="Ranking chart">
+          <line x1="24" y1="{{ sweep.ranking_chart.zero_y }}" x2="{{ sweep.ranking_chart.width - 24 }}" y2="{{ sweep.ranking_chart.zero_y }}" class="chart-baseline"></line>
+          {% for series in sweep.ranking_chart.series %}
+            <polyline points="{{ series.points }}" stroke="{{ series.color }}" fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+          {% endfor %}
+        </svg>
+      </div>
+    </article>
+
+    <article class="panel panel-expandable" data-expandable-panel>
+      <div class="panel-header">
+        <p class="eyebrow">trade preview</p>
+        <h3>Prime 20 operazioni del best run</h3>
+      </div>
+      {% if sweep.best_trade_preview %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Entry</th>
+                <th>Exit</th>
+                <th>PnL %</th>
+                <th>Holding</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for trade in sweep.best_trade_preview %}
+                <tr>
+                  <td>{{ trade.entry_date }} @ {{ trade.entry_price }}</td>
+                  <td>{{ trade.exit_date or "-" }} {% if trade.exit_price %}@ {{ trade.exit_price }}{% endif %}</td>
+                  <td>{{ trade.pnl_pct or "-" }}</td>
+                  <td>{{ trade.holding_days or "-" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <p>Nessun trade registrato per il best run.</p>
+        </div>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="layout-grid report-layout">
+    <article class="panel panel-expandable" data-expandable-panel>
+      <div class="panel-header">
+        <p class="eyebrow">tabella ranking</p>
+        <h3>Migliori combinazioni SMA</h3>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Fast</th>
+              <th>Slow</th>
+              <th>Return %</th>
+              <th>Hold %</th>
+              <th>Delta %</th>
+              <th>Sharpe</th>
+              <th>Max DD %</th>
+              <th>Fee</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in sweep.top_results %}
+              <tr>
+                <td>{{ row.rank }}</td>
+                <td>{{ row.fast }}</td>
+                <td>{{ row.slow }}</td>
+                <td>{{ row.total_return_pct }}</td>
+                <td>{{ row.benchmark_return_pct }}</td>
+                <td>{{ row.excess_return_pct }}</td>
+                <td>{{ row.sharpe_ratio }}</td>
+                <td>{{ row.max_drawdown_pct }}</td>
+                <td>{{ row.fees_paid }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="panel panel-expandable" data-expandable-panel>
+      <div class="panel-header">
+        <p class="eyebrow">recenti</p>
+        <h3>Altri risultati</h3>
+      </div>
+      <div class="report-list report-list-compact">
+        {% for item in saved_items[:10] %}
+          <a class="report-card" href="{{ item.detail_url }}">
+            <div class="report-card-head">
+              <strong>{{ item.metadata.symbol or item.name }}</strong>
+              <span>
+                {% if item.artifact_type == "sweep" %}
+                  Sweep {{ item.metadata.strategy_label or item.metadata.strategy or "SMA" }}
+                {% else %}
+                  {{ item.metadata.strategy_label or item.metadata.strategy or "Backtest" }}
+                {% endif %}
+              </span>
+            </div>
+            {% if item.artifact_type == "sweep" %}
+              <div class="report-card-metrics">
+                <div>
+                  <label>Best return</label>
+                  <span>{{ item.summary.best_total_return_pct }}%</span>
+                </div>
+                <div>
+                  <label>Run</label>
+                  <span>{{ item.summary.run_count }}</span>
+                </div>
+              </div>
+            {% else %}
+              <div class="report-card-metrics">
+                <div>
+                  <label>Total return</label>
+                  <span>{{ item.summary.total_return_pct }}%</span>
+                </div>
+                <div>
+                  <label>Trades</label>
+                  <span>{{ item.summary.trade_count }}</span>
+                </div>
+              </div>
+            {% endif %}
+          </a>
+        {% endfor %}
+      </div>
+    </article>
+  </section>
+{% endblock %}
