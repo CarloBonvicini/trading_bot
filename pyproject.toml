@@ -9,6 +9,7 @@ description = "Research and backtesting starter for trading strategies."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "Flask>=3.1",
   "pandas>=2.2",
   "yfinance>=0.2.54",
 ]
@@ -18,7 +19,10 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 trading-bot = "trading_bot.cli:main"
+trading-bot-web = "trading_bot.web:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+trading_bot = ["templates/*.html", "static/*.css"]

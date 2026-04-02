@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Trading Bot Lab{% endblock %}
+{% block content %}
+  <section class="hero-panel">
+    <div>
+      <p class="eyebrow">ricerca prima del live</p>
+      <h2>Avvia un backtest e confronta i report da browser</h2>
+      <p class="hero-copy">
+        Questa dashboard locale usa il motore Python del progetto: scarica i dati,
+        esegue il backtest e salva un report consultabile subito.
+      </p>
+    </div>
+    <div class="hero-pill">
+      <span>{{ reports|length }}</span>
+      report disponibili
+    </div>
+  </section>
+
+  <section class="layout-grid">
+    <article class="panel panel-form">
+      <div class="panel-header">
+        <p class="eyebrow">lancia un test</p>
+        <h3>Nuovo backtest</h3>
+      </div>
+      <form action="{{ url_for('create_backtest') }}" method="post" class="backtest-form">
+        <label>
+          <span>Simbolo</span>
+          <input name="symbol" value="{{ form_values.symbol }}" placeholder="SPY o BTC-USD" required>
+        </label>
+        <div class="input-grid">
+          <label>
+            <span>Data iniziale</span>
+            <input type="date" name="start" value="{{ form_values.start }}" required>
+          </label>
+          <label>
+            <span>Data finale</span>
+            <input type="date" name="end" value="{{ form_values.end }}" required>
+          </label>
+        </div>
+        <div class="input-grid">
+          <label>
+            <span>Intervallo</span>
+            <select name="interval">
+              {% for interval in intervals %}
+                <option value="{{ interval }}" {% if form_values.interval == interval %}selected{% endif %}>{{ interval }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            <span>Strategia</span>
+            <select name="strategy" id="strategy-select">
+              {% for strategy_id, strategy in strategies.items() %}
+                <option value="{{ strategy_id }}" {% if form_values.strategy == strategy_id %}selected{% endif %}>{{ strategy.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+
+        <div class="input-grid">
+          <label>
+            <span>Capitale iniziale</span>
+            <input type="number" step="100" min="100" name="initial_capital" value="{{ form_values.initial_capital }}">
+          </label>
+          <label>
+            <span>Fee (bps)</span>
+            <input type="number" step="0.1" min="0" name="fee_bps" value="{{ form_values.fee_bps }}">
+          </label>
+        </div>
+
+        <section class="strategy-fields" data-strategy="sma_cross">
+          <div class="section-label">Parametri SMA</div>
+          <div class="input-grid">
+            <label>
+              <span>Fast SMA</span>
+              <input type="number" min="1" name="fast" value="{{ form_values.fast }}">
+            </label>
+            <label>
+              <span>Slow SMA</span>
+              <input type="number" min="2" name="slow" value="{{ form_values.slow }}">
+            </label>
+          </div>
+        </section>
+
+        <section class="strategy-fields" data-strategy="rsi_mean_reversion">
+          <div class="section-label">Parametri RSI</div>
+          <div class="input-grid">
+            <label>
+              <span>RSI period</span>
+              <input type="number" min="2" name="rsi_period" value="{{ form_values.rsi_period }}">
+            </label>
+            <label>
+              <span>RSI lower</span>
+              <input type="number" step="0.1" min="1" max="99" name="rsi_lower" value="{{ form_values.rsi_lower }}">
+            </label>
+            <label>
+              <span>RSI upper</span>
+              <input type="number" step="0.1" min="1" max="99" name="rsi_upper" value="{{ form_values.rsi_upper }}">
+            </label>
+          </div>
+        </section>
+
+        <button class="action-button" type="submit">Avvia backtest</button>
+      </form>
+    </article>
+
+    <article class="panel panel-results">
+      <div class="panel-header">
+        <p class="eyebrow">report recenti</p>
+        <h3>Risultati salvati</h3>
+      </div>
+      {% if reports %}
+        <div class="report-list">
+          {% for report in reports %}
+            <a class="report-card" href="{{ url_for('report_detail', report_name=report.name) }}">
+              <div class="report-card-head">
+                <strong>{{ report.metadata.symbol or report.name }}</strong>
+                <span>{{ report.metadata.strategy_label or report.metadata.strategy or "Backtest" }}</span>
+              </div>
+              <div class="report-card-metrics">
+                <div>
+                  <label>Total return</label>
+                  <span>{{ report.summary.total_return_pct }}%</span>
+                </div>
+                <div>
+                  <label>Sharpe</label>
+                  <span>{{ report.summary.sharpe_ratio }}</span>
+                </div>
+                <div>
+                  <label>Max DD</label>
+                  <span>{{ report.summary.max_drawdown_pct }}%</span>
+                </div>
+              </div>
+            </a>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <p>Nessun report ancora. Lancia il primo backtest dalla form qui a sinistra.</p>
+        </div>
+      {% endif %}
+    </article>
+  </section>
+
+  <script>
+    const strategySelect = document.getElementById("strategy-select");
+    const sections = Array.from(document.querySelectorAll(".strategy-fields"));
+
+    function syncStrategyFields() {
+      const selected = strategySelect.value;
+      sections.forEach((section) => {
+        const isActive = section.dataset.strategy === selected;
+        section.classList.toggle("is-active", isActive);
+      });
+    }
+
+    strategySelect.addEventListener("change", syncStrategyFields);
+    syncStrategyFields();
+  </script>
+{% endblock %}

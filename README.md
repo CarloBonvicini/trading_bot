@@ -9,8 +9,10 @@ Starter leggero in Python per fare ricerca e backtest prima di costruire un bot 
   - `sma_cross`
   - `rsi_mean_reversion`
 - backtest long-only con costi di transazione
+- dashboard web locale per lanciare i test e vedere i report su browser
 - report salvati in `reports/` con:
   - `summary.json`
+  - `metadata.json`
   - `equity_curve.csv`
   - `trades.csv`
 
@@ -56,8 +58,29 @@ Ogni esecuzione crea una cartella in `reports/`:
 reports/
   SPY-sma_cross-20260402-224500/
     equity_curve.csv
+    metadata.json
     summary.json
     trades.csv
+```
+
+## Dashboard locale
+
+Avvio server web su localhost:
+
+```powershell
+trading-bot-web
+```
+
+Poi apri:
+
+```text
+http://127.0.0.1:8000
+```
+
+Puoi anche cambiare porta o cartella report:
+
+```powershell
+trading-bot-web --port 8010 --reports-dir reports
 ```
 
 ## Come usarlo bene
@@ -75,4 +98,3 @@ reports/
 - non simula slippage avanzato o ordini intraday
 
 Questo e' voluto: serve per scegliere velocemente una direzione di ricerca, non per andare live domani.
-

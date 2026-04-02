@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
-from trading_bot.backtest import run_backtest, save_report
-from trading_bot.data import download_price_data
-from trading_bot.strategies import rsi_mean_reversion, sma_crossover
+from trading_bot.services import BacktestRequest, run_backtest_request
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -32,42 +29,30 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    args = build_parser().parse_args()
-    data = download_price_data(
-        symbol=args.symbol,
-        start=args.start,
-        end=args.end,
-        interval=args.interval,
+    parsed = build_parser().parse_args()
+    backtest_request = BacktestRequest(
+        symbol=parsed.symbol,
+        start=parsed.start,
+        end=parsed.end,
+        interval=parsed.interval,
+        strategy=parsed.strategy,
+        initial_capital=parsed.initial_capital,
+        fee_bps=parsed.fee_bps,
+        fast=parsed.fast,
+        slow=parsed.slow,
+        rsi_period=parsed.rsi_period,
+        rsi_lower=parsed.rsi_lower,
+        rsi_upper=parsed.rsi_upper,
+    )
+    completed = run_backtest_request(
+        backtest_request=backtest_request,
+        output_dir=parsed.output_dir,
     )
 
-    if args.strategy == "sma_cross":
-        signal = sma_crossover(data, fast=args.fast, slow=args.slow)
-    else:
-        signal = rsi_mean_reversion(
-            data,
-            period=args.rsi_period,
-            lower=args.rsi_lower,
-            upper=args.rsi_upper,
-        )
-
-    result = run_backtest(
-        data=data,
-        signal=signal,
-        initial_capital=args.initial_capital,
-        fee_bps=args.fee_bps,
-    )
-    report_dir = save_report(
-        result=result,
-        output_dir=Path(args.output_dir),
-        symbol=args.symbol,
-        strategy_name=args.strategy,
-    )
-
-    print(f"Report saved to: {report_dir}")
-    for key, value in result.summary.items():
+    print(f"Report saved to: {completed.report_dir}")
+    for key, value in completed.result.summary.items():
         print(f"{key}: {value}")
 
 
 if __name__ == "__main__":
     main()
-

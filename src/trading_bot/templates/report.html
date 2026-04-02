@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}{{ report.metadata.symbol or report.name }} - Trading Bot Lab{% endblock %}
+{% block content %}
+  <section class="hero-panel report-hero">
+    <div>
+      <p class="eyebrow">{{ report.metadata.strategy_label or report.metadata.strategy }}</p>
+      <h2>{{ report.metadata.symbol or report.name }}</h2>
+      <p class="hero-copy">
+        Periodo {{ report.metadata.start or "n/a" }} -> {{ report.metadata.end or "n/a" }},
+        intervallo {{ report.metadata.interval or "n/a" }},
+        fee {{ report.metadata.fee_bps or "n/a" }} bps.
+      </p>
+    </div>
+    <div class="hero-actions">
+      <a class="ghost-link" href="{{ url_for('download_report_file', report_name=report.name, filename='summary.json') }}">summary.json</a>
+      <a class="ghost-link" href="{{ url_for('download_report_file', report_name=report.name, filename='equity_curve.csv') }}">equity_curve.csv</a>
+      <a class="ghost-link" href="{{ url_for('download_report_file', report_name=report.name, filename='trades.csv') }}">trades.csv</a>
+    </div>
+  </section>
+
+  <section class="stats-grid">
+    {% for card in report.summary_cards %}
+      <article class="stat-card">
+        <p>{{ card.label }}</p>
+        <strong>{{ card.value }}</strong>
+      </article>
+    {% endfor %}
+  </section>
+
+  <section class="layout-grid report-layout">
+    <article class="panel chart-panel">
+      <div class="panel-header">
+        <p class="eyebrow">equity curve</p>
+        <h3>Strategia vs benchmark</h3>
+      </div>
+      <div class="chart-shell">
+        <div class="chart-meta">
+          <span>max {{ report.equity_chart.max_label }}</span>
+          <span>min {{ report.equity_chart.min_label }}</span>
+        </div>
+        <svg viewBox="0 0 {{ report.equity_chart.width }} {{ report.equity_chart.height }}" class="chart-svg" aria-label="Equity chart">
+          <line x1="24" y1="{{ report.equity_chart.zero_y }}" x2="{{ report.equity_chart.width - 24 }}" y2="{{ report.equity_chart.zero_y }}" class="chart-baseline"></line>
+          {% for series in report.equity_chart.series %}
+            <polyline points="{{ series.points }}" stroke="{{ series.color }}" fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+          {% endfor %}
+        </svg>
+        <div class="chart-legend">
+          {% for series in report.equity_chart.series %}
+            <div>
+              <span class="legend-dot" style="background: {{ series.color }}"></span>
+              {{ series.label }}: {{ series.latest }}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </article>
+
+    <article class="panel chart-panel">
+      <div class="panel-header">
+        <p class="eyebrow">rischio</p>
+        <h3>Drawdown</h3>
+      </div>
+      <div class="chart-shell">
+        <div class="chart-meta">
+          <span>max {{ report.drawdown_chart.max_label }}%</span>
+          <span>min {{ report.drawdown_chart.min_label }}%</span>
+        </div>
+        <svg viewBox="0 0 {{ report.drawdown_chart.width }} {{ report.drawdown_chart.height }}" class="chart-svg" aria-label="Drawdown chart">
+          <line x1="24" y1="{{ report.drawdown_chart.zero_y }}" x2="{{ report.drawdown_chart.width - 24 }}" y2="{{ report.drawdown_chart.zero_y }}" class="chart-baseline"></line>
+          {% for series in report.drawdown_chart.series %}
+            <polyline points="{{ series.points }}" stroke="{{ series.color }}" fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+          {% endfor %}
+        </svg>
+      </div>
+    </article>
+  </section>
+
+  <section class="layout-grid report-layout">
+    <article class="panel">
+      <div class="panel-header">
+        <p class="eyebrow">trade preview</p>
+        <h3>Prime 20 operazioni</h3>
+      </div>
+      {% if report.trade_preview %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Entry</th>
+                <th>Exit</th>
+                <th>PnL %</th>
+                <th>Holding</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for trade in report.trade_preview %}
+                <tr>
+                  <td>{{ trade.entry_date }} @ {{ trade.entry_price }}</td>
+                  <td>{{ trade.exit_date or "-" }} {% if trade.exit_price %}@ {{ trade.exit_price }}{% endif %}</td>
+                  <td>{{ trade.pnl_pct or "-" }}</td>
+                  <td>{{ trade.holding_days or "-" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <p>Nessun trade registrato in questo report.</p>
+        </div>
+      {% endif %}
+    </article>
+
+    <article class="panel">
+      <div class="panel-header">
+        <p class="eyebrow">recenti</p>
+        <h3>Altri report</h3>
+      </div>
+      <div class="report-list report-list-compact">
+        {% for item in reports[:10] %}
+          <a class="report-card" href="{{ url_for('report_detail', report_name=item.name) }}">
+            <div class="report-card-head">
+              <strong>{{ item.metadata.symbol or item.name }}</strong>
+              <span>{{ item.metadata.strategy_label or item.metadata.strategy or "Backtest" }}</span>
+            </div>
+            <div class="report-card-metrics">
+              <div>
+                <label>Total return</label>
+                <span>{{ item.summary.total_return_pct }}%</span>
+              </div>
+              <div>
+                <label>Trades</label>
+                <span>{{ item.summary.trade_count }}</span>
+              </div>
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+    </article>
+  </section>
+{% endblock %}

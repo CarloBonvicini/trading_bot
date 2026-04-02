@@ -1,0 +1,452 @@
+:root {
+  --bg: #f3efe5;
+  --panel: rgba(255, 249, 240, 0.92);
+  --panel-strong: #fff7ee;
+  --ink: #1b1b18;
+  --muted: #6e6658;
+  --accent: #0f766e;
+  --accent-soft: #c8ebe5;
+  --secondary: #a21caf;
+  --danger: #c2410c;
+  --line: rgba(27, 27, 24, 0.1);
+  --shadow: 0 18px 60px rgba(64, 36, 18, 0.12);
+  --radius-xl: 28px;
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --font-sans: "Aptos", "Segoe UI Variable", "Trebuchet MS", sans-serif;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, rgba(162, 28, 175, 0.14), transparent 32%),
+    radial-gradient(circle at top right, rgba(15, 118, 110, 0.18), transparent 34%),
+    linear-gradient(180deg, #f8f4ea 0%, var(--bg) 100%);
+}
+
+.ambient {
+  position: fixed;
+  width: 24rem;
+  height: 24rem;
+  border-radius: 999px;
+  filter: blur(70px);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.ambient-left {
+  top: -6rem;
+  left: -5rem;
+  background: rgba(15, 118, 110, 0.25);
+}
+
+.ambient-right {
+  top: 12rem;
+  right: -8rem;
+  background: rgba(162, 28, 175, 0.22);
+}
+
+.shell-header,
+.page-shell {
+  position: relative;
+  z-index: 1;
+}
+
+.shell-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.2rem 1.5rem 0;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.9rem;
+  color: white;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), var(--secondary));
+  box-shadow: var(--shadow);
+}
+
+.brand h1,
+.hero-panel h2,
+.panel-header h3 {
+  margin: 0;
+  font-family: var(--font-serif);
+  letter-spacing: -0.02em;
+}
+
+.eyebrow {
+  margin: 0 0 0.2rem;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--muted);
+}
+
+.shell-nav a,
+.ghost-link {
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.page-shell {
+  width: min(1180px, calc(100vw - 2rem));
+  margin: 0 auto;
+  padding: 1.25rem 0 2rem;
+}
+
+.hero-panel,
+.panel,
+.stat-card,
+.flash {
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(12px);
+}
+
+.hero-panel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1.8rem;
+  border-radius: var(--radius-xl);
+  animation: rise-in 500ms ease both;
+}
+
+.hero-copy {
+  max-width: 52rem;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.hero-pill {
+  min-width: 9rem;
+  padding: 1rem 1.2rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent-soft), rgba(255, 255, 255, 0.9));
+  text-align: center;
+  font-weight: 700;
+}
+
+.hero-pill span {
+  display: block;
+  font-size: 1.8rem;
+  font-family: var(--font-serif);
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.ghost-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.7rem 1rem;
+  border-radius: 999px;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+}
+
+.layout-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 1.2rem;
+  margin-top: 1.2rem;
+}
+
+.report-layout {
+  grid-template-columns: 1fr 1fr;
+}
+
+.panel {
+  border-radius: var(--radius-xl);
+  padding: 1.35rem;
+  animation: rise-in 620ms ease both;
+}
+
+.panel-header {
+  margin-bottom: 1rem;
+}
+
+.backtest-form,
+.strategy-fields {
+  display: grid;
+  gap: 1rem;
+}
+
+.input-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.strategy-fields .input-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+label {
+  display: grid;
+  gap: 0.45rem;
+}
+
+label span,
+.section-label,
+.chart-meta,
+th,
+.report-card-metrics label {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+input,
+select,
+button {
+  font: inherit;
+}
+
+input,
+select {
+  width: 100%;
+  padding: 0.85rem 0.95rem;
+  border: 1px solid rgba(27, 27, 24, 0.14);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--ink);
+}
+
+input:focus,
+select:focus {
+  outline: 2px solid rgba(15, 118, 110, 0.24);
+  border-color: var(--accent);
+}
+
+.strategy-fields {
+  display: none;
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px dashed rgba(27, 27, 24, 0.12);
+}
+
+.strategy-fields.is-active {
+  display: grid;
+}
+
+.action-button {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.95rem 1.2rem;
+  color: white;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent), #14532d);
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.action-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 26px rgba(15, 118, 110, 0.22);
+}
+
+.report-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.report-card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.75);
+  border: 1px solid var(--line);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 180ms ease, border-color 180ms ease;
+}
+
+.report-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(15, 118, 110, 0.35);
+}
+
+.report-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.report-card-head span {
+  color: var(--muted);
+  text-align: right;
+}
+
+.report-card-metrics {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.report-card-metrics span,
+.stat-card strong {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.flash-stack {
+  display: grid;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.flash {
+  padding: 0.95rem 1rem;
+  border-radius: var(--radius-lg);
+}
+
+.flash-success {
+  border-left: 5px solid var(--accent);
+}
+
+.flash-error {
+  border-left: 5px solid var(--danger);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 1.2rem;
+}
+
+.stat-card {
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+}
+
+.stat-card p {
+  margin: 0 0 0.4rem;
+  color: var(--muted);
+}
+
+.chart-shell {
+  padding: 0.5rem 0 0;
+}
+
+.chart-meta,
+.chart-legend {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.chart-svg {
+  width: 100%;
+  height: auto;
+  margin: 0.65rem 0;
+  padding: 0.25rem 0;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(245, 240, 230, 0.95));
+}
+
+.chart-baseline {
+  stroke: rgba(27, 27, 24, 0.12);
+  stroke-dasharray: 5 5;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 999px;
+  margin-right: 0.4rem;
+}
+
+.table-wrap {
+  overflow: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.8rem 0.9rem;
+  border-bottom: 1px solid rgba(27, 27, 24, 0.08);
+}
+
+.empty-state {
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.58);
+  color: var(--muted);
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 980px) {
+  .layout-grid,
+  .report-layout,
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-panel,
+  .shell-header,
+  .report-card-head,
+  .chart-meta,
+  .chart-legend {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .input-grid,
+  .strategy-fields .input-grid,
+  .report-card-metrics {
+    grid-template-columns: 1fr;
+  }
+}
