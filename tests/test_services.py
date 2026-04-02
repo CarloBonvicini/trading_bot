@@ -4,7 +4,14 @@ from pathlib import Path
 
 import pandas as pd
 
-from trading_bot.services import IntegerRange, SweepRequest, run_sma_sweep_request
+from trading_bot.services import (
+    IntegerRange,
+    STRATEGY_OPTIONS,
+    SweepRequest,
+    list_strategy_presets,
+    run_sma_sweep_request,
+    save_strategy_preset,
+)
 
 
 def test_run_sma_sweep_request_generates_all_valid_combinations(monkeypatch, tmp_path: Path) -> None:
@@ -33,3 +40,33 @@ def test_run_sma_sweep_request_generates_all_valid_combinations(monkeypatch, tmp
     assert completed.results["rank"].tolist() == list(range(1, 9))
     assert (tmp_path / completed.sweep_dir.name / "results.csv").exists()
     assert (tmp_path / completed.sweep_dir.name / "best_summary.json").exists()
+
+
+def test_strategy_catalog_and_presets_cover_extended_setup(tmp_path: Path) -> None:
+    assert len(STRATEGY_OPTIONS) >= 10
+    assert "macd_trend" in STRATEGY_OPTIONS
+    assert "obv_trend" in STRATEGY_OPTIONS
+
+    saved = save_strategy_preset(
+        raw={
+            "preset_name": "MACD test",
+            "symbol": "SPY",
+            "start": "2024-01-01",
+            "end": "2024-03-01",
+            "interval": "1d",
+            "strategy": "macd_trend",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "macd_trend__fast": "12",
+            "macd_trend__slow": "26",
+            "macd_trend__signal": "9",
+        },
+        output_dir=tmp_path,
+    )
+
+    presets = list_strategy_presets(tmp_path)
+
+    assert saved["name"] == "MACD test"
+    assert len(presets) == 1
+    assert presets[0]["strategy"] == "macd_trend"
+    assert presets[0]["parameters"] == {"fast": 12, "slow": 26, "signal": 9}

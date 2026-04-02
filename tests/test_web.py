@@ -177,11 +177,12 @@ def test_index_lists_existing_reports(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Nuovo backtest" in body
+    assert "Preset strategia" in body
     assert "SPY" in body
     assert "Buy &amp; hold" in body
     assert "Sweep parametri" in body
     assert "Run valide" in body
+    assert "MACD Trend" in body
     assert "data-expandable-panel" in body
 
 
@@ -300,3 +301,31 @@ def test_sweep_detail_renders_ranking_and_best_run(tmp_path: Path) -> None:
     assert "Migliori combinazioni SMA" in body
     assert "Prime 20 operazioni del best run" in body
     assert "20 / 100" in body
+
+
+def test_create_preset_saves_named_strategy_setup(tmp_path: Path) -> None:
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+    client = app.test_client()
+
+    response = client.post(
+        "/presets",
+        data={
+            "preset_name": "RSI daily base",
+            "symbol": "SPY",
+            "start": "2020-01-01",
+            "end": "2024-12-31",
+            "run_mode": "single",
+            "interval": "1d",
+            "strategy": "rsi_mean_reversion",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "rsi_mean_reversion__period": "14",
+            "rsi_mean_reversion__lower": "30",
+            "rsi_mean_reversion__upper": "55",
+        },
+    )
+
+    assert response.status_code == 201
+    assert (tmp_path / "strategy_presets.json").exists()
+    body = response.get_data(as_text=True)
+    assert "Preset salvato: RSI daily base" in body

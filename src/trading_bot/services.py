@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+import re
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Mapping
@@ -10,7 +11,14 @@ import pandas as pd
 
 from trading_bot.backtest import BacktestResult, run_backtest, save_report
 from trading_bot.data import download_price_data
-from trading_bot.strategies import rsi_mean_reversion, sma_crossover
+from trading_bot.strategies import (
+    STRATEGY_SPECS,
+    build_strategy_signal,
+    default_parameter_values,
+    parse_strategy_parameters,
+    strategy_field_name,
+    strategy_options,
+)
 
 DEFAULT_REPORTS_DIR = Path("reports")
 INTERVAL_OPTIONS = ("1h", "1d", "1wk", "1mo")
@@ -21,17 +29,9 @@ SWEEP_SORT_OPTIONS = {
     "sharpe_ratio": "Best Sharpe",
     "max_drawdown_pct": "Best max drawdown",
 }
-
-STRATEGY_OPTIONS = {
-    "sma_cross": {
-        "label": "SMA Crossover",
-        "description": "Va long quando la media mobile veloce supera quella lenta.",
-    },
-    "rsi_mean_reversion": {
-        "label": "RSI Mean Reversion",
-        "description": "Compra dopo ipervenduto RSI e chiude quando il momentum rientra.",
-    },
-}
+STRATEGY_OPTIONS = strategy_options()
+PRESETS_FILENAME = "strategy_presets.json"
+PRESET_NAME_PATTERN = re.compile(r"[^a-z0-9]+")
 
 
 @dataclass(frozen=True)
@@ -43,11 +43,7 @@ class BacktestRequest:
     strategy: str = "sma_cross"
     initial_capital: float = 10_000.0
     fee_bps: float = 5.0
-    fast: int = 20
-    slow: int = 100
-    rsi_period: int = 14
-    rsi_lower: float = 30.0
-    rsi_upper: float = 55.0
+    parameters: dict[str, int | float] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, object]) -> "BacktestRequest":
@@ -78,25 +74,15 @@ class BacktestRequest:
             strategy=strategy,
             initial_capital=float(text("initial_capital", "10000")),
             fee_bps=float(text("fee_bps", "5")),
-            fast=int(text("fast", "20")),
-            slow=int(text("slow", "100")),
-            rsi_period=int(text("rsi_period", "14")),
-            rsi_lower=float(text("rsi_lower", "30")),
-            rsi_upper=float(text("rsi_upper", "55")),
+            parameters=parse_strategy_parameters(strategy, raw),
         )
 
     @property
     def strategy_label(self) -> str:
         return STRATEGY_OPTIONS[self.strategy]["label"]
 
-    def strategy_parameters(self) -> dict[str, float | int]:
-        if self.strategy == "sma_cross":
-            return {"fast": self.fast, "slow": self.slow}
-        return {
-            "rsi_period": self.rsi_period,
-            "rsi_lower": self.rsi_lower,
-            "rsi_upper": self.rsi_upper,
-        }
+    def strategy_parameters(self) -> dict[str, int | float]:
+        return dict(self.parameters)
 
     def metadata(self) -> dict[str, object]:
         return {
@@ -185,12 +171,6 @@ class SweepRequest:
     def strategy_label(self) -> str:
         return STRATEGY_OPTIONS[self.strategy]["label"]
 
-    def parameter_space(self) -> dict[str, dict[str, int]]:
-        return {
-            "fast": self.fast_range.as_dict(),
-            "slow": self.slow_range.as_dict(),
-        }
-
     def metadata(self) -> dict[str, object]:
         return {
             "symbol": self.symbol,
@@ -202,16 +182,15 @@ class SweepRequest:
             "strategy_label": self.strategy_label,
             "initial_capital": self.initial_capital,
             "fee_bps": self.fee_bps,
-            "parameter_space": self.parameter_space(),
+            "parameter_space": {
+                "fast": self.fast_range.as_dict(),
+                "slow": self.slow_range.as_dict(),
+            },
             "sort_by": self.sort_by,
         }
 
     def iter_parameter_combinations(self) -> list[tuple[int, int]]:
-        combinations: list[tuple[int, int]] = []
-        for fast in self.fast_range.values():
-            for slow in self.slow_range.values():
-                combinations.append((fast, slow))
-        return combinations
+        return [(fast, slow) for fast in self.fast_range.values() for slow in self.slow_range.values()]
 
 
 @dataclass(frozen=True)
@@ -233,21 +212,11 @@ def run_backtest_request(
         end=backtest_request.end,
         interval=backtest_request.interval,
     )
-
-    if backtest_request.strategy == "sma_cross":
-        signal = sma_crossover(
-            data,
-            fast=backtest_request.fast,
-            slow=backtest_request.slow,
-        )
-    else:
-        signal = rsi_mean_reversion(
-            data,
-            period=backtest_request.rsi_period,
-            lower=backtest_request.rsi_lower,
-            upper=backtest_request.rsi_upper,
-        )
-
+    signal = build_strategy_signal(
+        strategy_id=backtest_request.strategy,
+        data=data,
+        parameters=backtest_request.strategy_parameters(),
+    )
     result = run_backtest(
         data=data,
         signal=signal,
@@ -262,11 +231,7 @@ def run_backtest_request(
         strategy_name=backtest_request.strategy,
     )
     write_report_metadata(report_dir=report_dir, backtest_request=backtest_request)
-    return CompletedBacktest(
-        request=backtest_request,
-        report_dir=report_dir,
-        result=result,
-    )
+    return CompletedBacktest(request=backtest_request, report_dir=report_dir, result=result)
 
 
 def run_sma_sweep_request(
@@ -292,19 +257,15 @@ def run_sma_sweep_request(
             invalid_combinations += 1
             continue
 
-        signal = sma_crossover(data, fast=fast, slow=slow)
+        parameters = {"fast": fast, "slow": slow}
+        signal = build_strategy_signal(strategy_id="sma_cross", data=data, parameters=parameters)
         result = run_backtest(
             data=data,
             signal=signal,
             initial_capital=sweep_request.initial_capital,
             fee_bps=sweep_request.fee_bps,
         )
-        row = {
-            "fast": fast,
-            "slow": slow,
-            **result.summary,
-        }
-        results.append(row)
+        results.append({"fast": fast, "slow": slow, **result.summary})
         completed_by_parameters[(fast, slow)] = result
 
     if not results:
@@ -396,9 +357,69 @@ def save_sweep_report(
     return sweep_dir
 
 
+def preset_storage_path(output_dir: str | Path = DEFAULT_REPORTS_DIR) -> Path:
+    return Path(output_dir) / PRESETS_FILENAME
+
+
+def list_strategy_presets(output_dir: str | Path = DEFAULT_REPORTS_DIR) -> list[dict[str, object]]:
+    path = preset_storage_path(output_dir)
+    if not path.exists():
+        return []
+
+    with path.open("r", encoding="utf-8") as handle:
+        presets = json.load(handle)
+    return sorted(presets, key=lambda item: str(item.get("saved_at", "")), reverse=True)
+
+
+def save_strategy_preset(raw: Mapping[str, object], output_dir: str | Path = DEFAULT_REPORTS_DIR) -> dict[str, object]:
+    preset_name = str(raw.get("preset_name", "")).strip()
+    if not preset_name:
+        raise ValueError("Dammi un nome per salvare il preset strategia.")
+
+    request = BacktestRequest.from_mapping(raw)
+    run_mode = str(raw.get("run_mode", "single")).strip().lower()
+    if run_mode not in RUN_MODE_OPTIONS:
+        run_mode = "single"
+    if run_mode == "sweep" and request.strategy != "sma_cross":
+        run_mode = "single"
+
+    preset = {
+        "id": _preset_slug(preset_name),
+        "name": preset_name,
+        "strategy": request.strategy,
+        "strategy_label": request.strategy_label,
+        "interval": request.interval,
+        "initial_capital": request.initial_capital,
+        "fee_bps": request.fee_bps,
+        "run_mode": run_mode,
+        "parameters": request.strategy_parameters(),
+        "sweep_settings": {
+            "sort_by": str(raw.get("sort_by", "total_return_pct")),
+            "fast_start": int(float(raw.get("fast_start", 10))),
+            "fast_end": int(float(raw.get("fast_end", 40))),
+            "fast_step": int(float(raw.get("fast_step", 10))),
+            "slow_start": int(float(raw.get("slow_start", 80))),
+            "slow_end": int(float(raw.get("slow_end", 200))),
+            "slow_step": int(float(raw.get("slow_step", 20))),
+        },
+        "saved_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+    existing = list_strategy_presets(output_dir)
+    updated = [item for item in existing if str(item.get("id")) != preset["id"]]
+    updated.insert(0, preset)
+
+    path = preset_storage_path(output_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(updated, handle, indent=2)
+    return preset
+
+
 def default_form_values() -> dict[str, object]:
     current_year = datetime.now().year
     return {
+        "preset_name": "",
         "run_mode": "single",
         "symbol": "SPY",
         "start": f"{current_year - 6}-01-01",
@@ -408,17 +429,13 @@ def default_form_values() -> dict[str, object]:
         "initial_capital": 10_000.0,
         "fee_bps": 5.0,
         "sort_by": "total_return_pct",
-        "fast": 20,
-        "slow": 100,
         "fast_start": 10,
         "fast_end": 40,
         "fast_step": 10,
         "slow_start": 80,
         "slow_end": 200,
         "slow_step": 20,
-        "rsi_period": 14,
-        "rsi_lower": 30.0,
-        "rsi_upper": 55.0,
+        **default_parameter_values(),
     }
 
 
@@ -426,5 +443,23 @@ def as_form_values(backtest_request: BacktestRequest | None = None) -> dict[str,
     values = default_form_values()
     if backtest_request is None:
         return values
-    values.update(asdict(backtest_request))
+
+    values.update(
+        {
+            "symbol": backtest_request.symbol,
+            "start": backtest_request.start,
+            "end": backtest_request.end,
+            "interval": backtest_request.interval,
+            "strategy": backtest_request.strategy,
+            "initial_capital": backtest_request.initial_capital,
+            "fee_bps": backtest_request.fee_bps,
+        }
+    )
+    for parameter_name, parameter_value in backtest_request.strategy_parameters().items():
+        values[strategy_field_name(backtest_request.strategy, parameter_name)] = parameter_value
     return values
+
+
+def _preset_slug(name: str) -> str:
+    normalized = PRESET_NAME_PATTERN.sub("-", name.lower()).strip("-")
+    return normalized or "strategy-preset"

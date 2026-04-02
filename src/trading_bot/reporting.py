@@ -25,9 +25,7 @@ SUMMARY_LABELS = {
     "fee_drag_equity": "Impatto fee",
 }
 
-REPORT_NAME_PATTERN = re.compile(
-    r"^(?P<symbol>.+)-(?P<strategy>sma_cross|rsi_mean_reversion)-(?P<timestamp>\d{8}-\d{6})$"
-)
+REPORT_NAME_PATTERN = re.compile(r"^(?P<symbol>.+)-(?P<strategy>[a-z_]+)-(?P<timestamp>\d{8}-\d{6})$")
 
 
 def list_saved_items(output_dir: str | Path) -> list[dict[str, object]]:

@@ -15,8 +15,10 @@ from trading_bot.services import (
     BacktestRequest,
     SweepRequest,
     as_form_values,
+    list_strategy_presets,
     run_backtest_request,
     run_sma_sweep_request,
+    save_strategy_preset,
 )
 
 ALLOWED_REPORT_FILES = {"summary.json", "equity_curve.csv", "trades.csv", "metadata.json"}
@@ -74,6 +76,20 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
 
         flash(f"Backtest completato: {completed.report_dir.name}", "success")
         return redirect(url_for("report_detail", report_name=completed.report_dir.name))
+
+    @app.post("/presets")
+    def create_preset():
+        try:
+            preset = save_strategy_preset(
+                raw=request.form,
+                output_dir=current_app.config["REPORTS_DIR"],
+            )
+        except Exception as exc:
+            flash(str(exc), "error")
+            return _render_home(form_values=dict(request.form), status=400)
+
+        flash(f"Preset salvato: {preset['name']}", "success")
+        return _render_home(form_values=dict(request.form), status=201)
 
     @app.get("/reports/<report_name>")
     def report_detail(report_name: str) -> str:
@@ -152,6 +168,7 @@ def _render_home(form_values: dict[str, object] | None = None, status: int = 200
         "index.html",
         form_values=values,
         saved_items=list_saved_items(current_app.config["REPORTS_DIR"]),
+        strategy_presets=list_strategy_presets(current_app.config["REPORTS_DIR"]),
         strategies=STRATEGY_OPTIONS,
         intervals=INTERVAL_OPTIONS,
         run_modes=RUN_MODE_OPTIONS,

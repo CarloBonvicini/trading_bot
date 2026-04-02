@@ -5,11 +5,20 @@ Starter leggero in Python per fare ricerca e backtest prima di costruire un bot 
 ## Cosa include
 
 - download dati storici con `yfinance`
-- due strategie iniziali:
+- libreria iniziale con 10 strategie basate su indicatori:
   - `sma_cross`
+  - `ema_cross`
   - `rsi_mean_reversion`
+  - `macd_trend`
+  - `bollinger_reversion`
+  - `stochastic_reversion`
+  - `cci_reversion`
+  - `williams_r_reversion`
+  - `adx_trend`
+  - `obv_trend`
 - backtest long-only con costi di transazione
 - dashboard web locale per lanciare i test e vedere i report su browser
+- preset strategia salvabili con nome
 - report salvati in `reports/` con:
   - `summary.json`
   - `metadata.json`
@@ -82,6 +91,15 @@ Puoi anche cambiare porta o cartella report:
 ```powershell
 trading-bot-web --port 8010 --reports-dir reports
 ```
+
+## Preset e strategie
+
+Dalla UI locale puoi:
+
+- salvare un preset strategia con nome
+- ricaricare un preset dalla select
+- usare i punti di intervento specifici per ogni strategia
+- lanciare sweep multipli sulla `SMA Crossover`
 
 ## Come usarlo bene
 
