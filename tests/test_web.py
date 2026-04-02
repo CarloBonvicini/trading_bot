@@ -16,7 +16,9 @@ def create_report_fixture(report_dir: Path) -> None:
             {
                 "initial_capital": 10000.0,
                 "final_equity": 12000.0,
+                "benchmark_final_equity": 11700.0,
                 "total_return_pct": 20.0,
+                "excess_return_pct": 3.0,
                 "annual_return_pct": 9.5,
                 "annual_volatility_pct": 12.0,
                 "sharpe_ratio": 0.91,
@@ -74,6 +76,7 @@ def test_index_lists_existing_reports(tmp_path: Path) -> None:
     body = response.get_data(as_text=True)
     assert "Nuovo backtest" in body
     assert "SPY" in body
+    assert "Buy &amp; hold" in body
 
 
 def test_create_backtest_redirects_to_report(monkeypatch, tmp_path: Path) -> None:
@@ -123,5 +126,6 @@ def test_report_detail_renders_chart_and_trade_table(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Strategia vs benchmark" in body
+    assert "Strategia vs buy &amp; hold" in body
+    assert "Delta vs hold" in body
     assert "Prime 20 operazioni" in body

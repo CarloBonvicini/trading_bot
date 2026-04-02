@@ -39,4 +39,5 @@ def test_backtest_shifts_signal_to_avoid_lookahead() -> None:
 
     assert result.equity_curve["position"].tolist() == [0.0, 1.0, 1.0]
     assert round(result.summary["final_equity"], 2) == 1210.0
-
+    assert round(result.summary["benchmark_final_equity"], 2) == 1210.0
+    assert round(result.summary["excess_return_pct"], 2) == 0.0

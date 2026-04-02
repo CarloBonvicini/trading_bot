@@ -90,7 +90,9 @@ def _build_summary(
 ) -> dict[str, float | int | str]:
     strategy_returns = equity_curve["strategy_return"]
     final_equity = float(equity_curve["equity"].iloc[-1])
+    benchmark_final_equity = float(equity_curve["benchmark_equity"].iloc[-1])
     total_return = (final_equity / initial_capital) - 1
+    benchmark_return = (benchmark_final_equity / initial_capital) - 1
     periods = len(equity_curve)
     years = periods / TRADING_DAYS_PER_YEAR if periods else 0.0
     annual_return = (final_equity / initial_capital) ** (1 / years) - 1 if years > 0 else 0.0
@@ -105,16 +107,15 @@ def _build_summary(
         "initial_capital": round(initial_capital, 2),
         "final_equity": round(final_equity, 2),
         "total_return_pct": round(total_return * 100, 2),
+        "benchmark_final_equity": round(benchmark_final_equity, 2),
+        "excess_return_pct": round((total_return - benchmark_return) * 100, 2),
         "annual_return_pct": round(annual_return * 100, 2),
         "annual_volatility_pct": round(annual_volatility * 100, 2),
         "sharpe_ratio": round(float(sharpe_ratio), 3),
         "max_drawdown_pct": round(float(equity_curve["drawdown"].min()) * 100, 2),
         "trade_count": int(len(trades)),
         "exposure_pct": round(float(equity_curve["position"].mean()) * 100, 2),
-        "benchmark_return_pct": round(
-            ((equity_curve["benchmark_equity"].iloc[-1] / initial_capital) - 1) * 100,
-            2,
-        ),
+        "benchmark_return_pct": round(benchmark_return * 100, 2),
     }
 
 
@@ -143,4 +144,3 @@ def _build_trades(close: pd.Series, position: pd.Series) -> pd.DataFrame:
         )
 
     return pd.DataFrame(trades)
-

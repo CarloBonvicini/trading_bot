@@ -27,11 +27,35 @@
     {% endfor %}
   </section>
 
+  <section class="panel comparison-panel">
+    <div class="panel-header">
+      <p class="eyebrow">confronto diretto</p>
+      <h3>Strategia vs semplice buy &amp; hold</h3>
+    </div>
+    <div class="comparison-grid">
+      <article class="comparison-card">
+        <p>Strategia</p>
+        <strong>{{ report.comparison.strategy_return_pct }}%</strong>
+        <span>Equity finale {{ report.comparison.strategy_final_equity }}</span>
+      </article>
+      <article class="comparison-card">
+        <p>Buy &amp; hold</p>
+        <strong>{{ report.comparison.hold_return_pct }}%</strong>
+        <span>Equity finale {{ report.comparison.hold_final_equity }}</span>
+      </article>
+      <article class="comparison-card comparison-card-accent">
+        <p>Delta vs hold</p>
+        <strong>{{ report.comparison.delta_pct }}%</strong>
+        <span>{{ report.comparison.verdict }}</span>
+      </article>
+    </div>
+  </section>
+
   <section class="layout-grid report-layout">
     <article class="panel chart-panel">
       <div class="panel-header">
         <p class="eyebrow">equity curve</p>
-        <h3>Strategia vs benchmark</h3>
+        <h3>Strategia vs buy &amp; hold</h3>
       </div>
       <div class="chart-shell">
         <div class="chart-meta">

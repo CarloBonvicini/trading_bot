@@ -311,7 +311,7 @@ select:focus {
 .report-card-metrics {
   display: grid;
   gap: 0.75rem;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .report-card-metrics span,
@@ -343,7 +343,7 @@ select:focus {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 1rem;
   margin-top: 1.2rem;
 }
@@ -360,6 +360,17 @@ select:focus {
 
 .chart-shell {
   padding: 0.5rem 0 0;
+}
+
+.mini-chart-shell {
+  margin-top: 0.1rem;
+}
+
+.mini-chart-svg {
+  width: 100%;
+  height: auto;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(243, 239, 229, 0.85));
 }
 
 .chart-meta,
@@ -417,6 +428,40 @@ td {
   color: var(--muted);
 }
 
+.comparison-panel {
+  margin-top: 1.2rem;
+}
+
+.comparison-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.comparison-card {
+  display: grid;
+  gap: 0.3rem;
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.74);
+  border: 1px solid var(--line);
+}
+
+.comparison-card p,
+.comparison-card span {
+  margin: 0;
+  color: var(--muted);
+}
+
+.comparison-card strong {
+  font-size: 1.45rem;
+  font-family: var(--font-serif);
+}
+
+.comparison-card-accent {
+  background: linear-gradient(135deg, rgba(15, 118, 110, 0.12), rgba(200, 235, 229, 0.9));
+}
+
 @keyframes rise-in {
   from {
     opacity: 0;
@@ -446,7 +491,8 @@ td {
 
   .input-grid,
   .strategy-fields .input-grid,
-  .report-card-metrics {
+  .report-card-metrics,
+  .comparison-grid {
     grid-template-columns: 1fr;
   }
 }

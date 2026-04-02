@@ -9,6 +9,7 @@ import pandas as pd
 SUMMARY_LABELS = {
     "initial_capital": "Capitale iniziale",
     "final_equity": "Equity finale",
+    "benchmark_final_equity": "Equity buy & hold",
     "total_return_pct": "Rendimento totale",
     "annual_return_pct": "Rendimento annuo",
     "annual_volatility_pct": "Volatilita' annua",
@@ -16,7 +17,8 @@ SUMMARY_LABELS = {
     "max_drawdown_pct": "Max drawdown",
     "trade_count": "Numero trade",
     "exposure_pct": "Esposizione",
-    "benchmark_return_pct": "Benchmark",
+    "benchmark_return_pct": "Buy & hold",
+    "excess_return_pct": "Delta vs hold",
 }
 
 REPORT_NAME_PATTERN = re.compile(
@@ -36,8 +38,9 @@ def list_reports(output_dir: str | Path) -> list[dict[str, object]]:
         summary_file = report_dir / "summary.json"
         if not summary_file.exists():
             continue
-        summary = _read_json(summary_file)
+        summary = enrich_summary(_read_json(summary_file), report_dir)
         metadata = read_report_metadata(report_dir)
+        equity_curve = _read_equity_curve(report_dir)
         reports.append(
             {
                 "name": report_dir.name,
@@ -45,6 +48,17 @@ def list_reports(output_dir: str | Path) -> list[dict[str, object]]:
                 "summary": summary,
                 "metadata": metadata,
                 "created_at": metadata.get("created_at", ""),
+                "comparison": build_comparison(summary),
+                "preview_chart": build_line_chart(
+                    {
+                        "Strategy": sample_series(equity_curve["equity"], max_points=72),
+                        "Buy & hold": sample_series(equity_curve["benchmark_equity"], max_points=72),
+                    },
+                    colors={"Strategy": "#0f766e", "Buy & hold": "#c084fc"},
+                    width=300,
+                    height=94,
+                    padding=10,
+                ),
             }
         )
 
@@ -63,9 +77,9 @@ def load_report(output_dir: str | Path, report_name: str) -> dict[str, object]:
     if not report_dir.exists():
         raise FileNotFoundError(f"Report '{report_name}' not found.")
 
-    summary = _read_json(report_dir / "summary.json")
+    summary = enrich_summary(_read_json(report_dir / "summary.json"), report_dir)
     metadata = read_report_metadata(report_dir)
-    equity_curve = pd.read_csv(report_dir / "equity_curve.csv")
+    equity_curve = _read_equity_curve(report_dir)
     trades = pd.read_csv(report_dir / "trades.csv")
 
     return {
@@ -74,12 +88,13 @@ def load_report(output_dir: str | Path, report_name: str) -> dict[str, object]:
         "summary": summary,
         "metadata": metadata,
         "summary_cards": build_summary_cards(summary),
+        "comparison": build_comparison(summary),
         "equity_chart": build_line_chart(
             {
                 "Strategy": equity_curve["equity"],
-                "Benchmark": equity_curve["benchmark_equity"],
+                "Buy & hold": equity_curve["benchmark_equity"],
             },
-            colors={"Strategy": "#0f766e", "Benchmark": "#c084fc"},
+            colors={"Strategy": "#0f766e", "Buy & hold": "#c084fc"},
         ),
         "drawdown_chart": build_line_chart(
             {"Drawdown": equity_curve["drawdown"] * 100},
@@ -95,17 +110,58 @@ def build_summary_cards(summary: dict[str, object]) -> list[dict[str, object]]:
     cards: list[dict[str, object]] = []
     for key in (
         "total_return_pct",
-        "annual_return_pct",
+        "benchmark_return_pct",
+        "excess_return_pct",
+        "final_equity",
+        "benchmark_final_equity",
         "max_drawdown_pct",
         "sharpe_ratio",
-        "trade_count",
-        "benchmark_return_pct",
     ):
         value = summary.get(key, "")
         suffix = "%" if key.endswith("_pct") else ""
-        display_value = f"{value}{suffix}" if suffix else str(value)
+        if key.endswith("_equity"):
+            display_value = f"{value:,.2f}" if isinstance(value, (float, int)) else str(value)
+        else:
+            display_value = f"{value}{suffix}" if suffix else str(value)
         cards.append({"label": SUMMARY_LABELS.get(key, key), "value": display_value})
     return cards
+
+
+def build_comparison(summary: dict[str, object]) -> dict[str, object]:
+    delta = float(summary.get("excess_return_pct", 0.0))
+    if delta > 0:
+        verdict = "La strategia ha battuto il semplice hold."
+    elif delta < 0:
+        verdict = "La strategia ha fatto peggio del semplice hold."
+    else:
+        verdict = "La strategia ha fatto come il semplice hold."
+
+    return {
+        "strategy_return_pct": summary.get("total_return_pct", ""),
+        "hold_return_pct": summary.get("benchmark_return_pct", ""),
+        "delta_pct": summary.get("excess_return_pct", ""),
+        "strategy_final_equity": summary.get("final_equity", ""),
+        "hold_final_equity": summary.get("benchmark_final_equity", ""),
+        "verdict": verdict,
+    }
+
+
+def enrich_summary(summary: dict[str, object], report_dir: Path) -> dict[str, object]:
+    enriched = dict(summary)
+    if "benchmark_return_pct" in enriched and "benchmark_final_equity" in enriched and "excess_return_pct" in enriched:
+        return enriched
+
+    initial_capital = float(enriched.get("initial_capital", 0.0))
+    total_return_pct = float(enriched.get("total_return_pct", 0.0))
+
+    equity_curve = _read_equity_curve(report_dir)
+    benchmark_final_equity = float(equity_curve["benchmark_equity"].iloc[-1])
+    benchmark_return_pct = round(((benchmark_final_equity / initial_capital) - 1) * 100, 2) if initial_capital else 0.0
+
+    enriched["benchmark_final_equity"] = round(benchmark_final_equity, 2)
+    enriched["benchmark_return_pct"] = benchmark_return_pct
+    enriched["excess_return_pct"] = round(total_return_pct - benchmark_return_pct, 2)
+    return enriched
 
 
 def read_report_metadata(report_dir: Path) -> dict[str, object]:
@@ -174,6 +230,17 @@ def build_line_chart(
     }
 
 
+def sample_series(series: pd.Series, max_points: int = 140) -> pd.Series:
+    if len(series) <= max_points:
+        return series.astype(float).reset_index(drop=True)
+
+    step = max(len(series) // max_points, 1)
+    sampled = series.iloc[::step]
+    if sampled.index[-1] != series.index[-1]:
+        sampled = pd.concat([sampled, series.iloc[[-1]]])
+    return sampled.astype(float).reset_index(drop=True)
+
+
 def _series_to_points(
     series: pd.Series,
     minimum: float,
@@ -223,3 +290,7 @@ def _metadata_from_report_name(report_name: str) -> dict[str, object]:
 def _read_json(path: Path) -> dict[str, object]:
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def _read_equity_curve(report_dir: Path) -> pd.DataFrame:
+    return pd.read_csv(report_dir / "equity_curve.csv")

@@ -118,17 +118,28 @@
               </div>
               <div class="report-card-metrics">
                 <div>
-                  <label>Total return</label>
+                  <label>Strategia</label>
                   <span>{{ report.summary.total_return_pct }}%</span>
                 </div>
                 <div>
-                  <label>Sharpe</label>
-                  <span>{{ report.summary.sharpe_ratio }}</span>
+                  <label>Buy &amp; hold</label>
+                  <span>{{ report.summary.benchmark_return_pct }}%</span>
+                </div>
+                <div>
+                  <label>Delta</label>
+                  <span>{{ report.summary.excess_return_pct }}%</span>
                 </div>
                 <div>
                   <label>Max DD</label>
                   <span>{{ report.summary.max_drawdown_pct }}%</span>
                 </div>
+              </div>
+              <div class="mini-chart-shell">
+                <svg viewBox="0 0 {{ report.preview_chart.width }} {{ report.preview_chart.height }}" class="mini-chart-svg" aria-label="Anteprima grafico strategia vs hold">
+                  {% for series in report.preview_chart.series %}
+                    <polyline points="{{ series.points }}" stroke="{{ series.color }}" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                  {% endfor %}
+                </svg>
               </div>
             </a>
           {% endfor %}
