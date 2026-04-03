@@ -8,7 +8,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function isInteractiveTarget(target) {
     return Boolean(
       target.closest(
-        "a, button, input, label, select, textarea, summary, [data-no-expand], [data-strategy-toggle-card], [data-strategy-choice], [data-chart-strategy-card]",
+        "a, button, input, label, select, textarea, summary, [data-no-expand], [data-strategy-toggle-card], [data-chart-strategy-card]",
       ),
     );
   }

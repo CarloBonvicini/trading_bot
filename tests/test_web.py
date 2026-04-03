@@ -222,12 +222,12 @@ def test_index_lists_existing_reports(tmp_path: Path) -> None:
     assert 'value="15m"' in body
     assert "ultimi 730 giorni" in body
     assert "data-expandable-panel" in body
-    assert "Apri finestra strategia" in body
     assert 'name="active_strategies"' in body
     assert 'data-strategy-toggle="ema_cross"' in body
+    assert 'data-strategy-edit="ema_cross"' in body
     assert 'name="rule_logic"' in body
     assert 'id="strategy-modal-title"' in body
-    assert 'data-strategy-choice="ema_cross"' in body
+    assert 'id="strategy-modal-state"' in body
     assert 'data-modal-input="sma_cross__fast"' in body
 
 

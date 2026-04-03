@@ -41,11 +41,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const strategyPickerRules = document.getElementById("strategy-picker-rules");
   const currentBacktestLabel = document.getElementById("current-backtest-label");
   const currentBacktestMeta = document.getElementById("current-backtest-meta");
-  const openStrategyLabButton = document.getElementById("open-strategy-lab");
   const applyStrategyLabButton = document.getElementById("apply-strategy-lab");
   const strategyModal = document.getElementById("strategy-modal");
-  const strategyModalSummary = document.getElementById("strategy-modal-summary");
-  const strategyChoiceCards = Array.from(document.querySelectorAll("[data-strategy-choice]"));
+  const strategyModalTitle = document.getElementById("strategy-modal-title");
+  const strategyModalCopy = document.getElementById("strategy-modal-copy");
+  const strategyModalState = document.getElementById("strategy-modal-state");
+  const strategyModalMode = document.getElementById("strategy-modal-mode");
+  const strategyModalFooterNote = document.getElementById("strategy-modal-footer-note");
   const strategyDetailPanels = Array.from(document.querySelectorAll("[data-modal-strategy]"));
   const modalInputs = Array.from(document.querySelectorAll("[data-modal-input]"));
   const modalCloseButtons = Array.from(document.querySelectorAll("[data-close-strategy-modal]"));
@@ -57,6 +59,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const endInput = document.querySelector('[name="end"]');
   const initialCapitalInput = document.querySelector('[name="initial_capital"]');
   const feeBpsInput = document.querySelector('[name="fee_bps"]');
+  let currentModalStrategyId = "";
 
   function syncHomeFormTabs(tabId = "setup") {
     const activeFormTab = tabId === "strategies" ? "strategies" : "setup";
@@ -96,7 +99,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (tabId === "strategies") {
       const firstActiveToggle = strategyToggles.find((toggle) => toggle.checked);
-      const focusTarget = firstActiveToggle || ruleLogicSelect || openStrategyLabButton;
+      const focusTarget = firstActiveToggle || ruleLogicSelect;
       focusTarget?.focus({ preventScroll: true });
       return;
     }
@@ -204,31 +207,11 @@ document.addEventListener("DOMContentLoaded", () => {
     currentBacktestMeta.textContent = `${start} -> ${end} • capitale ${capital} • fee ${feeBps} bps`;
   }
 
-  function toggleStrategyActivation(strategyId) {
-    const toggle = getStrategyToggle(strategyId);
-    if (!toggle) {
-      return;
-    }
-
-    const selectedIds = activeStrategyIds();
-    if (toggle.checked && selectedIds.length === 1) {
-      return;
-    }
-
-    toggle.checked = !toggle.checked;
-    ensureAtLeastOneActive(strategyId);
-    syncStrategyWorkspace();
-    syncModalValuesFromForm();
-  }
-
   function syncToggleCards() {
     const selectedIds = activeStrategyIds();
 
     strategyToggleCards.forEach((card) => {
       card.classList.toggle("is-active", selectedIds.includes(card.dataset.strategyToggleCard));
-    });
-    strategyChoiceCards.forEach((card) => {
-      card.classList.toggle("is-active", selectedIds.includes(card.dataset.strategyChoice));
     });
   }
 
@@ -301,17 +284,45 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function syncStrategyModalPanels() {
-    const selectedIds = activeStrategyIds();
+  function resolveModalStrategyId(preferredStrategyId = "") {
+    if (preferredStrategyId && strategyCatalog[preferredStrategyId]) {
+      return preferredStrategyId;
+    }
+    if (currentModalStrategyId && strategyCatalog[currentModalStrategyId]) {
+      return currentModalStrategyId;
+    }
+    return activeStrategyIds()[0] || Object.keys(strategyCatalog)[0] || "";
+  }
+
+  function syncStrategyModalState(preferredStrategyId = "") {
+    const strategyId = resolveModalStrategyId(preferredStrategyId);
+    const strategy = strategyCatalog[strategyId];
+    const isActive = activeStrategyIds().includes(strategyId);
+    currentModalStrategyId = strategyId;
+
     strategyDetailPanels.forEach((panel) => {
-      panel.classList.toggle("is-active", selectedIds.includes(panel.dataset.modalStrategy));
+      const isVisible = panel.dataset.modalStrategy === strategyId;
+      panel.classList.toggle("is-active", isVisible);
+      panel.hidden = !isVisible;
     });
 
-    if (strategyModalSummary) {
-      const labels = activeRuleLabels();
-      strategyModalSummary.textContent = labels.length > 1
-        ? `Regole attive: ${labels.join(" + ")}. La combinazione attuale e' ${ruleLogicSelect.value.toUpperCase()}.`
-        : `Regola attiva: ${labels[0] || "nessuna"}.`;
+    if (strategyModalTitle) {
+      strategyModalTitle.textContent = strategy?.label || "Editor strategia";
+    }
+    if (strategyModalCopy) {
+      strategyModalCopy.textContent = strategy?.description || "Regola i parametri della strategia selezionata.";
+    }
+    if (strategyModalState) {
+      strategyModalState.textContent = isActive ? "Regola attiva" : "Regola spenta";
+      strategyModalState.classList.toggle("strategy-chip-accent", isActive);
+    }
+    if (strategyModalMode) {
+      strategyModalMode.textContent = strategy?.supports_sweep ? "Supporta sweep" : "Solo test singolo";
+    }
+    if (strategyModalFooterNote) {
+      strategyModalFooterNote.textContent = isActive
+        ? "Modifichi direttamente i valori usati nel backtest corrente."
+        : "La regola e' spenta: i valori restano salvati e verranno usati solo se riattivi il toggle.";
     }
   }
 
@@ -330,40 +341,21 @@ document.addEventListener("DOMContentLoaded", () => {
     updateRuleLogicHelp();
     syncStrategyFields();
     syncStrategyPickerCard();
-    syncStrategyModalPanels();
-  }
-
-  function focusStrategyInModal(strategyId) {
-    if (!strategyId) {
-      return;
-    }
-
-    strategyChoiceCards.forEach((card) => {
-      card.classList.toggle("is-focused", card.dataset.strategyChoice === strategyId);
-    });
-    strategyDetailPanels.forEach((panel) => {
-      panel.classList.toggle("is-focused", panel.dataset.modalStrategy === strategyId);
-    });
-
-    const focusedPanel = strategyDetailPanels.find(
-      (panel) => panel.dataset.modalStrategy === strategyId && panel.classList.contains("is-active"),
-    );
-    if (focusedPanel) {
-      focusedPanel.scrollIntoView({ block: "start", behavior: "smooth" });
-      return;
-    }
-
-    const focusedChoice = strategyChoiceCards.find((card) => card.dataset.strategyChoice === strategyId);
-    focusedChoice?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    syncStrategyModalState();
   }
 
   function openStrategyLab(strategyId = "") {
+    const nextStrategyId = resolveModalStrategyId(strategyId);
     syncStrategyWorkspace();
     syncModalValuesFromForm();
+    syncStrategyModalState(nextStrategyId);
     strategyModal.hidden = false;
     requestAnimationFrame(() => {
       strategyModal.classList.add("is-open");
-      focusStrategyInModal(strategyId);
+      strategyDetailPanels
+        .find((panel) => panel.dataset.modalStrategy === currentModalStrategyId)
+        ?.querySelector("input, select, textarea")
+        ?.focus({ preventScroll: true });
     });
     document.body.classList.add("strategy-modal-open");
   }
@@ -372,8 +364,6 @@ document.addEventListener("DOMContentLoaded", () => {
     strategyModal.classList.remove("is-open");
     strategyModal.hidden = true;
     document.body.classList.remove("strategy-modal-open");
-    strategyChoiceCards.forEach((card) => card.classList.remove("is-focused"));
-    strategyDetailPanels.forEach((panel) => panel.classList.remove("is-focused"));
   }
 
   function applyPreset(presetId) {
@@ -497,16 +487,12 @@ document.addEventListener("DOMContentLoaded", () => {
     scrollToHomeTab("strategies", { focus: true });
   });
 
-  openStrategyLabButton.addEventListener("click", openStrategyLab);
   strategyEditButtons.forEach((button) => {
     button.addEventListener("click", () => openStrategyLab(button.dataset.strategyEdit || ""));
   });
-  applyStrategyLabButton.addEventListener("click", closeStrategyLab);
+  applyStrategyLabButton?.addEventListener("click", closeStrategyLab);
   modalCloseButtons.forEach((button) => {
     button.addEventListener("click", closeStrategyLab);
-  });
-  strategyChoiceCards.forEach((card) => {
-    card.addEventListener("click", () => toggleStrategyActivation(card.dataset.strategyChoice));
   });
   modalInputs.forEach((field) => {
     const updateSource = () => {
