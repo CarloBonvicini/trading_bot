@@ -55,6 +55,18 @@ document.addEventListener("DOMContentLoaded", () => {
     activePanel = null;
   }
 
+  function openDetachedInTab(detachedUrl) {
+    const link = document.createElement("a");
+    link.href = detachedUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.dataset.noExpand = "true";
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
   function openPanel(panel) {
     if (activePanel === panel) {
       return;
@@ -95,14 +107,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       if (detachedUrl) {
-        const popup = window.open(
-          detachedUrl,
-          "_blank",
-          "popup=yes,width=1480,height=960,resizable=yes,scrollbars=yes"
-        );
-        if (popup) {
-          popup.focus();
-        }
+        openDetachedInTab(detachedUrl);
         return;
       }
 
