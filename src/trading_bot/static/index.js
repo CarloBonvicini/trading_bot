@@ -11,6 +11,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const presetsById = Object.fromEntries(presetData.map((preset) => [preset.id, preset]));
 
   const strategySelect = document.getElementById("strategy-select");
+  const secondaryStrategySelect = document.getElementById("secondary-strategy-select");
+  const tertiaryStrategySelect = document.getElementById("tertiary-strategy-select");
+  const ruleLogicSelect = document.getElementById("rule-logic-select");
   const runModeSelect = document.getElementById("run-mode-select");
   const submitButton = document.getElementById("submit-button");
   const intervalSelect = document.getElementById("interval-select");
@@ -18,6 +21,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const strategyPickerLabel = document.getElementById("strategy-picker-label");
   const strategyPickerDescription = document.getElementById("strategy-picker-description");
   const strategyPickerChip = document.getElementById("strategy-picker-chip");
+  const strategyPickerRules = document.getElementById("strategy-picker-rules");
   const openStrategyLabButton = document.getElementById("open-strategy-lab");
   const applyStrategyLabButton = document.getElementById("apply-strategy-lab");
   const strategyModal = document.getElementById("strategy-modal");
@@ -35,10 +39,38 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function selectedStrategyIds() {
+    const ids = [strategySelect.value, secondaryStrategySelect.value, tertiaryStrategySelect.value].filter(Boolean);
+    return ids.filter((strategyId, index) => ids.indexOf(strategyId) === index);
+  }
+
+  function normalizeStrategySelections() {
+    if (secondaryStrategySelect.value && secondaryStrategySelect.value === strategySelect.value) {
+      secondaryStrategySelect.value = "";
+    }
+    if (
+      tertiaryStrategySelect.value
+      && (
+        tertiaryStrategySelect.value === strategySelect.value
+        || tertiaryStrategySelect.value === secondaryStrategySelect.value
+      )
+    ) {
+      tertiaryStrategySelect.value = "";
+    }
+  }
+
+  function activeRuleLabels() {
+    return selectedStrategyIds()
+      .map((strategyId) => strategyCatalog[strategyId]?.label)
+      .filter(Boolean);
+  }
+
   function syncStrategyFields() {
     const selectedStrategy = strategySelect.value;
+    const activeSections = selectedStrategyIds();
     const activeSection = sections.find((section) => section.dataset.strategy === selectedStrategy);
-    const sweepAvailable = activeSection?.dataset.supportsSweep === "true";
+    const hasCompositeRules = activeSections.length > 1;
+    const sweepAvailable = activeSection?.dataset.supportsSweep === "true" && !hasCompositeRules;
 
     sweepOption.disabled = !sweepAvailable;
     if (!sweepAvailable && runModeSelect.value === "sweep") {
@@ -48,27 +80,41 @@ document.addEventListener("DOMContentLoaded", () => {
     const selectedMode = runModeSelect.value;
 
     sections.forEach((section) => {
-      const isActive = section.dataset.strategy === selectedStrategy;
+      const isActive = activeSections.includes(section.dataset.strategy);
+      const isPrimary = section.dataset.strategy === selectedStrategy;
       section.classList.toggle("is-active", isActive);
 
-      const modeSections = Array.from(section.querySelectorAll(".mode-fields"));
-      if (modeSections.length === 0) {
-        setSectionInputsState(section, isActive);
-        return;
-      }
-
-      modeSections.forEach((modeSection) => {
-        const isModeActive = isActive && modeSection.dataset.runMode === selectedMode;
-        modeSection.classList.toggle("is-active", isModeActive);
-        setSectionInputsState(modeSection, isModeActive);
+      const parameterInputs = Array.from(section.querySelectorAll("[data-parameter-input]"));
+      parameterInputs.forEach((field) => {
+        field.disabled = !isActive;
       });
+
+      const sweepBlocks = Array.from(section.querySelectorAll("[data-sweep-block]"));
+      sweepBlocks.forEach((block) => {
+        const isSweepActive = isPrimary && selectedMode === "sweep" && sweepAvailable;
+        block.classList.toggle("is-active", isSweepActive);
+        setSectionInputsState(block, isSweepActive);
+      });
+
+      const slotBadge = section.querySelector("[data-strategy-slot-badge]");
+      if (slotBadge) {
+        if (section.dataset.strategy === strategySelect.value) {
+          slotBadge.textContent = "Regola primaria";
+        } else if (section.dataset.strategy === secondaryStrategySelect.value) {
+          slotBadge.textContent = "Regola aggiuntiva 2";
+        } else if (section.dataset.strategy === tertiaryStrategySelect.value) {
+          slotBadge.textContent = "Regola aggiuntiva 3";
+        } else {
+          slotBadge.textContent = "Regola attiva";
+        }
+      }
     });
 
     document.querySelectorAll("[id^='strategy-mode-badge-']").forEach((badge) => {
-      badge.textContent = selectedMode === "sweep" ? "Sweep multiplo" : "Test singolo";
+      badge.textContent = selectedMode === "sweep" && sweepAvailable ? "Sweep multiplo" : "Test singolo";
     });
 
-    submitButton.textContent = selectedMode === "sweep" ? "Avvia sweep" : "Avvia backtest";
+    submitButton.textContent = selectedMode === "sweep" && sweepAvailable ? "Avvia sweep" : "Avvia backtest";
   }
 
   function getSourceField(fieldName) {
@@ -80,20 +126,29 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!strategy) {
       return;
     }
+    const labels = activeRuleLabels();
+    const hasCompositeRules = labels.length > 1;
 
     strategyPickerLabel.textContent = strategy.label;
     strategyPickerDescription.textContent = strategy.description;
-    strategyPickerChip.textContent = strategy.supports_sweep ? "Sweep disponibile" : "Solo test singolo";
-    strategyPickerChip.classList.toggle("strategy-chip-accent", Boolean(strategy.supports_sweep));
+    strategyPickerChip.textContent = hasCompositeRules
+      ? `Regole combinate ${ruleLogicSelect.value.toUpperCase()}`
+      : strategy.supports_sweep
+        ? "Sweep disponibile"
+        : "Solo test singolo";
+    strategyPickerChip.classList.toggle("strategy-chip-accent", Boolean(strategy.supports_sweep || hasCompositeRules));
+    strategyPickerRules.textContent = hasCompositeRules
+      ? `Attive insieme: ${labels.join(" + ")}.`
+      : "Usi una sola regola. Aggiungi conferme qui sotto se vuoi filtrare meglio gli ingressi.";
   }
 
   function syncStrategyModalPanels() {
-    const selectedStrategy = strategySelect.value;
+    const selectedStrategies = selectedStrategyIds();
     strategyChoiceCards.forEach((card) => {
-      card.classList.toggle("is-active", card.dataset.strategyChoice === selectedStrategy);
+      card.classList.toggle("is-active", selectedStrategies.includes(card.dataset.strategyChoice));
     });
     strategyDetailPanels.forEach((panel) => {
-      panel.classList.toggle("is-active", panel.dataset.modalStrategy === selectedStrategy);
+      panel.classList.toggle("is-active", selectedStrategies.includes(panel.dataset.modalStrategy));
     });
   }
 
@@ -108,6 +163,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function syncStrategyWorkspace() {
+    normalizeStrategySelections();
     syncStrategyFields();
     syncStrategyPickerCard();
     syncStrategyModalPanels();
@@ -144,17 +200,23 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     strategySelect.value = preset.strategy;
+    secondaryStrategySelect.value = preset.secondary_strategy || "";
+    tertiaryStrategySelect.value = preset.tertiary_strategy || "";
+    ruleLogicSelect.value = preset.rule_logic || "all";
     runModeSelect.value = preset.run_mode || "single";
     intervalSelect.value = preset.interval || intervalSelect.value;
     document.querySelector('[name="initial_capital"]').value = preset.initial_capital;
     document.querySelector('[name="fee_bps"]').value = preset.fee_bps;
     document.querySelector('[name="preset_name"]').value = preset.name;
 
-    Object.entries(preset.parameters || {}).forEach(([parameterName, parameterValue]) => {
-      const field = document.querySelector(`[name="${preset.strategy}__${parameterName}"]`);
-      if (field) {
-        field.value = parameterValue;
-      }
+    const parameterGroups = preset.parameters_by_strategy || { [preset.strategy]: preset.parameters || {} };
+    Object.entries(parameterGroups).forEach(([strategyId, parameters]) => {
+      Object.entries(parameters || {}).forEach(([parameterName, parameterValue]) => {
+        const field = document.querySelector(`[name="${strategyId}__${parameterName}"]`);
+        if (field) {
+          field.value = parameterValue;
+        }
+      });
     });
 
     Object.entries(preset.sweep_settings || {}).forEach(([fieldName, fieldValue]) => {
@@ -174,6 +236,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   strategySelect.addEventListener("change", syncStrategyWorkspace);
+  secondaryStrategySelect.addEventListener("change", syncStrategyWorkspace);
+  tertiaryStrategySelect.addEventListener("change", syncStrategyWorkspace);
+  ruleLogicSelect.addEventListener("change", syncStrategyPickerCard);
   runModeSelect.addEventListener("change", syncStrategyWorkspace);
   intervalSelect.addEventListener("change", syncIntervalHint);
   presetSelect.addEventListener("change", (event) => applyPreset(event.target.value));
@@ -193,6 +258,10 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
       sourceField.value = field.value;
+      if (["strategy", "secondary_strategy", "tertiary_strategy", "rule_logic", "run_mode"].includes(field.dataset.modalInput)) {
+        syncStrategyWorkspace();
+        syncModalValuesFromForm();
+      }
     };
     field.addEventListener("input", updateSource);
     field.addEventListener("change", updateSource);

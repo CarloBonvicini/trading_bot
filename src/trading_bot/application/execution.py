@@ -12,7 +12,7 @@ from trading_bot.application.constants import DEFAULT_REPORTS_DIR, SWEEP_SORT_OP
 from trading_bot.application.requests import BacktestRequest, SweepRequest
 from trading_bot.backtest import BacktestResult, run_backtest, save_report
 from trading_bot.data import download_price_data
-from trading_bot.strategies import build_strategy_signal
+from trading_bot.strategies import build_combined_signal, build_strategy_signal
 
 
 @dataclass(frozen=True)
@@ -43,10 +43,10 @@ def run_backtest_request(
         end=backtest_request.end,
         interval=backtest_request.interval,
     )
-    signal = build_strategy_signal(
-        strategy_id=backtest_request.strategy,
+    signal = build_combined_signal(
         data=data,
-        parameters=backtest_request.strategy_parameters(),
+        rules=[(rule.strategy_id, rule.parameters) for rule in backtest_request.active_rules()],
+        combination_mode=backtest_request.rule_logic,
     )
     result = run_backtest(
         data=data,
@@ -59,7 +59,7 @@ def run_backtest_request(
         result=result,
         output_dir=Path(output_dir),
         symbol=backtest_request.symbol,
-        strategy_name=backtest_request.strategy,
+        strategy_name=backtest_request.strategy_slug,
     )
     write_report_metadata(report_dir=report_dir, backtest_request=backtest_request)
     return CompletedBacktest(request=backtest_request, report_dir=report_dir, result=result)

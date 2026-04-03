@@ -148,7 +148,7 @@
         <div class="input-grid">
           <div class="field-block">
             <label>
-              <span>Strategia</span>
+              <span>Regola primaria</span>
               <select name="strategy" id="strategy-select" {% if 'strategy' in invalid_fields %}class="input-error"{% endif %}>
                 {% for strategy_id, strategy in strategies.items() %}
                   <option value="{{ strategy_id }}" {% if form_values.strategy == strategy_id %}selected{% endif %}>{{ strategy.label }}</option>
@@ -164,6 +164,7 @@
                 <span class="strategy-chip" id="strategy-picker-chip"></span>
               </div>
               <p class="inline-note" id="strategy-picker-description"></p>
+              <p class="inline-note" id="strategy-picker-rules"></p>
               <div class="button-row">
                 <button class="ghost-button" type="button" id="open-strategy-lab" data-no-expand="true">
                   Apri finestra strategia
@@ -171,13 +172,67 @@
               </div>
             </article>
           </div>
-          <div class="field-block">
-            <label>
-              <span>Capitale iniziale</span>
-              <input type="number" step="100" min="100" name="initial_capital" value="{{ form_values.initial_capital }}">
-            </label>
-          </div>
+            <div class="field-block">
+              <label>
+                <span>Capitale iniziale</span>
+                <input type="number" step="100" min="100" name="initial_capital" value="{{ form_values.initial_capital }}">
+              </label>
+            </div>
         </div>
+
+        <section class="strategy-fields is-active strategy-composer-box">
+          <div class="section-head">
+            <div>
+              <div class="section-label">Compositore regole</div>
+              <p class="inline-note">
+                Puoi sommare fino a tre regole nello stesso test. In `AND` devono essere tutte attive, in `OR` basta che lo sia una.
+              </p>
+            </div>
+          </div>
+          <div class="parameter-grid strategy-composer-grid">
+            <div class="field-block">
+              <label>
+                <span>Combina le regole</span>
+                <select name="rule_logic" id="rule-logic-select" {% if 'rule_logic' in invalid_fields %}class="input-error"{% endif %}>
+                  {% for logic_key, logic_label in rule_logic_options.items() %}
+                    <option value="{{ logic_key }}" {% if form_values.rule_logic == logic_key %}selected{% endif %}>{{ logic_label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              {% if field_errors.get('rule_logic') %}
+                <p class="field-error">{{ field_errors['rule_logic'] }}</p>
+              {% endif %}
+            </div>
+            <div class="field-block">
+              <label>
+                <span>Regola aggiuntiva 2</span>
+                <select name="secondary_strategy" id="secondary-strategy-select" {% if 'secondary_strategy' in invalid_fields %}class="input-error"{% endif %}>
+                  <option value="">Nessuna regola aggiuntiva</option>
+                  {% for strategy_id, strategy in strategies.items() %}
+                    <option value="{{ strategy_id }}" {% if form_values.secondary_strategy == strategy_id %}selected{% endif %}>{{ strategy.label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              {% if field_errors.get('secondary_strategy') %}
+                <p class="field-error">{{ field_errors['secondary_strategy'] }}</p>
+              {% endif %}
+            </div>
+            <div class="field-block">
+              <label>
+                <span>Regola aggiuntiva 3</span>
+                <select name="tertiary_strategy" id="tertiary-strategy-select" {% if 'tertiary_strategy' in invalid_fields %}class="input-error"{% endif %}>
+                  <option value="">Nessuna regola aggiuntiva</option>
+                  {% for strategy_id, strategy in strategies.items() %}
+                    <option value="{{ strategy_id }}" {% if form_values.tertiary_strategy == strategy_id %}selected{% endif %}>{{ strategy.label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              {% if field_errors.get('tertiary_strategy') %}
+                <p class="field-error">{{ field_errors['tertiary_strategy'] }}</p>
+              {% endif %}
+            </div>
+          </div>
+        </section>
 
         <div class="input-grid">
           <label>

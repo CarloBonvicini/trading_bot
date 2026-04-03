@@ -188,6 +188,9 @@ def test_index_lists_existing_reports(tmp_path: Path) -> None:
     assert "ultimi 730 giorni" in body
     assert "data-expandable-panel" in body
     assert "Apri finestra strategia" in body
+    assert 'name="secondary_strategy"' in body
+    assert 'name="tertiary_strategy"' in body
+    assert 'name="rule_logic"' in body
     assert 'id="strategy-modal-title"' in body
     assert 'data-strategy-choice="ema_cross"' in body
     assert 'data-modal-input="sma_cross__fast"' in body
@@ -229,6 +232,49 @@ def test_create_backtest_redirects_to_report(monkeypatch, tmp_path: Path) -> Non
 
     assert response.status_code == 302
     assert "/reports/SPY-sma_cross-20260403-100000" in response.headers["Location"]
+
+
+def test_create_backtest_supports_combined_rules(monkeypatch, tmp_path: Path) -> None:
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+
+    def fake_run(backtest_request: BacktestRequest, output_dir: Path):
+        report_dir = output_dir / "SPY-multi_rules_all-20260403-110000"
+        create_report_fixture(report_dir)
+
+        class Completed:
+            def __init__(self) -> None:
+                self.report_dir = report_dir
+
+        assert backtest_request.is_composite is True
+        assert len(backtest_request.active_rules()) == 2
+        assert backtest_request.rule_logic == "all"
+        return Completed()
+
+    monkeypatch.setattr("trading_bot.web.run_backtest_request", fake_run)
+    client = app.test_client()
+    response = client.post(
+        "/backtests",
+        data={
+            "symbol": "SPY",
+            "start": "2020-01-01",
+            "end": "2024-12-31",
+            "run_mode": "single",
+            "interval": "1d",
+            "strategy": "ema_cross",
+            "secondary_strategy": "rsi_mean_reversion",
+            "rule_logic": "all",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "ema_cross__fast": "12",
+            "ema_cross__slow": "26",
+            "rsi_mean_reversion__period": "14",
+            "rsi_mean_reversion__lower": "30",
+            "rsi_mean_reversion__upper": "55",
+        },
+    )
+
+    assert response.status_code == 302
+    assert "/reports/SPY-multi_rules_all-20260403-110000" in response.headers["Location"]
 
 
 def test_create_backtest_shows_intraday_validation_near_form_fields(tmp_path: Path) -> None:
@@ -347,6 +393,42 @@ def test_create_ema_sweep_redirects_to_sweep_detail(monkeypatch, tmp_path: Path)
 
     assert response.status_code == 302
     assert "/sweeps/SPY-ema_cross-sweep-20260403-100000" in response.headers["Location"]
+
+
+def test_create_sweep_rejects_combined_rules(tmp_path: Path) -> None:
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+    client = app.test_client()
+
+    response = client.post(
+        "/backtests",
+        data={
+          "symbol": "SPY",
+          "start": "2020-01-01",
+          "end": "2024-12-31",
+          "run_mode": "sweep",
+          "interval": "1d",
+          "strategy": "ema_cross",
+          "secondary_strategy": "rsi_mean_reversion",
+          "rule_logic": "all",
+          "initial_capital": "10000",
+          "fee_bps": "5",
+          "ema_cross__fast": "12",
+          "ema_cross__slow": "26",
+          "rsi_mean_reversion__period": "14",
+          "rsi_mean_reversion__lower": "30",
+          "rsi_mean_reversion__upper": "55",
+          "fast_start": "10",
+          "fast_end": "30",
+          "fast_step": "10",
+          "slow_start": "80",
+          "slow_end": "120",
+          "slow_step": "20",
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.get_data(as_text=True)
+    assert "Lo sweep multiplo richiede una sola regola primaria." in body
 
 
 def test_report_detail_renders_chart_and_trade_table(tmp_path: Path) -> None:

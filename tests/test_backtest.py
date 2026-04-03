@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from trading_bot.backtest import run_backtest
-from trading_bot.strategies import rsi_mean_reversion, sma_crossover
+from trading_bot.strategies import build_combined_signal, rsi_mean_reversion, sma_crossover
 
 
 def test_sma_crossover_returns_binary_positions() -> None:
@@ -58,3 +58,22 @@ def test_backtest_tracks_fees_paid() -> None:
     assert result.summary["fees_paid"] > 0
     assert result.summary["gross_final_equity"] > result.summary["final_equity"]
     assert round(result.summary["fee_drag_equity"], 2) >= round(result.summary["fees_paid"], 2)
+
+
+def test_build_combined_signal_supports_and_logic() -> None:
+    data = pd.DataFrame(
+        {"close": [100, 99, 98, 99, 101, 103, 102, 104, 105, 107]},
+        index=pd.date_range("2024-01-01", periods=10, freq="D"),
+    )
+
+    signal = build_combined_signal(
+        data=data,
+        rules=[
+            ("sma_cross", {"fast": 2, "slow": 4}),
+            ("ema_cross", {"fast": 2, "slow": 5}),
+        ],
+        combination_mode="all",
+    )
+
+    assert set(signal.dropna().unique()).issubset({0.0, 1.0})
+    assert float(signal.max()) == 1.0

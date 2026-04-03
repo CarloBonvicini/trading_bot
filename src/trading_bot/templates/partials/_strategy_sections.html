@@ -9,31 +9,33 @@
         <div class="section-label">{{ strategy.label }}</div>
         <p class="inline-note">{{ strategy.description }}</p>
       </div>
-      {% if strategy.supports_sweep %}
-        <span class="mode-badge" id="strategy-mode-badge-{{ strategy_id }}">Test singolo</span>
-      {% endif %}
+      <div class="strategy-section-chips">
+        <span class="strategy-chip" data-strategy-slot-badge>Regola attiva</span>
+        {% if strategy.supports_sweep %}
+          <span class="mode-badge" id="strategy-mode-badge-{{ strategy_id }}">Test singolo</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="parameter-grid strategy-parameter-grid">
+      {% for parameter in strategy.parameters %}
+        <label>
+          <span>{{ parameter.label }}</span>
+          <input
+            type="number"
+            name="{{ parameter.field_name }}"
+            value="{{ form_values[parameter.field_name] }}"
+            data-parameter-input="true"
+            {% if parameter.minimum is not none %}min="{{ parameter.minimum }}"{% endif %}
+            {% if parameter.maximum is not none %}max="{{ parameter.maximum }}"{% endif %}
+            {% if parameter.step is not none %}step="{{ parameter.step }}"{% endif %}
+          >
+        </label>
+      {% endfor %}
     </div>
 
     {% if strategy.supports_sweep %}
-      <div class="mode-fields" data-run-mode="single">
-        <div class="parameter-grid">
-          {% for parameter in strategy.parameters %}
-            <label>
-              <span>{{ parameter.label }}</span>
-              <input
-                type="number"
-                name="{{ parameter.field_name }}"
-                value="{{ form_values[parameter.field_name] }}"
-                {% if parameter.minimum is not none %}min="{{ parameter.minimum }}"{% endif %}
-                {% if parameter.maximum is not none %}max="{{ parameter.maximum }}"{% endif %}
-                {% if parameter.step is not none %}step="{{ parameter.step }}"{% endif %}
-              >
-            </label>
-          {% endfor %}
-        </div>
-      </div>
-
-      <div class="mode-fields mode-fields-stack" data-run-mode="sweep">
+      <div class="mode-fields mode-fields-stack" data-sweep-block="true">
         <div class="range-grid">
           <article class="subsection-card">
             <p class="subsection-title">Range {{ strategy.parameters[0].label }}</p>
@@ -80,22 +82,6 @@
             {% endfor %}
           </select>
         </label>
-      </div>
-    {% else %}
-      <div class="parameter-grid">
-        {% for parameter in strategy.parameters %}
-          <label>
-            <span>{{ parameter.label }}</span>
-            <input
-              type="number"
-              name="{{ parameter.field_name }}"
-              value="{{ form_values[parameter.field_name] }}"
-              {% if parameter.minimum is not none %}min="{{ parameter.minimum }}"{% endif %}
-              {% if parameter.maximum is not none %}max="{{ parameter.maximum }}"{% endif %}
-              {% if parameter.step is not none %}step="{{ parameter.step }}"{% endif %}
-            >
-          </label>
-        {% endfor %}
       </div>
     {% endif %}
   </section>

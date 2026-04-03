@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Mapping
 
-from trading_bot.application.constants import DEFAULT_REPORTS_DIR, PRESETS_FILENAME, RUN_MODE_OPTIONS
+from trading_bot.application.constants import DEFAULT_REPORTS_DIR, PRESETS_FILENAME, RUN_MODE_OPTIONS, STRATEGY_OPTIONS
 from trading_bot.application.requests import BacktestRequest
 from trading_bot.errors import FormValidationError
 
@@ -39,7 +39,7 @@ def save_strategy_preset(raw: Mapping[str, object], output_dir: str | Path = DEF
     run_mode = str(raw.get("run_mode", "single")).strip().lower()
     if run_mode not in RUN_MODE_OPTIONS:
         run_mode = "single"
-    if run_mode == "sweep" and request.strategy != "sma_cross":
+    if run_mode == "sweep" and (request.is_composite or not STRATEGY_OPTIONS[request.strategy]["supports_sweep"]):
         run_mode = "single"
 
     preset = {
@@ -47,11 +47,20 @@ def save_strategy_preset(raw: Mapping[str, object], output_dir: str | Path = DEF
         "name": preset_name,
         "strategy": request.strategy,
         "strategy_label": request.strategy_label,
+        "secondary_strategy": request.secondary_strategy,
+        "tertiary_strategy": request.tertiary_strategy,
+        "rule_logic": request.rule_logic,
+        "is_composite": request.is_composite,
+        "active_rules": [rule.metadata() for rule in request.active_rules()],
         "interval": request.interval,
         "initial_capital": request.initial_capital,
         "fee_bps": request.fee_bps,
         "run_mode": run_mode,
         "parameters": request.strategy_parameters(),
+        "parameters_by_strategy": {
+            rule.strategy_id: dict(rule.parameters)
+            for rule in request.active_rules()
+        },
         "sweep_settings": {
             "sort_by": str(raw.get("sort_by", "total_return_pct")),
             "fast_start": int(float(raw.get("fast_start", 10))),

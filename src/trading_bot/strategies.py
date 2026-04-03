@@ -435,6 +435,33 @@ def build_strategy_signal(strategy_id: str, data: pd.DataFrame, parameters: Mapp
     return STRATEGY_FUNCTIONS[strategy_id](data, **parameters)
 
 
+def build_combined_signal(
+    data: pd.DataFrame,
+    rules: list[tuple[str, Mapping[str, int | float]]],
+    *,
+    combination_mode: str = "all",
+) -> pd.Series:
+    if not rules:
+        raise ValueError("Serve almeno una regola per costruire il segnale.")
+
+    signals = [
+        build_strategy_signal(strategy_id=strategy_id, data=data, parameters=parameters).fillna(0.0).clip(lower=0.0, upper=1.0)
+        for strategy_id, parameters in rules
+    ]
+    if len(signals) == 1:
+        return signals[0].rename("position")
+
+    signal_frame = pd.concat(signals, axis=1).fillna(0.0)
+    if combination_mode == "all":
+        combined = (signal_frame.min(axis=1) > 0.0).astype(float)
+    elif combination_mode == "any":
+        combined = (signal_frame.max(axis=1) > 0.0).astype(float)
+    else:
+        raise ValueError(f"Modalita' combinazione non supportata: {combination_mode}.")
+
+    return combined.rename("position")
+
+
 def _require_columns(data: pd.DataFrame, required_columns: tuple[str, ...]) -> None:
     missing = [column for column in required_columns if column not in data.columns]
     if missing:

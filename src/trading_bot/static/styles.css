@@ -434,6 +434,13 @@ select:focus {
   white-space: nowrap;
 }
 
+.strategy-section-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
 .strategy-picker-card {
   display: grid;
   gap: 0.75rem;
@@ -472,6 +479,10 @@ select:focus {
 .strategy-chip-accent {
   background: rgba(15, 118, 110, 0.14);
   color: var(--accent);
+}
+
+.strategy-composer-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .range-grid {
@@ -961,6 +972,10 @@ td {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.strategy-lab-grid-composer {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .strategy-lab-grid-sweep {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -1019,6 +1034,7 @@ td {
   .report-card-metrics,
   .comparison-grid,
   .strategy-lab-grid,
+  .strategy-lab-grid-composer,
   .strategy-lab-grid-sweep {
     grid-template-columns: 1fr;
   }

@@ -17,6 +17,7 @@ from trading_bot.reporting import (
 from trading_bot.services import (
     DEFAULT_REPORTS_DIR,
     INTERVAL_OPTIONS,
+    RULE_LOGIC_OPTIONS,
     RUN_MODE_OPTIONS,
     STRATEGY_OPTIONS,
     SWEEP_SORT_OPTIONS,
@@ -229,6 +230,7 @@ def _render_home(
         saved_items=list_saved_items(current_app.config["REPORTS_DIR"]),
         strategy_presets=list_strategy_presets(current_app.config["REPORTS_DIR"]),
         strategies=STRATEGY_OPTIONS,
+        rule_logic_options=RULE_LOGIC_OPTIONS,
         intervals=INTERVAL_OPTIONS,
         interval_hints=interval_helper_texts(),
         run_modes=RUN_MODE_OPTIONS,

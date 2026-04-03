@@ -18,6 +18,9 @@ def default_form_values() -> dict[str, object]:
         "end": f"{current_year - 1}-12-31",
         "interval": "1d",
         "strategy": "sma_cross",
+        "secondary_strategy": "",
+        "tertiary_strategy": "",
+        "rule_logic": "all",
         "initial_capital": 10_000.0,
         "fee_bps": 5.0,
         "sort_by": "total_return_pct",
@@ -43,12 +46,16 @@ def as_form_values(backtest_request: BacktestRequest | None = None) -> dict[str,
             "end": backtest_request.end,
             "interval": backtest_request.interval,
             "strategy": backtest_request.strategy,
+            "secondary_strategy": backtest_request.secondary_strategy,
+            "tertiary_strategy": backtest_request.tertiary_strategy,
+            "rule_logic": backtest_request.rule_logic,
             "initial_capital": backtest_request.initial_capital,
             "fee_bps": backtest_request.fee_bps,
         }
     )
-    for parameter_name, parameter_value in backtest_request.strategy_parameters().items():
-        values[strategy_field_name(backtest_request.strategy, parameter_name)] = parameter_value
+    for rule in backtest_request.active_rules():
+        for parameter_name, parameter_value in rule.parameters.items():
+            values[strategy_field_name(rule.strategy_id, parameter_name)] = parameter_value
     return values
 
 

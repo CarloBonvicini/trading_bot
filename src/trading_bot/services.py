@@ -11,6 +11,7 @@ from pathlib import Path
 from trading_bot.application.constants import (
     DEFAULT_REPORTS_DIR,
     INTERVAL_OPTIONS,
+    RULE_LOGIC_OPTIONS,
     RUN_MODE_OPTIONS,
     STRATEGY_OPTIONS,
     SWEEP_SORT_OPTIONS,
@@ -33,6 +34,7 @@ __all__ = [
     "DEFAULT_REPORTS_DIR",
     "INTERVAL_OPTIONS",
     "IntegerRange",
+    "RULE_LOGIC_OPTIONS",
     "RUN_MODE_OPTIONS",
     "STRATEGY_OPTIONS",
     "SWEEP_SORT_OPTIONS",

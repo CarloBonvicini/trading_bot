@@ -10,6 +10,14 @@
         intervallo {{ report.metadata.interval or "n/a" }},
         fee {{ report.metadata.fee_bps or "n/a" }} bps.
       </p>
+      {% if report.metadata.get("active_rules") and report.metadata.get("is_composite") %}
+        <p class="inline-note">
+          {{ report.metadata.get("rule_logic_label", "Regole combinate") }}:
+          {% for rule in report.metadata.get("active_rules", []) %}
+            {{ rule.strategy_label }}{% if not loop.last %} + {% endif %}
+          {% endfor %}
+        </p>
+      {% endif %}
     </div>
     <div class="hero-actions">
       <a class="ghost-link" href="{{ url_for('download_report_file', report_name=report.name, filename='summary.json') }}">summary.json</a>

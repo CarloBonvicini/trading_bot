@@ -98,8 +98,9 @@ Dalla UI locale puoi:
 
 - salvare un preset strategia con nome
 - ricaricare un preset dalla select
-- usare i punti di intervento specifici per ogni strategia
-- lanciare sweep multipli sulla `SMA Crossover`
+- combinare fino a 3 regole nello stesso backtest con logica `AND` o `OR`
+- usare i punti di intervento specifici per ogni regola attiva
+- lanciare sweep multipli sulle strategie che espongono coppie `fast/slow`
 
 ## Intraday
 
