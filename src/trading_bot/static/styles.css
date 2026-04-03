@@ -44,6 +44,7 @@ body.panel-expanded {
   filter: blur(70px);
   opacity: 0.4;
   pointer-events: none;
+  z-index: 0;
 }
 
 .ambient-left {
@@ -61,7 +62,7 @@ body.panel-expanded {
 .panel-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 9;
+  z-index: 90;
   background: rgba(27, 27, 24, 0.26);
   backdrop-filter: blur(10px);
   opacity: 0;
@@ -75,7 +76,6 @@ body.panel-expanded {
 .shell-header,
 .page-shell {
   position: relative;
-  z-index: 1;
 }
 
 .shell-header {
@@ -192,10 +192,14 @@ body.panel-expanded {
   width: min(1320px, 96vw);
   max-height: 94vh;
   overflow: auto;
-  z-index: 10;
+  z-index: 100;
   cursor: auto;
   background: rgba(255, 250, 243, 0.98);
   box-shadow: 0 28px 100px rgba(27, 27, 24, 0.28);
+}
+
+.panel-expandable.is-expanded:hover {
+  transform: translateX(-50%);
 }
 
 .panel-expandable.is-expanded::after {
