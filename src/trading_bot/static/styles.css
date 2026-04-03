@@ -313,12 +313,14 @@ body.strategy-modal-open {
 .field-block {
   display: grid;
   gap: 0.35rem;
+  align-content: start;
 }
 
 .input-grid {
   display: grid;
   gap: 1rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
 }
 
 .strategy-fields .input-grid {
