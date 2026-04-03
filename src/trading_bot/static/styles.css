@@ -2242,6 +2242,22 @@ td {
   gap: 0.45rem;
 }
 
+.home-global-nav {
+  position: sticky;
+  top: 0.85rem;
+  z-index: 18;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.75rem;
+}
+
+.home-global-nav .home-nav-link {
+  min-width: 12rem;
+  justify-content: center;
+}
+
 .home-nav-link {
   display: inline-flex;
   align-items: center;
