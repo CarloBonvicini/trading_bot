@@ -9,15 +9,23 @@ document.addEventListener("DOMContentLoaded", () => {
   const presetData = pageConfig.strategyPresets || [];
   const intervalHints = pageConfig.intervalHints || {};
   const presetsById = Object.fromEntries(presetData.map((preset) => [preset.id, preset]));
+  const homeTabTargetIds = {
+    dashboard: "dashboard-home",
+    setup: "launch-panel",
+    strategies: "strategy-rules-panel",
+    results: "saved-results-panel",
+  };
 
   const strategyToggles = Array.from(document.querySelectorAll("[data-strategy-toggle]"));
   const strategyToggleCards = Array.from(document.querySelectorAll("[data-strategy-toggle-card]"));
   const strategyEditButtons = Array.from(document.querySelectorAll("[data-strategy-edit]"));
+  const homeTabLinks = Array.from(document.querySelectorAll("[data-home-tab-link]"));
   const runModeSelect = document.getElementById("run-mode-select");
   const ruleLogicSelect = document.getElementById("rule-logic-select");
   const submitButton = document.getElementById("submit-button");
   const intervalSelect = document.getElementById("interval-select");
   const presetSelect = document.getElementById("preset-select");
+  const continueToStrategiesButton = document.getElementById("continue-to-strategies");
   const strategyPickerLabel = document.getElementById("strategy-picker-label");
   const strategyPickerDescription = document.getElementById("strategy-picker-description");
   const strategyPickerChip = document.getElementById("strategy-picker-chip");
@@ -33,6 +41,72 @@ document.addEventListener("DOMContentLoaded", () => {
   const sections = Array.from(document.querySelectorAll(".strategy-fields[data-strategy]"));
   const sweepOption = runModeSelect.querySelector('option[value="sweep"]');
   const intervalHint = document.getElementById("interval-hint");
+  const symbolInput = document.querySelector('[name="symbol"]');
+
+  function activateHomeTab(tabId = "dashboard") {
+    homeTabLinks.forEach((link) => {
+      link.classList.toggle("is-active", link.dataset.homeTabLink === tabId);
+      if (link.dataset.homeTabLink === tabId) {
+        link.setAttribute("aria-current", "page");
+      } else {
+        link.removeAttribute("aria-current");
+      }
+    });
+  }
+
+  function highlightHomeTabTarget(targetNode) {
+    if (!targetNode || !targetNode.classList?.contains("panel") && !targetNode.classList?.contains("strategy-fields")) {
+      return;
+    }
+
+    targetNode.classList.remove("home-tab-target-flash");
+    window.requestAnimationFrame(() => {
+      targetNode.classList.add("home-tab-target-flash");
+      window.setTimeout(() => targetNode.classList.remove("home-tab-target-flash"), 1400);
+    });
+  }
+
+  function focusHomeTabTarget(tabId) {
+    if (tabId === "setup") {
+      symbolInput?.focus({ preventScroll: true });
+      return;
+    }
+    if (tabId === "strategies") {
+      const firstActiveToggle = strategyToggles.find((toggle) => toggle.checked);
+      const focusTarget = firstActiveToggle || ruleLogicSelect || openStrategyLabButton;
+      focusTarget?.focus({ preventScroll: true });
+      return;
+    }
+    if (tabId === "results") {
+      document.querySelector("#saved-results-panel .report-card")?.focus?.({ preventScroll: true });
+    }
+  }
+
+  function scrollToHomeTab(tabId, { focus = false } = {}) {
+    const targetId = homeTabTargetIds[tabId];
+    const targetNode = targetId ? document.getElementById(targetId) : null;
+    activateHomeTab(tabId);
+    if (!targetNode) {
+      return;
+    }
+
+    targetNode.scrollIntoView({ behavior: "smooth", block: "start" });
+    highlightHomeTabTarget(targetNode);
+    if (window.history?.replaceState) {
+      window.history.replaceState(null, "", `#${targetId}`);
+    } else {
+      window.location.hash = targetId;
+    }
+
+    if (focus) {
+      window.setTimeout(() => focusHomeTabTarget(tabId), 220);
+    }
+  }
+
+  function syncHomeTabFromHash() {
+    const matchedTab = Object.entries(homeTabTargetIds).find(([, targetId]) => `#${targetId}` === window.location.hash)?.[0];
+    activateHomeTab(matchedTab || "dashboard");
+  }
 
   function getStrategyToggle(strategyId) {
     return strategyToggles.find((toggle) => toggle.value === strategyId) || null;
@@ -289,6 +363,21 @@ document.addEventListener("DOMContentLoaded", () => {
   runModeSelect.addEventListener("change", syncStrategyWorkspace);
   intervalSelect.addEventListener("change", syncIntervalHint);
   presetSelect.addEventListener("change", (event) => applyPreset(event.target.value));
+  homeTabLinks.forEach((link) => {
+    link.addEventListener("click", (event) => {
+      const tabId = link.dataset.homeTabLink || "dashboard";
+      const href = link.getAttribute("href") || "";
+      if (href.startsWith("#")) {
+        event.preventDefault();
+        scrollToHomeTab(tabId, { focus: tabId !== "dashboard" });
+        return;
+      }
+      activateHomeTab(tabId);
+    });
+  });
+  continueToStrategiesButton?.addEventListener("click", () => {
+    scrollToHomeTab("strategies", { focus: true });
+  });
 
   openStrategyLabButton.addEventListener("click", openStrategyLab);
   strategyEditButtons.forEach((button) => {
@@ -324,4 +413,6 @@ document.addEventListener("DOMContentLoaded", () => {
   syncStrategyWorkspace();
   syncModalValuesFromForm();
   syncIntervalHint();
+  syncHomeTabFromHash();
+  window.addEventListener("hashchange", syncHomeTabFromHash);
 });

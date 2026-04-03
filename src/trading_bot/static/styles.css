@@ -2324,12 +2324,40 @@ td {
   color: var(--muted);
   font-size: 0.84rem;
   font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
 }
 
 .home-tab.is-active {
   border-color: rgba(59, 130, 246, 0.32);
   background: rgba(59, 130, 246, 0.12);
   color: #dbeafe;
+}
+
+.home-step-actions {
+  align-items: center;
+  justify-content: flex-start;
+  margin-top: 0.1rem;
+  padding-bottom: 0.2rem;
+}
+
+.home-step-actions .inline-note {
+  margin: 0;
+}
+
+.home-continue-button {
+  min-width: 9.75rem;
+}
+
+.home-launch-panel,
+#strategy-rules-panel,
+#saved-results-panel {
+  scroll-margin-top: 1rem;
+}
+
+.home-tab-target-flash {
+  border-color: rgba(59, 130, 246, 0.42) !important;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.22), 0 22px 52px rgba(37, 99, 235, 0.18);
 }
 
 .home-streak-card {

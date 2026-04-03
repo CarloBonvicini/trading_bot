@@ -14,10 +14,10 @@
       </div>
 
       <nav class="home-sidebar-nav">
-        <a class="home-nav-link is-active" href="#dashboard-home">Dashboard</a>
-        <a class="home-nav-link" href="#launch-panel">Nuovo backtest</a>
-        <a class="home-nav-link" href="#strategy-form">Strategie</a>
-        <a class="home-nav-link" href="#saved-results-panel">Risultati</a>
+        <a class="home-nav-link is-active" href="#dashboard-home" data-home-tab-link="dashboard">Dashboard</a>
+        <a class="home-nav-link" href="#launch-panel" data-home-tab-link="setup">Nuovo backtest</a>
+        <a class="home-nav-link" href="#strategy-rules-panel" data-home-tab-link="strategies">Strategie</a>
+        <a class="home-nav-link" href="#saved-results-panel" data-home-tab-link="results">Risultati</a>
       </nav>
 
       <div class="home-sidebar-footer">
@@ -47,10 +47,10 @@
             Tutto resta locale, ma con un linguaggio visivo piu' vicino a una piattaforma trading.
           </p>
           <div class="home-tab-row">
-            <span class="home-tab is-active">Dashboard</span>
-            <span class="home-tab">Replay charts</span>
-            <span class="home-tab">Strategies</span>
-            <span class="home-tab">Saved results</span>
+            <a class="home-tab is-active" href="#dashboard-home" data-home-tab-link="dashboard">Dashboard</a>
+            <a class="home-tab" href="#launch-panel" data-home-tab-link="setup">Setup test</a>
+            <a class="home-tab" href="#strategy-rules-panel" data-home-tab-link="strategies">Strategies</a>
+            <a class="home-tab" href="#saved-results-panel" data-home-tab-link="results">Saved results</a>
           </div>
         </div>
         <div class="home-streak-card">
@@ -69,17 +69,17 @@
       </section>
 
       <section class="home-action-grid">
-        <a class="panel home-action-card is-primary" href="#launch-panel">
+        <a class="panel home-action-card is-primary" href="#launch-panel" data-home-tab-link="setup">
           <p class="eyebrow">sessione</p>
           <h3>Backtesting session</h3>
           <p>Apri il launcher completo per test singolo o sweep parametri.</p>
         </a>
-        <a class="panel home-action-card" href="#strategy-form">
+        <a class="panel home-action-card" href="#strategy-rules-panel" data-home-tab-link="strategies">
           <p class="eyebrow">rules lab</p>
           <h3>Strategie e preset</h3>
           <p>Attiva toggle multipli, salva preset e prepara setup riutilizzabili.</p>
         </a>
-        <a class="panel home-action-card" href="#saved-results-panel">
+        <a class="panel home-action-card" href="#saved-results-panel" data-home-tab-link="results">
           <p class="eyebrow">replay</p>
           <h3>Chart avanzate</h3>
           <p>Apri i report salvati e usa replay, zoom, layer e playback a candele.</p>
@@ -244,7 +244,14 @@
               </div>
             </div>
 
-            <section class="strategy-fields is-active strategy-toggle-shell">
+            <div class="button-row home-step-actions">
+              <button class="action-button home-continue-button" type="button" id="continue-to-strategies" data-no-expand="true">
+                Continua
+              </button>
+              <p class="inline-note">Passa allo step successivo per attivare le regole e preparare il test.</p>
+            </div>
+
+            <section class="strategy-fields is-active strategy-toggle-shell" id="strategy-rules-panel">
               <div class="section-head">
                 <div>
                   <div class="section-label">Regole da avviare</div>
