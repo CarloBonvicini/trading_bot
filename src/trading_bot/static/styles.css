@@ -195,19 +195,24 @@ body.strategy-modal-open {
 
 .panel-expandable.is-expanded {
   position: fixed;
-  inset: 3vh auto auto 50%;
-  transform: translateX(-50%);
-  width: min(1320px, 96vw);
-  max-height: 94vh;
+  top: 1rem;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  transform: translate3d(-50%, 0, 0);
+  width: min(1320px, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100vh - 2rem);
   overflow: auto;
   z-index: 100;
   cursor: auto;
   background: rgba(255, 250, 243, 0.98);
   box-shadow: 0 28px 100px rgba(27, 27, 24, 0.28);
+  overscroll-behavior: contain;
 }
 
 .panel-expandable.is-expanded:hover {
-  transform: translateX(-50%);
+  transform: translate3d(-50%, 0, 0);
 }
 
 .panel-expandable.is-expanded::after {
