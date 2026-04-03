@@ -1,150 +1,172 @@
 {% extends "base.html" %}
 {% block title %}{{ report.metadata.symbol or report.name }} - Trading Bot Lab{% endblock %}
+{% block body_class %}home-dashboard-body report-dashboard-body{% endblock %}
 {% block content %}
-  <section class="hero-panel report-hero panel-expandable" data-expandable-panel>
-    <div>
-      <p class="eyebrow">{{ report.metadata.strategy_label or report.metadata.strategy }}</p>
-      <h2>{{ report.metadata.symbol or report.name }}</h2>
-      <p class="hero-copy">
-        Periodo {{ report.metadata.start or "n/a" }} -> {{ report.metadata.end or "n/a" }},
-        intervallo {{ report.metadata.interval or "n/a" }},
-        fee {{ report.metadata.fee_bps or "n/a" }} bps.
-      </p>
-      {% if report.metadata.get("active_rules") and report.metadata.get("is_composite") %}
-        <p class="inline-note">
-          {{ report.metadata.get("rule_logic_label", "Regole combinate") }}:
-          {% for rule in report.metadata.get("active_rules", []) %}
-            {{ rule.strategy_label }}{% if not loop.last %} + {% endif %}
-          {% endfor %}
-        </p>
-      {% endif %}
-    </div>
-    <div class="hero-actions">
-      <a class="ghost-link" href="{{ url_for('download_report_file', report_name=report.name, filename='summary.json') }}">summary.json</a>
-      <a class="ghost-link" href="{{ url_for('download_report_file', report_name=report.name, filename='equity_curve.csv') }}">equity_curve.csv</a>
-      <a class="ghost-link" href="{{ url_for('download_report_file', report_name=report.name, filename='trades.csv') }}">trades.csv</a>
-    </div>
-  </section>
-
-  <section class="stats-grid">
-    {% for card in report.summary_cards %}
-      <article class="stat-card">
-        <p>{{ card.label }}</p>
-        <strong>{{ card.value }}</strong>
-      </article>
-    {% endfor %}
-  </section>
-
-  <section class="panel comparison-panel panel-expandable" data-expandable-panel>
-    <div class="panel-header">
-      <p class="eyebrow">confronto diretto</p>
-      <h3>Strategia vs semplice buy &amp; hold</h3>
-    </div>
-    <div class="comparison-grid">
-      <article class="comparison-card">
-        <p>Strategia</p>
-        <strong>{{ report.comparison.strategy_return_pct }}%</strong>
-        <span>Equity finale {{ report.comparison.strategy_final_equity }}</span>
-      </article>
-      <article class="comparison-card">
-        <p>Buy &amp; hold</p>
-        <strong>{{ report.comparison.hold_return_pct }}%</strong>
-        <span>Equity finale {{ report.comparison.hold_final_equity }}</span>
-      </article>
-      <article class="comparison-card comparison-card-accent">
-        <p>Delta vs hold</p>
-        <strong>{{ report.comparison.delta_pct }}%</strong>
-        <span>{{ report.comparison.verdict }}</span>
-      </article>
-      <article class="comparison-card">
-        <p>Spese totali</p>
-        <strong>{{ report.comparison.fees_paid }}</strong>
-        <span>{{ report.comparison.fees_pct_initial_capital }}% del capitale iniziale</span>
-      </article>
-      <article class="comparison-card">
-        <p>Equity senza fee</p>
-        <strong>{{ report.comparison.gross_strategy_final_equity }}</strong>
-        <span>Impatto fee {{ report.comparison.fee_drag_equity }}</span>
-      </article>
-    </div>
-  </section>
-
-  <section class="layout-grid report-layout">
-    <article class="panel chart-panel">
-      <div class="panel-header">
-        <div>
-          <p class="eyebrow">chart lab</p>
-          <h3>Grafico avanzato e preview live</h3>
-        </div>
-        <a class="ghost-link" href="{{ url_for('report_chart_window', report_name=report.name, focus='equity') }}">Apri il Chart Lab</a>
-      </div>
-      <p class="inline-note">
-        I grafici embedded sono stati spostati nella pagina chart dedicata. Li' puoi attivare strategie al volo,
-        vedere overlay e marker sul grafico e confrontare la preview con il sistema salvato senza ricaricare il report.
-      </p>
-    </article>
-  </section>
-
-  <section class="layout-grid report-layout">
-    <article class="panel panel-expandable" data-expandable-panel>
-      <div class="panel-header">
-        <p class="eyebrow">trade preview</p>
-        <h3>Prime 20 operazioni</h3>
-      </div>
-      {% if report.trade_preview %}
-        {% set trades = report.trade_preview %}
-        {% include "partials/_trade_preview_table.html" %}
-      {% else %}
-        <div class="empty-state">
-          <p>Nessun trade registrato in questo report.</p>
-        </div>
-      {% endif %}
-    </article>
-
-    <article class="panel panel-expandable" data-expandable-panel>
-      <div class="panel-header">
-        <p class="eyebrow">recenti</p>
-        <h3>Altri risultati</h3>
-      </div>
-      <div class="report-list report-list-compact">
-        {% for item in saved_items[:10] %}
-          <a class="report-card" href="{{ item.detail_url }}">
-            <div class="report-card-head">
-              <strong>{{ item.metadata.symbol or item.name }}</strong>
-              <span>
-                {% if item.artifact_type == "sweep" %}
-                  Sweep {{ item.metadata.strategy_label or item.metadata.strategy or "SMA" }}
-                {% else %}
-                  {{ item.metadata.strategy_label or item.metadata.strategy or "Backtest" }}
-                {% endif %}
-              </span>
+  <section class="report-dashboard-shell">
+    <section class="report-overview-layout">
+      <article class="panel report-overview-panel">
+        <div class="report-overview-top">
+          <div class="report-title-stack">
+            <p class="eyebrow">{{ report.metadata.strategy_label or report.metadata.strategy }}</p>
+            <h2>{{ report.metadata.symbol or report.name }}</h2>
+            <p class="hero-copy report-overview-copy">
+              Backtest chiuso sul periodo {{ report.metadata.start or "n/d" }} -> {{ report.metadata.end or "n/d" }}
+              con timeframe {{ report.metadata.interval or "n/d" }} e fee {{ report.metadata.fee_bps or "n/d" }} bps.
+            </p>
+          </div>
+          <div class="report-top-actions">
+            <a class="action-button report-chart-button" href="{{ url_for('report_chart_window', report_name=report.name, focus='equity') }}">
+              Apri il Chart Lab
+            </a>
+            <div class="report-file-links">
+              <a class="ghost-link" href="{{ url_for('download_report_file', report_name=report.name, filename='summary.json') }}">summary.json</a>
+              <a class="ghost-link" href="{{ url_for('download_report_file', report_name=report.name, filename='equity_curve.csv') }}">equity_curve.csv</a>
+              <a class="ghost-link" href="{{ url_for('download_report_file', report_name=report.name, filename='trades.csv') }}">trades.csv</a>
             </div>
-            {% if item.artifact_type == "sweep" %}
-              <div class="report-card-metrics">
-                <div>
-                  <label>Best return</label>
-                  <span>{{ item.summary.best_total_return_pct }}%</span>
+          </div>
+        </div>
+
+        {% if report.metadata.get("active_rules") and report.metadata.get("is_composite") %}
+          <div class="report-rule-strip">
+            <span class="report-rule-strip-label">{{ report.metadata.get("rule_logic_label", "Regole combinate") }}</span>
+            {% for rule in report.metadata.get("active_rules", []) %}
+              <span class="strategy-chip">{{ rule.strategy_label }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+
+        <div class="report-meta-strip">
+          {% for chip in report.meta_chips %}
+            <article class="report-meta-chip">
+              <span>{{ chip.label }}</span>
+              <strong>{{ chip.value }}</strong>
+            </article>
+          {% endfor %}
+        </div>
+
+        <div class="report-overview-cards">
+          {% for card in report.overview_cards %}
+            <article class="report-overview-card report-tone-{{ card.tone }}">
+              <p>{{ card.label }}</p>
+              <strong>{{ card.value }}</strong>
+              <span>{{ card.hint }}</span>
+            </article>
+          {% endfor %}
+        </div>
+      </article>
+
+      <aside class="panel report-insights-panel">
+        <div class="panel-header report-panel-header-tight">
+          <div>
+            <p class="eyebrow">lettura rapida</p>
+            <h3>Cosa dicono i numeri</h3>
+          </div>
+        </div>
+        <div class="report-insight-list">
+          {% for insight in report.insights %}
+            <article class="report-insight-card report-tone-{{ insight.tone }}">
+              <strong>{{ insight.title }}</strong>
+              <p>{{ insight.body }}</p>
+            </article>
+          {% endfor %}
+        </div>
+      </aside>
+    </section>
+
+    <section class="report-sections-grid">
+      {% for section in report.metric_sections %}
+        <article class="panel report-section-panel">
+          <div class="panel-header report-panel-header-tight">
+            <div>
+              <p class="eyebrow">{{ section.eyebrow }}</p>
+              <h3>{{ section.title }}</h3>
+            </div>
+          </div>
+          <div class="report-metric-grid">
+            {% for card in section.cards %}
+              <article class="report-metric-card report-tone-{{ card.tone }}">
+                <p>{{ card.label }}</p>
+                <strong>{{ card.value }}</strong>
+                <span>{{ card.hint }}</span>
+              </article>
+            {% endfor %}
+          </div>
+        </article>
+      {% endfor %}
+    </section>
+
+    <section class="report-bottom-grid">
+      <article class="panel report-panel-static">
+        <div class="panel-header report-panel-header-tight">
+          <div>
+            <p class="eyebrow">operazioni</p>
+            <h3>Prime 20 operazioni</h3>
+          </div>
+        </div>
+        {% if report.trade_preview %}
+          {% set trades = report.trade_preview %}
+          {% include "partials/_trade_preview_table.html" %}
+        {% else %}
+          <div class="empty-state">
+            <p>Nessun trade registrato in questo report.</p>
+          </div>
+        {% endif %}
+      </article>
+
+      <aside class="panel report-panel-static">
+        <div class="panel-header report-panel-header-tight">
+          <div>
+            <p class="eyebrow">storico</p>
+            <h3>Altri risultati</h3>
+          </div>
+        </div>
+        <div class="report-list report-list-compact">
+          {% set related_items = saved_items | rejectattr('name', 'equalto', report.name) | list %}
+          {% if related_items %}
+            {% for item in related_items[:8] %}
+              <a class="report-card" href="{{ item.detail_url }}">
+                <div class="report-card-head">
+                  <strong>{{ item.metadata.symbol or item.name }}</strong>
+                  <span>
+                    {% if item.artifact_type == "sweep" %}
+                      Sweep {{ item.metadata.strategy_label or item.metadata.strategy or "SMA" }}
+                    {% else %}
+                      {{ item.metadata.strategy_label or item.metadata.strategy or "Backtest" }}
+                    {% endif %}
+                  </span>
                 </div>
-                <div>
-                  <label>Run</label>
-                  <span>{{ item.summary.run_count }}</span>
-                </div>
-              </div>
-            {% else %}
-              <div class="report-card-metrics">
-                <div>
-                  <label>Total return</label>
-                  <span>{{ item.summary.total_return_pct }}%</span>
-                </div>
-                <div>
-                  <label>Trades</label>
-                  <span>{{ item.summary.trade_count }}</span>
-                </div>
-              </div>
-            {% endif %}
-          </a>
-        {% endfor %}
-      </div>
-    </article>
+                {% if item.artifact_type == "sweep" %}
+                  <div class="report-card-metrics">
+                    <div>
+                      <label>Best return</label>
+                      <span>{{ item.summary.best_total_return_pct }}%</span>
+                    </div>
+                    <div>
+                      <label>Run</label>
+                      <span>{{ item.summary.run_count }}</span>
+                    </div>
+                  </div>
+                {% else %}
+                  <div class="report-card-metrics">
+                    <div>
+                      <label>Total return</label>
+                      <span>{{ item.summary.total_return_pct }}%</span>
+                    </div>
+                    <div>
+                      <label>Trades</label>
+                      <span>{{ item.summary.trade_count }}</span>
+                    </div>
+                  </div>
+                {% endif %}
+              </a>
+            {% endfor %}
+          {% else %}
+            <div class="empty-state">
+              <p>Nessun altro report disponibile.</p>
+            </div>
+          {% endif %}
+        </div>
+      </aside>
+    </section>
   </section>
 {% endblock %}

@@ -474,10 +474,11 @@ def test_report_detail_renders_chart_and_trade_table(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Strategia vs semplice buy &amp; hold" in body
+    assert "report-dashboard-body" in body
+    assert "Cosa dicono i numeri" in body
+    assert "Rendimento e benchmark" in body
+    assert "Costi e attrito" in body
     assert "Delta vs hold" in body
-    assert "Spese totali" in body
-    assert "Grafico avanzato e preview live" in body
     assert "Apri il Chart Lab" in body
     assert "Prime 20 operazioni" in body
     assert "Esito" in body
@@ -498,6 +499,23 @@ def test_report_detail_handles_empty_trades_file(tmp_path: Path) -> None:
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "Nessun trade registrato in questo report." in body
+
+
+def test_report_detail_infers_period_from_equity_curve_when_metadata_missing(tmp_path: Path) -> None:
+    report_name = "SPY-sma_cross-20260403-090000"
+    report_dir = tmp_path / report_name
+    create_report_fixture(report_dir)
+    (report_dir / "metadata.json").unlink()
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+
+    client = app.test_client()
+    response = client.get(f"/reports/{report_name}")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "2024-01-01" in body
+    assert "2024-01-02" in body
+    assert "timeframe 1d" in body
 
 
 def test_sweep_detail_renders_ranking_and_best_run(tmp_path: Path) -> None:

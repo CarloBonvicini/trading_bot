@@ -76,9 +76,14 @@ def load_report(output_dir: str | Path, report_name: str) -> dict[str, object]:
         raise FileNotFoundError(f"Report '{report_name}' not found.")
 
     summary = enrich_summary(_read_json(report_dir / "summary.json"), report_dir)
-    metadata = read_report_metadata(report_dir)
+    metadata = hydrate_report_metadata(
+        metadata=read_report_metadata(report_dir),
+        report_dir=report_dir,
+        summary=summary,
+    )
     equity_curve = _read_equity_curve(report_dir)
     trades = _read_trades(report_dir / "trades.csv")
+    comparison = build_comparison(summary)
 
     return {
         "artifact_type": "report",
@@ -87,7 +92,11 @@ def load_report(output_dir: str | Path, report_name: str) -> dict[str, object]:
         "summary": summary,
         "metadata": metadata,
         "summary_cards": build_summary_cards(summary),
-        "comparison": build_comparison(summary),
+        "comparison": comparison,
+        "overview_cards": build_report_overview_cards(summary, comparison),
+        "metric_sections": build_report_metric_sections(summary, comparison),
+        "insights": build_report_insights(summary, comparison),
+        "meta_chips": build_report_meta_chips(metadata, summary),
         "equity_chart": build_line_chart(
             {
                 "Strategy": equity_curve["equity"],
@@ -173,8 +182,12 @@ def load_report_chart_window(output_dir: str | Path, report_name: str, focus: st
         raise FileNotFoundError(f"Report '{report_name}' not found.")
 
     summary = enrich_summary(_read_json(report_dir / "summary.json"), report_dir)
-    metadata = read_report_metadata(report_dir)
     equity_curve = _read_equity_curve(report_dir)
+    metadata = hydrate_report_metadata(
+        metadata=read_report_metadata(report_dir),
+        report_dir=report_dir,
+        summary=summary,
+    )
     trades = _read_trades(report_dir / "trades.csv")
 
     return _build_chart_window_context(
@@ -221,6 +234,247 @@ def load_sweep_chart_window(output_dir: str | Path, sweep_name: str, focus: str 
             f"Intervallo {metadata.get('interval', 'n/a')}"
         ),
     )
+
+
+def hydrate_report_metadata(
+    *,
+    metadata: dict[str, object],
+    report_dir: Path,
+    summary: dict[str, object],
+) -> dict[str, object]:
+    enriched = dict(metadata)
+    try:
+        equity_curve = _read_equity_curve(report_dir)
+    except FileNotFoundError:
+        equity_curve = pd.DataFrame()
+
+    if "strategy_label" not in enriched and enriched.get("strategy"):
+        enriched["strategy_label"] = str(enriched["strategy"]).replace("_", " ").title()
+
+    start_label, end_label = _infer_report_range(equity_curve)
+    if not enriched.get("start") and start_label:
+        enriched["start"] = start_label
+    if not enriched.get("end") and end_label:
+        enriched["end"] = end_label
+    if not enriched.get("interval"):
+        inferred_interval = _infer_interval_label(equity_curve)
+        if inferred_interval:
+            enriched["interval"] = inferred_interval
+    if "initial_capital" not in enriched and "initial_capital" in summary:
+        enriched["initial_capital"] = summary.get("initial_capital")
+    return enriched
+
+
+def build_report_meta_chips(summary_metadata: dict[str, object], summary: dict[str, object]) -> list[dict[str, str]]:
+    period_start = str(summary_metadata.get("start", "")).strip()
+    period_end = str(summary_metadata.get("end", "")).strip()
+    period_value = " -> ".join(part for part in (period_start, period_end) if part) or "n/d"
+
+    trade_count_value = _to_float(summary.get("trade_count"))
+    fee_bps_value = _to_float(summary_metadata.get("fee_bps"))
+
+    chips = [
+        {"label": "Periodo", "value": period_value},
+        {"label": "Intervallo", "value": str(summary_metadata.get("interval", "n/d"))},
+        {"label": "Fee", "value": f"{fee_bps_value:.2f} bps" if fee_bps_value is not None else "n/d"},
+        {
+            "label": "Trade",
+            "value": str(int(trade_count_value)) if trade_count_value is not None else "n/d",
+        },
+    ]
+    return chips
+
+
+def build_report_overview_cards(
+    summary: dict[str, object],
+    comparison: dict[str, object],
+) -> list[dict[str, str]]:
+    delta_value = _to_float(comparison.get("delta_pct"))
+    drawdown_value = _to_float(summary.get("max_drawdown_pct"))
+    sharpe_value = _to_float(summary.get("sharpe_ratio"))
+
+    return [
+        {
+            "label": "Rendimento strategia",
+            "value": _format_percent_metric(summary.get("total_return_pct")),
+            "hint": f"Equity finale {_format_number_metric(summary.get('final_equity'))}",
+            "tone": "neutral",
+        },
+        {
+            "label": "Buy & hold",
+            "value": _format_percent_metric(summary.get("benchmark_return_pct")),
+            "hint": f"Equity finale {_format_number_metric(summary.get('benchmark_final_equity'))}",
+            "tone": "neutral",
+        },
+        {
+            "label": "Delta vs hold",
+            "value": _format_percent_metric(delta_value, signed=True),
+            "hint": comparison.get("verdict", "Confronto col benchmark"),
+            "tone": _delta_tone(delta_value),
+        },
+        {
+            "label": "Max drawdown",
+            "value": _format_percent_metric(drawdown_value),
+            "hint": "Peggiore discesa dal massimo raggiunto.",
+            "tone": _drawdown_tone(drawdown_value),
+        },
+        {
+            "label": "Sharpe",
+            "value": _format_ratio_metric(sharpe_value),
+            "hint": _interpret_sharpe(sharpe_value),
+            "tone": _sharpe_tone(sharpe_value),
+        },
+    ]
+
+
+def build_report_metric_sections(
+    summary: dict[str, object],
+    comparison: dict[str, object],
+) -> list[dict[str, object]]:
+    delta_value = _to_float(comparison.get("delta_pct"))
+    trade_count_value = _to_float(summary.get("trade_count"))
+    exposure_value = _to_float(summary.get("exposure_pct"))
+    drawdown_value = _to_float(summary.get("max_drawdown_pct"))
+    sharpe_value = _to_float(summary.get("sharpe_ratio"))
+    fee_drag_value = _to_float(summary.get("fee_drag_equity"))
+
+    return [
+        {
+            "eyebrow": "performance",
+            "title": "Rendimento e benchmark",
+            "cards": [
+                {
+                    "label": "Strategia",
+                    "value": _format_percent_metric(summary.get("total_return_pct")),
+                    "hint": f"Capitale finale {_format_number_metric(summary.get('final_equity'))}",
+                    "tone": "neutral",
+                },
+                {
+                    "label": "Buy & hold",
+                    "value": _format_percent_metric(summary.get("benchmark_return_pct")),
+                    "hint": f"Capitale finale {_format_number_metric(summary.get('benchmark_final_equity'))}",
+                    "tone": "neutral",
+                },
+                {
+                    "label": "Differenza",
+                    "value": _format_percent_metric(delta_value, signed=True),
+                    "hint": "Positivo = meglio del benchmark",
+                    "tone": _delta_tone(delta_value),
+                },
+                {
+                    "label": "Rendimento annuo",
+                    "value": _format_percent_metric(summary.get("annual_return_pct")),
+                    "hint": "Media annualizzata del test",
+                    "tone": "neutral",
+                },
+            ],
+        },
+        {
+            "eyebrow": "rischio",
+            "title": "Rischio e tenuta",
+            "cards": [
+                {
+                    "label": "Max drawdown",
+                    "value": _format_percent_metric(drawdown_value),
+                    "hint": "Peggior calo dal massimo precedente",
+                    "tone": _drawdown_tone(drawdown_value),
+                },
+                {
+                    "label": "Sharpe",
+                    "value": _format_ratio_metric(sharpe_value),
+                    "hint": _interpret_sharpe(sharpe_value),
+                    "tone": _sharpe_tone(sharpe_value),
+                },
+                {
+                    "label": "Numero trade",
+                    "value": str(int(trade_count_value)) if trade_count_value is not None else "n/d",
+                    "hint": "Operazioni chiuse nel periodo",
+                    "tone": "neutral",
+                },
+                {
+                    "label": "Esposizione",
+                    "value": _format_percent_metric(exposure_value),
+                    "hint": "Tempo medio in posizione sul mercato",
+                    "tone": "neutral",
+                },
+            ],
+        },
+        {
+            "eyebrow": "costi",
+            "title": "Costi e attrito",
+            "cards": [
+                {
+                    "label": "Spese totali",
+                    "value": _format_number_metric(summary.get("fees_paid")),
+                    "hint": "Commissioni sommate nel periodo",
+                    "tone": "neutral",
+                },
+                {
+                    "label": "Spese sul capitale",
+                    "value": _format_percent_metric(summary.get("fees_paid_pct_initial_capital")),
+                    "hint": "Incidenza sul capitale iniziale",
+                    "tone": "neutral",
+                },
+                {
+                    "label": "Equity senza fee",
+                    "value": _format_number_metric(summary.get("gross_final_equity")),
+                    "hint": "Risultato lordo prima dei costi",
+                    "tone": "neutral",
+                },
+                {
+                    "label": "Impatto fee",
+                    "value": _format_number_metric(fee_drag_value),
+                    "hint": "Differenza finale causata dai costi",
+                    "tone": "warning" if fee_drag_value not in (None, 0) else "neutral",
+                },
+            ],
+        },
+    ]
+
+
+def build_report_insights(summary: dict[str, object], comparison: dict[str, object]) -> list[dict[str, str]]:
+    strategy_return = _format_percent_metric(summary.get("total_return_pct"))
+    hold_return = _format_percent_metric(summary.get("benchmark_return_pct"))
+    delta_value = _to_float(comparison.get("delta_pct"))
+    drawdown_value = _to_float(summary.get("max_drawdown_pct"))
+    fees_value = _format_number_metric(summary.get("fees_paid"))
+    fee_pct_value = _format_percent_metric(summary.get("fees_paid_pct_initial_capital"))
+    trade_count_value = _to_float(summary.get("trade_count"))
+    exposure_value = _format_percent_metric(summary.get("exposure_pct"))
+
+    return [
+        {
+            "title": "Confronto col benchmark",
+            "body": (
+                f"La strategia ha chiuso a {strategy_return} contro {hold_return} del buy & hold. "
+                f"Delta finale {_format_percent_metric(delta_value, signed=True)}."
+            ),
+            "tone": _delta_tone(delta_value),
+        },
+        {
+            "title": "Rischio massimo sopportato",
+            "body": (
+                f"Nel momento peggiore il portafoglio era a {_format_percent_metric(drawdown_value)} "
+                "dal massimo precedente."
+            ),
+            "tone": _drawdown_tone(drawdown_value),
+        },
+        {
+            "title": "Costo operativo",
+            "body": (
+                f"Hai pagato {fees_value} di fee, pari a {fee_pct_value} del capitale iniziale."
+            ),
+            "tone": "neutral",
+        },
+        {
+            "title": "Attivita' del sistema",
+            "body": (
+                f"Il sistema ha chiuso {int(trade_count_value) if trade_count_value is not None else 'n/d'} trade "
+                f"con esposizione media {exposure_value}."
+            ),
+            "tone": "neutral",
+        },
+    ]
 
 
 def build_summary_cards(summary: dict[str, object]) -> list[dict[str, object]]:
@@ -590,6 +844,119 @@ def _metadata_from_report_name(report_name: str) -> dict[str, object]:
         "strategy_label": strategy.replace("_", " ").title(),
         "created_at": metadata["timestamp"],
     }
+
+
+def _infer_report_range(equity_curve: pd.DataFrame) -> tuple[str, str]:
+    labels = _extract_date_labels(equity_curve)
+    if not labels:
+        return "", ""
+    return labels[0], labels[-1]
+
+
+def _infer_interval_label(equity_curve: pd.DataFrame) -> str:
+    if "date" not in equity_curve.columns or len(equity_curve.index) < 2:
+        return ""
+
+    dates = pd.to_datetime(equity_curve["date"], errors="coerce").dropna()
+    if len(dates) < 2:
+        return ""
+
+    deltas = dates.diff().dropna()
+    if deltas.empty:
+        return ""
+
+    median_delta = deltas.median()
+    if pd.isna(median_delta):
+        return ""
+
+    total_minutes = median_delta.total_seconds() / 60
+    interval_candidates = [
+        ("1m", 1),
+        ("2m", 2),
+        ("5m", 5),
+        ("15m", 15),
+        ("30m", 30),
+        ("1h", 60),
+        ("90m", 90),
+        ("1d", 24 * 60),
+        ("1wk", 7 * 24 * 60),
+        ("1mo", 30 * 24 * 60),
+    ]
+    closest_label, closest_value = min(
+        interval_candidates,
+        key=lambda candidate: abs(candidate[1] - total_minutes),
+    )
+    if closest_value == 0:
+        return ""
+    tolerance = max(closest_value * 0.3, 1)
+    return closest_label if abs(total_minutes - closest_value) <= tolerance else ""
+
+
+def _format_number_metric(value: object, decimals: int = 2) -> str:
+    numeric = _to_float(value)
+    if numeric is None:
+        return "n/d"
+    return f"{numeric:,.{decimals}f}"
+
+
+def _format_percent_metric(value: object, *, signed: bool = False, decimals: int = 2) -> str:
+    numeric = _to_float(value)
+    if numeric is None:
+        return "n/d"
+    sign = "+" if signed and numeric > 0 else ""
+    return f"{sign}{numeric:.{decimals}f}%"
+
+
+def _format_ratio_metric(value: object, decimals: int = 2) -> str:
+    numeric = _to_float(value)
+    if numeric is None:
+        return "n/d"
+    return f"{numeric:.{decimals}f}"
+
+
+def _delta_tone(value: float | None) -> str:
+    if value is None:
+        return "neutral"
+    if value > 0:
+        return "positive"
+    if value < 0:
+        return "negative"
+    return "neutral"
+
+
+def _drawdown_tone(value: float | None) -> str:
+    if value is None:
+        return "neutral"
+    drawdown_abs = abs(value)
+    if drawdown_abs <= 10:
+        return "positive"
+    if drawdown_abs <= 20:
+        return "warning"
+    return "negative"
+
+
+def _sharpe_tone(value: float | None) -> str:
+    if value is None:
+        return "neutral"
+    if value >= 1.5:
+        return "positive"
+    if value >= 1:
+        return "warning"
+    return "negative"
+
+
+def _interpret_sharpe(value: float | None) -> str:
+    if value is None:
+        return "Qualita' del rendimento non disponibile."
+    if value >= 2:
+        return "Molto buono: rendimento molto pulito rispetto alla volatilita'."
+    if value >= 1.5:
+        return "Buono: rischio/rendimento solido."
+    if value >= 1:
+        return "Discreto: il profilo rischio/rendimento regge."
+    if value >= 0.5:
+        return "Debole: rendimento poco efficiente rispetto al rischio."
+    return "Molto debole: troppo rumore per il rendimento prodotto."
 
 
 def _read_json(path: Path) -> dict[str, object]:
