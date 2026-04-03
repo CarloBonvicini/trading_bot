@@ -6,6 +6,7 @@
 {% endblock %}
 {% block content %}
   <script id="chart-window-data" type="application/json">{{ chart.chart_payload | tojson }}</script>
+  <script id="chart-strategy-lab-config" type="application/json">{{ chart.chart_lab | tojson }}</script>
 
   <section class="chart-terminal-shell">
     <section class="panel chart-terminal-topbar">
@@ -192,6 +193,7 @@
           <span>Range <strong data-chart-status="range">All</strong></span>
           <span>Replay <strong data-chart-status="playback">Tutto subito</strong></span>
           <span>Velocita' <strong data-chart-status="speed">6x/sec</strong></span>
+          <span>Preview <strong data-chart-status="preview">{{ chart.chart_lab.baseline_label }}</strong></span>
           <span>Mouse wheel per zoom, drag per navigare</span>
         </div>
       </article>
@@ -232,6 +234,26 @@
                 {% endif %}
               </button>
             {% endfor %}
+            <button type="button" class="terminal-layer-item" data-trace-toggle="preview_entry" data-preview-layer hidden>
+              <span class="terminal-layer-swatch terminal-layer-swatch-preview-entry"></span>
+              <span>Preview entry</span>
+              <small>live</small>
+            </button>
+            <button type="button" class="terminal-layer-item" data-trace-toggle="preview_exit" data-preview-layer hidden>
+              <span class="terminal-layer-swatch terminal-layer-swatch-preview-exit"></span>
+              <span>Preview exit</span>
+              <small>live</small>
+            </button>
+            <button type="button" class="terminal-layer-item" data-trace-toggle="preview_strategy" data-preview-layer hidden>
+              <span class="terminal-layer-swatch terminal-layer-swatch-preview-strategy"></span>
+              <span>Preview equity</span>
+              <small>live</small>
+            </button>
+            <button type="button" class="terminal-layer-item" data-trace-toggle="preview_drawdown" data-preview-layer hidden>
+              <span class="terminal-layer-swatch terminal-layer-swatch-preview-drawdown"></span>
+              <span>Preview drawdown</span>
+              <small>live</small>
+            </button>
           </div>
         </section>
 
@@ -262,6 +284,134 @@
       </aside>
     </section>
 
+    <section class="chart-terminal-live-grid">
+      <article class="panel chart-terminal-live-lab">
+        <div class="panel-header chart-terminal-panel-header">
+          <div>
+            <p class="eyebrow">chart lab</p>
+            <h3>Attiva strategie live sul grafico</h3>
+          </div>
+          <button type="button" class="ghost-link chart-action-link" data-chart-preview-reset>Ripristina sistema salvato</button>
+        </div>
+        <p class="inline-note">
+          Qui il report resta il baseline. Le regole che attivi sotto generano una preview live sullo stesso dataset del grafico,
+          con overlay immediato e confronto diretto contro {{ chart.chart_lab.baseline_label }}.
+        </p>
+
+        <div class="chart-live-toolbar">
+          <label class="terminal-select-field">
+            <span>Combina le regole</span>
+            <select data-chart-rule-logic>
+              {% for key, label in chart.chart_lab.rule_logic_options.items() %}
+                <option value="{{ key }}" {% if chart.chart_lab.rule_logic == key %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <div class="chart-live-status">
+            <span class="terminal-toolbar-label">stato preview</span>
+            <strong data-live-preview-status>Baseline caricato. Modifica i toggle per vedere il delta live.</strong>
+          </div>
+        </div>
+
+        <div class="chart-live-toggle-grid">
+          {% for strategy_id, strategy in chart.chart_lab.strategies.items() %}
+            <label
+              class="chart-live-toggle-card {% if strategy_id in chart.chart_lab.active_strategy_ids %}is-active{% endif %}"
+              data-chart-strategy-card="{{ strategy_id }}"
+            >
+              <input
+                type="checkbox"
+                value="{{ strategy_id }}"
+                data-chart-strategy-toggle
+                data-no-expand="true"
+                {% if strategy_id in chart.chart_lab.active_strategy_ids %}checked{% endif %}
+              >
+              <div class="chart-live-toggle-copy">
+                <strong>{{ strategy.label }}</strong>
+                <span>{{ strategy.description }}</span>
+              </div>
+            </label>
+          {% endfor %}
+        </div>
+
+        <div class="chart-live-parameters-grid">
+          {% for strategy_id, strategy in chart.chart_lab.strategies.items() %}
+            <section
+              class="chart-live-parameters {% if strategy_id in chart.chart_lab.active_strategy_ids %}is-active{% endif %}"
+              data-chart-parameters="{{ strategy_id }}"
+            >
+              <div class="section-head">
+                <div>
+                  <div class="section-label">{{ strategy.label }}</div>
+                  <p class="inline-note">{{ strategy.description }}</p>
+                </div>
+              </div>
+              <div class="input-grid">
+                {% for parameter in strategy.parameters %}
+                  {% set field_name = parameter.field_name %}
+                  {% set strategy_params = chart.chart_lab.parameters_by_strategy.get(strategy_id, {}) %}
+                  <div class="field-block">
+                    <label>
+                      <span>{{ parameter.label }}</span>
+                      <input
+                        type="number"
+                        name="{{ field_name }}"
+                        value="{{ strategy_params.get(parameter.name, parameter.default) }}"
+                        data-chart-parameter-input="{{ field_name }}"
+                        data-no-expand="true"
+                        {% if parameter.minimum is not none %}min="{{ parameter.minimum }}"{% endif %}
+                        {% if parameter.maximum is not none %}max="{{ parameter.maximum }}"{% endif %}
+                        {% if parameter.step is not none %}step="{{ parameter.step }}"{% endif %}
+                      >
+                    </label>
+                  </div>
+                {% endfor %}
+              </div>
+            </section>
+          {% endfor %}
+        </div>
+      </article>
+
+      <article class="panel chart-terminal-live-preview">
+        <div class="panel-header chart-terminal-panel-header">
+          <div>
+            <p class="eyebrow">delta live</p>
+            <h3>Preview vs sistema salvato</h3>
+          </div>
+          <span class="strategy-chip strategy-chip-accent" data-live-preview-badge>{{ chart.chart_lab.baseline_label }}</span>
+        </div>
+        <p class="inline-note" data-live-rule-summary>
+          Sistema attuale: {{ chart.chart_lab.baseline_label }}.
+        </p>
+        <div class="terminal-metric-grid chart-live-comparison-grid" data-live-comparison-grid>
+          {% for card in chart.chart_lab.comparison_cards %}
+            <article class="terminal-metric-card">
+              <p>{{ card.label }}</p>
+              <strong>{{ card.value }}</strong>
+              <span>{{ card.hint }}</span>
+            </article>
+          {% endfor %}
+        </div>
+
+        <div class="panel-header chart-terminal-panel-header chart-live-preview-subheader">
+          <div>
+            <p class="eyebrow">preview trade tape</p>
+            <h3>Prime 10 operazioni live</h3>
+          </div>
+        </div>
+        <div data-live-trade-preview>
+          {% if chart.chart_lab.trade_preview %}
+            {% set trades = chart.chart_lab.trade_preview %}
+            {% include "partials/_trade_preview_table.html" %}
+          {% else %}
+            <div class="empty-state">
+              <p>Nessun trade disponibile nella preview iniziale.</p>
+            </div>
+          {% endif %}
+        </div>
+      </article>
+    </section>
+
     <section class="panel chart-terminal-trades">
       <div class="panel-header chart-terminal-panel-header">
         <div>
@@ -283,4 +433,5 @@
 {% endblock %}
 {% block page_scripts %}
   <script src="{{ url_for('static', filename='chart_window.js') }}"></script>
+  <script src="{{ url_for('static', filename='chart_strategy_lab.js') }}"></script>
 {% endblock %}

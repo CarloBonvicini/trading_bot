@@ -9,7 +9,7 @@ from trading_bot.services import BacktestRequest
 from trading_bot.web import create_app
 
 
-def create_report_fixture(report_dir: Path) -> None:
+def create_report_fixture(report_dir: Path, *, with_trades: bool = True) -> None:
     report_dir.mkdir(parents=True)
     (report_dir / "summary.json").write_text(
         json.dumps(
@@ -40,10 +40,32 @@ def create_report_fixture(report_dir: Path) -> None:
                 "symbol": "SPY",
                 "strategy": "sma_cross",
                 "strategy_label": "SMA Crossover",
+                "primary_strategy": "sma_cross",
+                "primary_strategy_label": "SMA Crossover",
+                "active_strategy_ids": ["sma_cross"],
+                "rule_logic": "all",
+                "rule_logic_label": "Tutte le regole (AND)",
+                "is_composite": False,
+                "active_rules": [
+                    {
+                        "slot": "rule_1",
+                        "strategy": "sma_cross",
+                        "strategy_label": "SMA Crossover",
+                        "parameters": {
+                            "fast": 20,
+                            "slow": 100,
+                        },
+                    }
+                ],
                 "start": "2020-01-01",
                 "end": "2024-12-31",
                 "interval": "1d",
                 "fee_bps": 5.0,
+                "initial_capital": 10000.0,
+                "parameters": {
+                    "fast": 20,
+                    "slow": 100,
+                },
                 "created_at": "2026-04-03T09:00:00",
             }
         ),
@@ -62,16 +84,19 @@ def create_report_fixture(report_dir: Path) -> None:
             "drawdown": [0.0, -0.5],
         }
     ).to_csv(report_dir / "equity_curve.csv", index=False)
-    pd.DataFrame(
-        {
-            "entry_date": ["2024-01-01"],
-            "entry_price": [100.0],
-            "exit_date": ["2024-01-05"],
-            "exit_price": [104.0],
-            "pnl_pct": [4.0],
-            "holding_days": [4],
-        }
-    ).to_csv(report_dir / "trades.csv", index=False)
+    if with_trades:
+        pd.DataFrame(
+            {
+                "entry_date": ["2024-01-01"],
+                "entry_price": [100.0],
+                "exit_date": ["2024-01-05"],
+                "exit_price": [104.0],
+                "pnl_pct": [4.0],
+                "holding_days": [4],
+            }
+        ).to_csv(report_dir / "trades.csv", index=False)
+    else:
+        (report_dir / "trades.csv").write_text("", encoding="utf-8")
 
 
 def create_sweep_fixture(sweep_dir: Path) -> None:
@@ -449,15 +474,30 @@ def test_report_detail_renders_chart_and_trade_table(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Strategia vs buy &amp; hold" in body
+    assert "Strategia vs semplice buy &amp; hold" in body
     assert "Delta vs hold" in body
     assert "Spese totali" in body
+    assert "Grafico avanzato e preview live" in body
+    assert "Apri il Chart Lab" in body
     assert "Prime 20 operazioni" in body
     assert "Esito" in body
     assert "Durata" in body
     assert "WIN" in body
     assert f"/reports/{report_name}/chart?focus=equity" in body
     assert 'id="panel-backdrop"' in body
+
+
+def test_report_detail_handles_empty_trades_file(tmp_path: Path) -> None:
+    report_name = "SPY-multi_rules_all-20260403-164850"
+    create_report_fixture(tmp_path / report_name, with_trades=False)
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+
+    client = app.test_client()
+    response = client.get(f"/reports/{report_name}")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "Nessun trade registrato in questo report." in body
 
 
 def test_sweep_detail_renders_ranking_and_best_run(tmp_path: Path) -> None:
@@ -496,6 +536,33 @@ def test_report_chart_window_renders_interactive_chart(tmp_path: Path) -> None:
     assert 'data-series-start' in body
     assert 'data-visible-window' in body
     assert 'data-playback-speed' in body
+    assert 'data-chart-strategy-toggle' in body
+    assert 'data-live-comparison-grid' in body
+    assert f"/reports/{report_name}/chart-preview" in body
+
+
+def test_report_chart_preview_returns_live_payload(tmp_path: Path) -> None:
+    report_name = "SPY-sma_cross-20260403-090000"
+    create_report_fixture(tmp_path / report_name)
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+
+    client = app.test_client()
+    response = client.post(
+        f"/reports/{report_name}/chart-preview",
+        json={
+            "active_strategies": ["sma_cross"],
+            "rule_logic": "all",
+            "sma_cross__fast": 1,
+            "sma_cross__slow": 2,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["preview_label"] == "SMA Crossover"
+    assert "chart_payload" in payload
+    assert "comparison_cards" in payload
+    assert "trade_preview" in payload
 
 
 def test_create_preset_saves_named_strategy_setup(tmp_path: Path) -> None:

@@ -32,6 +32,7 @@
     high: $("[data-market-high]"),
     low: $("[data-market-low]"),
   };
+  const baselinePreviewLabel = document.querySelector('[data-chart-status="preview"]')?.textContent || "Sistema salvato";
 
   const focusDomains = {
     all: { price: [0.5, 1], equity: [0.2, 0.43], drawdown: [0, 0.13] },
@@ -39,7 +40,20 @@
     equity: { price: [0.62, 1], equity: [0.16, 0.58], drawdown: [0, 0.11] },
     drawdown: { price: [0.72, 1], equity: [0.36, 0.68], drawdown: [0, 0.27] },
   };
-  const traceIndexes = { price: 0, volume: 1, entry: 2, exit: 3, strategy: 4, benchmark: 5, gross: 6, drawdown: 7 };
+  const traceIndexes = {
+    price: 0,
+    volume: 1,
+    entry: 2,
+    exit: 3,
+    strategy: 4,
+    benchmark: 5,
+    gross: 6,
+    drawdown: 7,
+    preview_entry: 8,
+    preview_exit: 9,
+    preview_strategy: 10,
+    preview_drawdown: 11,
+  };
   const state = {
     focus: focusDomains[p.focus] ? p.focus : "all",
     range: "series",
@@ -61,6 +75,16 @@
       benchmark: hasValues(p.equity?.benchmark),
       gross: hasValues(p.equity?.gross),
       drawdown: hasValues(p.drawdown_pct),
+      preview_entry: false,
+      preview_exit: false,
+      preview_strategy: false,
+      preview_drawdown: false,
+    },
+    previewAvailable: {
+      preview_entry: false,
+      preview_exit: false,
+      preview_strategy: false,
+      preview_drawdown: false,
     },
   };
 
@@ -110,6 +134,10 @@
       { type: "scatter", mode: "lines", name: "Buy & hold", x: p.dates, y: p.equity?.benchmark || [], visible: state.visible.benchmark, line: { color: "#60a5fa", width: 2.1 }, hovertemplate: "Buy & hold %{y:,.2f}<br>%{x}<extra></extra>", xaxis: "x2", yaxis: "y2" },
       { type: "scatter", mode: "lines", name: "Senza fee", x: p.dates, y: p.equity?.gross || [], visible: state.visible.gross, line: { color: "#fbbf24", width: 1.6, dash: "dot" }, hovertemplate: "Senza fee %{y:,.2f}<br>%{x}<extra></extra>", xaxis: "x2", yaxis: "y2" },
       { type: "scatter", mode: "lines", name: "Drawdown", x: p.dates, y: p.drawdown_pct || [], visible: state.visible.drawdown, line: { color: "#ff6b7b", width: 2.2 }, fill: "tozeroy", fillcolor: "rgba(255,95,115,0.18)", hovertemplate: "Drawdown %{y:.2f}%<br>%{x}<extra></extra>", xaxis: "x3", yaxis: "y3" },
+      { type: "scatter", mode: "markers", name: "Preview entry", x: [], y: [], text: [], visible: false, hovertemplate: "%{text}<br>%{x}<br>%{y:.4f}<extra></extra>", marker: { color: "#f59e0b", size: 10, symbol: "diamond", line: { width: 1, color: "#2b1800" } }, xaxis: "x", yaxis: "y" },
+      { type: "scatter", mode: "markers", name: "Preview exit", x: [], y: [], text: [], visible: false, hovertemplate: "%{text}<br>%{x}<br>%{y:.4f}<extra></extra>", marker: { color: "#fb7185", size: 10, symbol: "diamond-open", line: { width: 1, color: "#2f0a12" } }, xaxis: "x", yaxis: "y" },
+      { type: "scatter", mode: "lines", name: "Preview live", x: p.dates, y: [], visible: false, line: { color: "#f59e0b", width: 2.6 }, hovertemplate: "Preview %{y:,.2f}<br>%{x}<extra></extra>", xaxis: "x2", yaxis: "y2" },
+      { type: "scatter", mode: "lines", name: "Preview DD", x: p.dates, y: [], visible: false, line: { color: "#f97316", width: 2.2, dash: "dot" }, hovertemplate: "Preview DD %{y:.2f}%<br>%{x}<extra></extra>", xaxis: "x3", yaxis: "y3" },
     ];
   }
 
@@ -242,6 +270,7 @@
     setStatus("range", state.range === "series" ? "Serie scelta" : state.range);
     setStatus("playback", state.mode === "replay" ? "Replay" : "Tutto subito");
     setStatus("speed", `${state.speed}x/sec`);
+    updatePreviewLayerButtons();
   }
 
   function updateReplayInfo(current) {
@@ -293,4 +322,91 @@
   function compact(v) { const a = Math.abs(v); if (a >= 1e9) return `${(v / 1e9).toFixed(1)}B`; if (a >= 1e6) return `${(v / 1e6).toFixed(1)}M`; if (a >= 1e3) return `${(v / 1e3).toFixed(1)}K`; return `${Math.round(v)}`; }
   function setStatus(k, v) { const n = document.querySelector(`[data-chart-status="${k}"]`); if (n) n.textContent = v; }
   function hasValues(arr) { return Array.isArray(arr) && arr.some((v) => v !== null && v !== undefined); }
+
+  function updatePreviewLayerButtons() {
+    document.querySelectorAll("[data-preview-layer]").forEach((button) => {
+      const key = button.dataset.traceToggle || "";
+      const available = Boolean(state.previewAvailable[key]);
+      button.hidden = !available;
+      if (available) {
+        button.classList.toggle("is-on", Boolean(state.visible[key]));
+      }
+    });
+  }
+
+  function applyPreview(payload, previewLabel = "Preview live") {
+    const previewData = payload || {};
+    state.previewAvailable.preview_entry = hasValues(previewData.entry_markers?.x);
+    state.previewAvailable.preview_exit = hasValues(previewData.exit_markers?.x);
+    state.previewAvailable.preview_strategy = hasValues(previewData.equity?.strategy);
+    state.previewAvailable.preview_drawdown = hasValues(previewData.drawdown_pct);
+
+    Object.keys(state.previewAvailable).forEach((key) => {
+      state.visible[key] = state.previewAvailable[key];
+    });
+
+    Plotly.restyle(
+      root,
+      {
+        x: [previewData.entry_markers?.x || []],
+        y: [previewData.entry_markers?.y || []],
+        text: [previewData.entry_markers?.text || []],
+        visible: state.visible.preview_entry ? true : false,
+        name: ["Preview entry"],
+      },
+      [traceIndexes.preview_entry],
+    );
+    Plotly.restyle(
+      root,
+      {
+        x: [previewData.exit_markers?.x || []],
+        y: [previewData.exit_markers?.y || []],
+        text: [previewData.exit_markers?.text || []],
+        visible: state.visible.preview_exit ? true : false,
+        name: ["Preview exit"],
+      },
+      [traceIndexes.preview_exit],
+    );
+    Plotly.restyle(
+      root,
+      {
+        x: [previewData.dates || p.dates],
+        y: [previewData.equity?.strategy || []],
+        visible: state.visible.preview_strategy ? true : false,
+        name: [previewLabel],
+      },
+      [traceIndexes.preview_strategy],
+    );
+    Plotly.restyle(
+      root,
+      {
+        x: [previewData.dates || p.dates],
+        y: [previewData.drawdown_pct || []],
+        visible: state.visible.preview_drawdown ? true : false,
+        name: [`${previewLabel} DD`],
+      },
+      [traceIndexes.preview_drawdown],
+    );
+    setStatus("preview", previewLabel);
+    syncUi();
+  }
+
+  function clearPreview() {
+    Object.keys(state.previewAvailable).forEach((key) => {
+      state.previewAvailable[key] = false;
+      state.visible[key] = false;
+    });
+
+    Plotly.restyle(root, { x: [[]], y: [[]], text: [[]], visible: false }, [traceIndexes.preview_entry]);
+    Plotly.restyle(root, { x: [[]], y: [[]], text: [[]], visible: false }, [traceIndexes.preview_exit]);
+    Plotly.restyle(root, { x: [p.dates], y: [[]], visible: false, name: ["Preview live"] }, [traceIndexes.preview_strategy]);
+    Plotly.restyle(root, { x: [p.dates], y: [[]], visible: false, name: ["Preview DD"] }, [traceIndexes.preview_drawdown]);
+    setStatus("preview", baselinePreviewLabel);
+    syncUi();
+  }
+
+  window.tradingBotChartTerminal = {
+    applyPreview,
+    clearPreview,
+  };
 })();

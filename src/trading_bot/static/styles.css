@@ -1587,10 +1587,143 @@ td {
   background: #ff7b89;
 }
 
+.terminal-layer-swatch-preview-entry {
+  background: #f59e0b;
+}
+
+.terminal-layer-swatch-preview-exit {
+  background: #fb7185;
+}
+
+.terminal-layer-swatch-preview-strategy {
+  background: #f59e0b;
+}
+
+.terminal-layer-swatch-preview-drawdown {
+  background: #f97316;
+}
+
 .terminal-ohlc-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
+}
+
+.chart-terminal-live-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.chart-terminal-live-lab,
+.chart-terminal-live-preview {
+  padding: 1rem;
+}
+
+.chart-live-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  gap: 0.9rem;
+  margin: 1rem 0;
+}
+
+.chart-live-status {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 18px;
+  border: 1px solid rgba(171, 184, 214, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.chart-live-status strong {
+  color: var(--ink);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.chart-live-comparison-grid span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.chart-live-toggle-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.chart-live-toggle-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: start;
+  padding: 0.95rem 1rem;
+  border-radius: 20px;
+  border: 1px solid rgba(171, 184, 214, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.chart-live-toggle-card:hover,
+.chart-live-toggle-card.is-active {
+  transform: translateY(-1px);
+  border-color: rgba(38, 208, 168, 0.34);
+  background: rgba(38, 208, 168, 0.08);
+}
+
+.chart-live-toggle-card input {
+  margin-top: 0.18rem;
+  accent-color: #26d0a8;
+}
+
+.chart-live-toggle-copy {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.chart-live-toggle-copy strong {
+  font-size: 0.98rem;
+}
+
+.chart-live-toggle-copy span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.chart-live-parameters-grid {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.chart-live-parameters {
+  display: none;
+  gap: 0.85rem;
+  padding: 0.95rem;
+  border-radius: 20px;
+  border: 1px solid rgba(171, 184, 214, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.chart-live-parameters.is-active {
+  display: grid;
+}
+
+.chart-live-parameters .input-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.chart-live-comparison-grid {
+  margin-bottom: 1rem;
+}
+
+.chart-live-preview-subheader {
+  padding-top: 0.2rem;
 }
 
 .chart-terminal-trades {
@@ -2094,6 +2227,7 @@ td {
 
   .chart-terminal-grid,
   .chart-terminal-playerbar,
+  .chart-terminal-live-grid,
   .terminal-metric-grid,
   .terminal-ohlc-grid,
   .home-action-grid,
@@ -2111,7 +2245,10 @@ td {
   }
 
   .terminal-player-cluster-grow,
-  .terminal-player-selects {
+  .terminal-player-selects,
+  .chart-live-parameters .input-grid,
+  .chart-live-toolbar,
+  .chart-live-toggle-grid {
     grid-column: auto;
     grid-template-columns: 1fr;
   }

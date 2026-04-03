@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 import pandas as pd
+from pandas.errors import EmptyDataError
 
 SUMMARY_LABELS = {
     "initial_capital": "Capitale iniziale",
@@ -26,6 +27,14 @@ SUMMARY_LABELS = {
 }
 
 REPORT_NAME_PATTERN = re.compile(r"^(?P<symbol>.+)-(?P<strategy>[a-z_]+)-(?P<timestamp>\d{8}-\d{6})$")
+EMPTY_TRADE_COLUMNS = (
+    "entry_date",
+    "entry_price",
+    "exit_date",
+    "exit_price",
+    "pnl_pct",
+    "holding_days",
+)
 
 
 def list_saved_items(output_dir: str | Path) -> list[dict[str, object]]:
@@ -69,7 +78,7 @@ def load_report(output_dir: str | Path, report_name: str) -> dict[str, object]:
     summary = enrich_summary(_read_json(report_dir / "summary.json"), report_dir)
     metadata = read_report_metadata(report_dir)
     equity_curve = _read_equity_curve(report_dir)
-    trades = pd.read_csv(report_dir / "trades.csv")
+    trades = _read_trades(report_dir / "trades.csv")
 
     return {
         "artifact_type": "report",
@@ -106,7 +115,7 @@ def load_sweep(output_dir: str | Path, sweep_name: str) -> dict[str, object]:
     results = pd.read_csv(sweep_dir / "results.csv")
     best_summary = enrich_summary(_read_json(sweep_dir / "best_summary.json"), sweep_dir)
     best_equity_curve = _read_best_equity_curve(sweep_dir)
-    best_trades = pd.read_csv(sweep_dir / "best_trades.csv")
+    best_trades = _read_trades(sweep_dir / "best_trades.csv")
 
     top_results = results.sort_values(by=["rank"], ascending=True).head(40).copy()
     ranking_chart = build_line_chart(
@@ -166,7 +175,7 @@ def load_report_chart_window(output_dir: str | Path, report_name: str, focus: st
     summary = enrich_summary(_read_json(report_dir / "summary.json"), report_dir)
     metadata = read_report_metadata(report_dir)
     equity_curve = _read_equity_curve(report_dir)
-    trades = pd.read_csv(report_dir / "trades.csv")
+    trades = _read_trades(report_dir / "trades.csv")
 
     return _build_chart_window_context(
         artifact_type="report",
@@ -193,7 +202,7 @@ def load_sweep_chart_window(output_dir: str | Path, sweep_name: str, focus: str 
     summary = _read_json(sweep_dir / "summary.json")
     best_summary = enrich_summary(_read_json(sweep_dir / "best_summary.json"), sweep_dir)
     best_equity_curve = _read_best_equity_curve(sweep_dir)
-    best_trades = pd.read_csv(sweep_dir / "best_trades.csv")
+    best_trades = _read_trades(sweep_dir / "best_trades.csv")
     parameter_labels = metadata.get("parameter_labels", {"fast": "Fast", "slow": "Slow"})
 
     return _build_chart_window_context(
@@ -292,6 +301,56 @@ def build_comparison(summary: dict[str, object]) -> dict[str, object]:
         "fee_drag_equity": summary.get("fee_drag_equity", ""),
         "verdict": verdict,
     }
+
+
+def build_live_comparison_cards(
+    preview_summary: dict[str, object],
+    baseline_summary: dict[str, object],
+    *,
+    baseline_label: str,
+    preview_label: str,
+) -> list[dict[str, str]]:
+    preview_return = float(preview_summary.get("total_return_pct", 0.0))
+    baseline_return = float(baseline_summary.get("total_return_pct", 0.0))
+    preview_drawdown = float(preview_summary.get("max_drawdown_pct", 0.0))
+    baseline_drawdown = float(baseline_summary.get("max_drawdown_pct", 0.0))
+    preview_trades = int(preview_summary.get("trade_count", 0))
+    baseline_trades = int(baseline_summary.get("trade_count", 0))
+    preview_fees = float(preview_summary.get("fees_paid", 0.0))
+    baseline_fees = float(baseline_summary.get("fees_paid", 0.0))
+
+    return [
+        {
+            "label": "Preview live",
+            "value": f"{preview_return:.2f}%",
+            "hint": preview_label,
+        },
+        {
+            "label": "Sistema salvato",
+            "value": f"{baseline_return:.2f}%",
+            "hint": baseline_label,
+        },
+        {
+            "label": "Delta rendimento",
+            "value": f"{(preview_return - baseline_return):+.2f}%",
+            "hint": "positivo = meglio del sistema salvato",
+        },
+        {
+            "label": "Delta max DD",
+            "value": f"{(preview_drawdown - baseline_drawdown):+.2f}%",
+            "hint": "positivo = drawdown meno pesante",
+        },
+        {
+            "label": "Delta trade",
+            "value": _format_signed_int(preview_trades - baseline_trades),
+            "hint": f"{preview_trades} vs {baseline_trades}",
+        },
+        {
+            "label": "Delta fee",
+            "value": _format_signed_number(preview_fees - baseline_fees, decimals=2),
+            "hint": "negativo = meno costi",
+        },
+    ]
 
 
 def build_market_snapshot(equity_curve: pd.DataFrame) -> dict[str, object]:
@@ -546,19 +605,13 @@ def _read_best_equity_curve(sweep_dir: Path) -> pd.DataFrame:
     return pd.read_csv(sweep_dir / "best_equity_curve.csv")
 
 
-def _build_chart_window_context(
-    artifact_type: str,
-    artifact_name: str,
-    metadata: dict[str, object],
-    summary: dict[str, object],
+def build_chart_payload(
     equity_curve: pd.DataFrame,
     trades: pd.DataFrame,
     focus: str,
-    title: str,
-    subtitle: str,
 ) -> dict[str, object]:
     normalized_trades = trades.fillna("")
-    payload = {
+    return {
         "focus": focus,
         "dates": _extract_date_labels(equity_curve),
         "market": {
@@ -578,6 +631,21 @@ def _build_chart_window_context(
         "entry_markers": _build_trade_markers(normalized_trades, side="entry"),
         "exit_markers": _build_trade_markers(normalized_trades, side="exit"),
     }
+
+
+def _build_chart_window_context(
+    artifact_type: str,
+    artifact_name: str,
+    metadata: dict[str, object],
+    summary: dict[str, object],
+    equity_curve: pd.DataFrame,
+    trades: pd.DataFrame,
+    focus: str,
+    title: str,
+    subtitle: str,
+) -> dict[str, object]:
+    normalized_trades = trades.fillna("")
+    payload = build_chart_payload(equity_curve=equity_curve, trades=normalized_trades, focus=focus)
 
     return {
         "artifact_type": artifact_type,
@@ -829,6 +897,10 @@ def _to_float(value: object) -> float | None:
         return None
 
 
+def _format_signed_int(value: int) -> str:
+    return f"{value:+d}"
+
+
 def _ensure_gross_equity(equity_curve: pd.DataFrame, initial_capital: float) -> pd.Series:
     if "gross_equity" in equity_curve.columns:
         return equity_curve["gross_equity"].astype(float)
@@ -852,3 +924,18 @@ def _ensure_transaction_cost_amount(equity_curve: pd.DataFrame, initial_capital:
 
     equity_before = equity_curve["equity"].astype(float).shift(1).fillna(initial_capital)
     return equity_before * transaction_cost_rate
+
+
+def _read_trades(path: Path) -> pd.DataFrame:
+    try:
+        trades = pd.read_csv(path)
+    except EmptyDataError:
+        return pd.DataFrame(columns=EMPTY_TRADE_COLUMNS)
+
+    if trades.empty and not list(trades.columns):
+        return pd.DataFrame(columns=EMPTY_TRADE_COLUMNS)
+
+    for column in EMPTY_TRADE_COLUMNS:
+        if column not in trades.columns:
+            trades[column] = ""
+    return trades

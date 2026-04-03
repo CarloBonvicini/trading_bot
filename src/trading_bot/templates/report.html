@@ -70,58 +70,18 @@
   </section>
 
   <section class="layout-grid report-layout">
-    <article
-      class="panel chart-panel panel-expandable"
-      data-expandable-panel
-      data-detached-url="{{ url_for('report_chart_window', report_name=report.name, focus='equity') }}"
-    >
+    <article class="panel chart-panel">
       <div class="panel-header">
-        <p class="eyebrow">equity curve</p>
-        <h3>Strategia vs buy &amp; hold</h3>
-      </div>
-      <div class="chart-shell">
-        <div class="chart-meta">
-          <span>max {{ report.equity_chart.max_label }}</span>
-          <span>min {{ report.equity_chart.min_label }}</span>
+        <div>
+          <p class="eyebrow">chart lab</p>
+          <h3>Grafico avanzato e preview live</h3>
         </div>
-        <svg viewBox="0 0 {{ report.equity_chart.width }} {{ report.equity_chart.height }}" class="chart-svg" aria-label="Equity chart">
-          <line x1="24" y1="{{ report.equity_chart.zero_y }}" x2="{{ report.equity_chart.width - 24 }}" y2="{{ report.equity_chart.zero_y }}" class="chart-baseline"></line>
-          {% for series in report.equity_chart.series %}
-            <polyline points="{{ series.points }}" stroke="{{ series.color }}" fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
-          {% endfor %}
-        </svg>
-        <div class="chart-legend">
-          {% for series in report.equity_chart.series %}
-            <div>
-              <span class="legend-dot" style="background: {{ series.color }}"></span>
-              {{ series.label }}: {{ series.latest }}
-            </div>
-          {% endfor %}
-        </div>
+        <a class="ghost-link" href="{{ url_for('report_chart_window', report_name=report.name, focus='equity') }}">Apri il Chart Lab</a>
       </div>
-    </article>
-
-    <article
-      class="panel chart-panel panel-expandable"
-      data-expandable-panel
-      data-detached-url="{{ url_for('report_chart_window', report_name=report.name, focus='drawdown') }}"
-    >
-      <div class="panel-header">
-        <p class="eyebrow">rischio</p>
-        <h3>Drawdown</h3>
-      </div>
-      <div class="chart-shell">
-        <div class="chart-meta">
-          <span>max {{ report.drawdown_chart.max_label }}%</span>
-          <span>min {{ report.drawdown_chart.min_label }}%</span>
-        </div>
-        <svg viewBox="0 0 {{ report.drawdown_chart.width }} {{ report.drawdown_chart.height }}" class="chart-svg" aria-label="Drawdown chart">
-          <line x1="24" y1="{{ report.drawdown_chart.zero_y }}" x2="{{ report.drawdown_chart.width - 24 }}" y2="{{ report.drawdown_chart.zero_y }}" class="chart-baseline"></line>
-          {% for series in report.drawdown_chart.series %}
-            <polyline points="{{ series.points }}" stroke="{{ series.color }}" fill="none" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
-          {% endfor %}
-        </svg>
-      </div>
+      <p class="inline-note">
+        I grafici embedded sono stati spostati nella pagina chart dedicata. Li' puoi attivare strategie al volo,
+        vedere overlay e marker sul grafico e confrontare la preview con il sistema salvato senza ricaricare il report.
+      </p>
     </article>
   </section>
 

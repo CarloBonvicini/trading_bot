@@ -31,6 +31,23 @@ class CompletedSweep:
     best_result: BacktestResult
 
 
+def build_backtest_result(
+    backtest_request: BacktestRequest,
+    data: pd.DataFrame,
+) -> BacktestResult:
+    signal = build_combined_signal(
+        data=data,
+        rules=[(rule.strategy_id, rule.parameters) for rule in backtest_request.active_rules()],
+        combination_mode=backtest_request.rule_logic,
+    )
+    return run_backtest(
+        data=data,
+        signal=signal,
+        initial_capital=backtest_request.initial_capital,
+        fee_bps=backtest_request.fee_bps,
+    )
+
+
 def run_backtest_request(
     backtest_request: BacktestRequest,
     output_dir: str | Path = DEFAULT_REPORTS_DIR,
@@ -43,17 +60,7 @@ def run_backtest_request(
         end=backtest_request.end,
         interval=backtest_request.interval,
     )
-    signal = build_combined_signal(
-        data=data,
-        rules=[(rule.strategy_id, rule.parameters) for rule in backtest_request.active_rules()],
-        combination_mode=backtest_request.rule_logic,
-    )
-    result = run_backtest(
-        data=data,
-        signal=signal,
-        initial_capital=backtest_request.initial_capital,
-        fee_bps=backtest_request.fee_bps,
-    )
+    result = build_backtest_result(backtest_request=backtest_request, data=data)
 
     report_dir = save_report(
         result=result,
