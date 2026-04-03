@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% block title %}{{ chart.title }} - Chart{% endblock %}
+{% block content %}
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+  <section class="hero-panel chart-window-hero">
+    <div>
+      <p class="eyebrow">chart terminal</p>
+      <h2>{{ chart.title }}</h2>
+      <p class="hero-copy">{{ chart.subtitle }}</p>
+      <p class="inline-note">Layout ispirato a TradingView, non copia 1:1.</p>
+    </div>
+    <div class="hero-actions">
+      {% if chart.artifact_type == "report" %}
+        <a class="ghost-link" href="{{ url_for('report_detail', report_name=chart.artifact_name) }}">Torna al report</a>
+        <a class="ghost-link" href="{{ url_for('download_report_file', report_name=chart.artifact_name, filename='equity_curve.csv') }}">equity_curve.csv</a>
+        <a class="ghost-link" href="{{ url_for('download_report_file', report_name=chart.artifact_name, filename='trades.csv') }}">trades.csv</a>
+      {% else %}
+        <a class="ghost-link" href="{{ url_for('sweep_detail', sweep_name=chart.artifact_name) }}">Torna allo sweep</a>
+        <a class="ghost-link" href="{{ url_for('download_sweep_file', sweep_name=chart.artifact_name, filename='best_equity_curve.csv') }}">best_equity_curve.csv</a>
+        <a class="ghost-link" href="{{ url_for('download_sweep_file', sweep_name=chart.artifact_name, filename='best_trades.csv') }}">best_trades.csv</a>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="chart-window-layout">
+    <article class="panel chart-terminal-panel">
+      <div class="panel-header">
+        <p class="eyebrow">interactive chart</p>
+        <h3>Prezzo, equity, benchmark e drawdown</h3>
+      </div>
+      <div class="chart-toolbar">
+        <span>Zoom: mouse wheel o drag</span>
+        <span>Pan: modebar Plotly</span>
+        <span>Trade markers: triangoli verdi/rossi</span>
+      </div>
+      <div id="interactive-chart-root" class="interactive-chart-root" aria-label="Interactive chart"></div>
+    </article>
+
+    <article class="panel chart-sidebar-panel">
+      <div class="panel-header">
+        <p class="eyebrow">snapshot</p>
+        <h3>Dati chiave</h3>
+      </div>
+      <div class="stats-grid stats-grid-tight">
+        {% for card in chart.summary_cards[:10] %}
+          <article class="stat-card">
+            <p>{{ card.label }}</p>
+            <strong>{{ card.value }}</strong>
+          </article>
+        {% endfor %}
+      </div>
+    </article>
+  </section>
+
+  <section class="panel chart-trades-panel">
+    <div class="panel-header">
+      <p class="eyebrow">trade preview</p>
+      <h3>Prime 30 operazioni</h3>
+    </div>
+    {% if chart.trade_preview %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Entry</th>
+              <th>Exit</th>
+              <th>PnL %</th>
+              <th>Holding</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for trade in chart.trade_preview %}
+              <tr>
+                <td>{{ trade.entry_date }} @ {{ trade.entry_price }}</td>
+                <td>{{ trade.exit_date or "-" }} {% if trade.exit_price %}@ {{ trade.exit_price }}{% endif %}</td>
+                <td>{{ trade.pnl_pct or "-" }}</td>
+                <td>{{ trade.holding_days or "-" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <p>Nessun trade disponibile per questo chart.</p>
+      </div>
+    {% endif %}
+  </section>
+
+  <script>
+    const payload = {{ chart.chart_payload | tojson }};
+    const root = document.getElementById("interactive-chart-root");
+
+    const priceTrace = payload.market.has_candles
+      ? {
+          type: "candlestick",
+          name: "Prezzo",
+          x: payload.dates,
+          open: payload.market.open,
+          high: payload.market.high,
+          low: payload.market.low,
+          close: payload.market.close,
+          increasing: { line: { color: "#0f766e" }, fillcolor: "#9ad9cf" },
+          decreasing: { line: { color: "#b91c1c" }, fillcolor: "#f7b8b8" },
+          xaxis: "x",
+          yaxis: "y",
+        }
+      : {
+          type: "scatter",
+          mode: "lines",
+          name: "Prezzo",
+          x: payload.dates,
+          y: payload.market.close,
+          line: { color: "#0f766e", width: 2.5 },
+          xaxis: "x",
+          yaxis: "y",
+        };
+
+    const traces = [
+      priceTrace,
+      {
+        type: "bar",
+        name: "Volume",
+        x: payload.dates,
+        y: payload.market.volume,
+        marker: { color: "rgba(15, 118, 110, 0.18)" },
+        opacity: 0.45,
+        xaxis: "x",
+        yaxis: "y4",
+      },
+      {
+        type: "scatter",
+        mode: "markers",
+        name: "Entry",
+        x: payload.entry_markers.x,
+        y: payload.entry_markers.y,
+        text: payload.entry_markers.text,
+        hovertemplate: "%{text}<br>%{x}<br>%{y:.2f}<extra></extra>",
+        marker: {
+          color: "#15803d",
+          size: 11,
+          symbol: "triangle-up",
+          line: { width: 1, color: "#dcfce7" },
+        },
+        xaxis: "x",
+        yaxis: "y",
+      },
+      {
+        type: "scatter",
+        mode: "markers",
+        name: "Exit",
+        x: payload.exit_markers.x,
+        y: payload.exit_markers.y,
+        text: payload.exit_markers.text,
+        hovertemplate: "%{text}<br>%{x}<br>%{y:.2f}<extra></extra>",
+        marker: {
+          color: "#b91c1c",
+          size: 11,
+          symbol: "triangle-down",
+          line: { width: 1, color: "#fee2e2" },
+        },
+        xaxis: "x",
+        yaxis: "y",
+      },
+      {
+        type: "scatter",
+        mode: "lines",
+        name: "Strategia",
+        x: payload.dates,
+        y: payload.equity.strategy,
+        line: { color: "#0f766e", width: 2.6 },
+        xaxis: "x2",
+        yaxis: "y2",
+      },
+      {
+        type: "scatter",
+        mode: "lines",
+        name: "Buy & hold",
+        x: payload.dates,
+        y: payload.equity.benchmark,
+        line: { color: "#7c3aed", width: 2.2 },
+        xaxis: "x2",
+        yaxis: "y2",
+      },
+      {
+        type: "scatter",
+        mode: "lines",
+        name: "Equity senza fee",
+        x: payload.dates,
+        y: payload.equity.gross,
+        line: { color: "#f59e0b", width: 1.8, dash: "dot" },
+        xaxis: "x2",
+        yaxis: "y2",
+      },
+      {
+        type: "scatter",
+        mode: "lines",
+        name: "Drawdown",
+        x: payload.dates,
+        y: payload.drawdown_pct,
+        line: { color: "#ef4444", width: 2.4 },
+        fill: "tozeroy",
+        fillcolor: "rgba(239, 68, 68, 0.12)",
+        xaxis: "x3",
+        yaxis: "y3",
+      },
+    ];
+
+    const layout = {
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "#fffdf7",
+      font: { family: "Aptos, Segoe UI, sans-serif", color: "#1b1b18" },
+      hovermode: "x unified",
+      dragmode: payload.focus === "drawdown" ? "zoom" : "pan",
+      margin: { l: 60, r: 42, t: 12, b: 42 },
+      legend: {
+        orientation: "h",
+        x: 0,
+        y: 1.08,
+        bgcolor: "rgba(255,255,255,0.75)",
+      },
+      xaxis: {
+        domain: [0, 1],
+        anchor: "y",
+        showgrid: false,
+        rangeslider: { visible: true, thickness: 0.08 },
+        rangeselector: {
+          buttons: [
+            { count: 5, label: "5g", step: "day", stepmode: "backward" },
+            { count: 1, label: "1m", step: "month", stepmode: "backward" },
+            { count: 3, label: "3m", step: "month", stepmode: "backward" },
+            { step: "all", label: "All" },
+          ],
+        },
+      },
+      yaxis: {
+        domain: [0.56, 1],
+        title: "Prezzo",
+        side: "right",
+        gridcolor: "rgba(27, 27, 24, 0.08)",
+        zeroline: false,
+      },
+      yaxis4: {
+        domain: [0.56, 1],
+        overlaying: "y",
+        side: "left",
+        showgrid: false,
+        zeroline: false,
+        showticklabels: false,
+      },
+      xaxis2: {
+        domain: [0, 1],
+        anchor: "y2",
+        matches: "x",
+        showgrid: false,
+      },
+      yaxis2: {
+        domain: [0.26, 0.47],
+        title: "Equity",
+        side: "right",
+        gridcolor: "rgba(27, 27, 24, 0.08)",
+        zeroline: false,
+      },
+      xaxis3: {
+        domain: [0, 1],
+        anchor: "y3",
+        matches: "x",
+        showgrid: false,
+      },
+      yaxis3: {
+        domain: [0, 0.17],
+        title: "Drawdown %",
+        side: "right",
+        gridcolor: "rgba(27, 27, 24, 0.08)",
+        zeroline: true,
+        zerolinecolor: "rgba(27, 27, 24, 0.18)",
+      },
+      bargap: 0,
+    };
+
+    const config = {
+      responsive: true,
+      scrollZoom: true,
+      displaylogo: false,
+      modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"],
+    };
+
+    Plotly.newPlot(root, traces, layout, config);
+  </script>
+{% endblock %}

@@ -158,6 +158,60 @@ def load_sweep(output_dir: str | Path, sweep_name: str) -> dict[str, object]:
     }
 
 
+def load_report_chart_window(output_dir: str | Path, report_name: str, focus: str = "equity") -> dict[str, object]:
+    report_dir = Path(output_dir) / report_name
+    if not report_dir.exists():
+        raise FileNotFoundError(f"Report '{report_name}' not found.")
+
+    summary = enrich_summary(_read_json(report_dir / "summary.json"), report_dir)
+    metadata = read_report_metadata(report_dir)
+    equity_curve = _read_equity_curve(report_dir)
+    trades = pd.read_csv(report_dir / "trades.csv")
+
+    return _build_chart_window_context(
+        artifact_type="report",
+        artifact_name=report_name,
+        metadata=metadata,
+        summary=summary,
+        equity_curve=equity_curve,
+        trades=trades,
+        focus=focus,
+        title=f"{metadata.get('symbol') or report_name} · {metadata.get('strategy_label') or metadata.get('strategy') or 'Backtest'}",
+        subtitle=(
+            f"Periodo {metadata.get('start', 'n/a')} -> {metadata.get('end', 'n/a')} · "
+            f"Intervallo {metadata.get('interval', 'n/a')} · Fee {metadata.get('fee_bps', 'n/a')} bps"
+        ),
+    )
+
+
+def load_sweep_chart_window(output_dir: str | Path, sweep_name: str, focus: str = "equity") -> dict[str, object]:
+    sweep_dir = Path(output_dir) / sweep_name
+    if not sweep_dir.exists():
+        raise FileNotFoundError(f"Sweep '{sweep_name}' not found.")
+
+    metadata = read_report_metadata(sweep_dir)
+    summary = _read_json(sweep_dir / "summary.json")
+    best_summary = enrich_summary(_read_json(sweep_dir / "best_summary.json"), sweep_dir)
+    best_equity_curve = _read_best_equity_curve(sweep_dir)
+    best_trades = pd.read_csv(sweep_dir / "best_trades.csv")
+
+    return _build_chart_window_context(
+        artifact_type="sweep",
+        artifact_name=sweep_name,
+        metadata=metadata,
+        summary=best_summary,
+        equity_curve=best_equity_curve,
+        trades=best_trades,
+        focus=focus,
+        title=f"{metadata.get('symbol') or sweep_name} · Best {metadata.get('strategy_label') or metadata.get('strategy') or 'Sweep'}",
+        subtitle=(
+            f"Best SMA {summary.get('best_fast', 'n/a')} / {summary.get('best_slow', 'n/a')} · "
+            f"Periodo {metadata.get('start', 'n/a')} -> {metadata.get('end', 'n/a')} · "
+            f"Intervallo {metadata.get('interval', 'n/a')}"
+        ),
+    )
+
+
 def build_summary_cards(summary: dict[str, object]) -> list[dict[str, object]]:
     cards: list[dict[str, object]] = []
     for key in (
@@ -410,6 +464,52 @@ def _read_best_equity_curve(sweep_dir: Path) -> pd.DataFrame:
     return pd.read_csv(sweep_dir / "best_equity_curve.csv")
 
 
+def _build_chart_window_context(
+    artifact_type: str,
+    artifact_name: str,
+    metadata: dict[str, object],
+    summary: dict[str, object],
+    equity_curve: pd.DataFrame,
+    trades: pd.DataFrame,
+    focus: str,
+    title: str,
+    subtitle: str,
+) -> dict[str, object]:
+    normalized_trades = trades.fillna("")
+    payload = {
+        "focus": focus,
+        "dates": _extract_date_labels(equity_curve),
+        "market": {
+            "has_candles": all(column in equity_curve.columns for column in ("open", "high", "low")),
+            "open": _series_to_json_list(equity_curve.get("open")),
+            "high": _series_to_json_list(equity_curve.get("high")),
+            "low": _series_to_json_list(equity_curve.get("low")),
+            "close": _series_to_json_list(equity_curve.get("close")),
+            "volume": _series_to_json_list(equity_curve.get("volume")),
+        },
+        "equity": {
+            "strategy": _series_to_json_list(equity_curve.get("equity")),
+            "gross": _series_to_json_list(equity_curve.get("gross_equity")),
+            "benchmark": _series_to_json_list(equity_curve.get("benchmark_equity")),
+        },
+        "drawdown_pct": _series_to_json_list((equity_curve.get("drawdown", pd.Series(dtype=float)).fillna(0.0) * 100)),
+        "entry_markers": _build_trade_markers(normalized_trades, side="entry"),
+        "exit_markers": _build_trade_markers(normalized_trades, side="exit"),
+    }
+
+    return {
+        "artifact_type": artifact_type,
+        "artifact_name": artifact_name,
+        "title": title,
+        "subtitle": subtitle,
+        "metadata": metadata,
+        "summary": summary,
+        "summary_cards": build_summary_cards(summary),
+        "trade_preview": normalized_trades.head(30).to_dict(orient="records"),
+        "chart_payload": payload,
+    }
+
+
 def _build_report_list_item(report_dir: Path, metadata: dict[str, object]) -> dict[str, object]:
     summary = enrich_summary(_read_json(report_dir / "summary.json"), report_dir)
     equity_curve = _read_equity_curve(report_dir)
@@ -456,6 +556,60 @@ def _build_sweep_list_item(item_dir: Path, metadata: dict[str, object]) -> dict[
         "detail_url": f"/sweeps/{item_dir.name}",
         "preview_chart": preview_chart,
     }
+
+
+def _extract_date_labels(equity_curve: pd.DataFrame) -> list[str]:
+    if "date" in equity_curve.columns:
+        dates = pd.to_datetime(equity_curve["date"], errors="coerce")
+    else:
+        dates = pd.to_datetime(equity_curve.index, errors="coerce")
+
+    labels: list[str] = []
+    for value in dates:
+        if pd.isna(value):
+            labels.append("")
+            continue
+        if value.hour == 0 and value.minute == 0 and value.second == 0:
+            labels.append(value.strftime("%Y-%m-%d"))
+        else:
+            labels.append(value.strftime("%Y-%m-%d %H:%M"))
+    return labels
+
+
+def _series_to_json_list(series: pd.Series | None) -> list[float | None]:
+    if series is None:
+        return []
+    values: list[float | None] = []
+    for value in series.tolist():
+        if pd.isna(value):
+            values.append(None)
+        else:
+            values.append(round(float(value), 6))
+    return values
+
+
+def _build_trade_markers(trades: pd.DataFrame, side: str) -> dict[str, list[object]]:
+    date_key = f"{side}_date"
+    price_key = f"{side}_price"
+    markers = {"x": [], "y": [], "text": []}
+
+    for trade in trades.to_dict(orient="records"):
+        trade_date = str(trade.get(date_key, "")).strip()
+        if not trade_date:
+            continue
+
+        price = trade.get(price_key, "")
+        try:
+            y_value = float(price)
+        except (TypeError, ValueError):
+            continue
+
+        pnl = str(trade.get("pnl_pct", "")).strip() or "open"
+        markers["x"].append(trade_date)
+        markers["y"].append(round(y_value, 6))
+        markers["text"].append(f"{side.title()} · PnL {pnl}%")
+
+    return markers
 
 
 def _ensure_gross_equity(equity_curve: pd.DataFrame, initial_capital: float) -> pd.Series:

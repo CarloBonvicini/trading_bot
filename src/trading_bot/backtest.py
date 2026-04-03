@@ -47,9 +47,17 @@ def run_backtest(
     transaction_cost_amount = equity_before * transaction_cost
     drawdown = equity / equity.cummax() - 1
 
+    market_columns = {
+        column: data[column].astype(float)
+        for column in ("open", "high", "low", "close", "volume")
+        if column in data.columns
+    }
+    if "close" not in market_columns:
+        market_columns["close"] = close
+
     equity_curve = pd.DataFrame(
         {
-            "close": close,
+            **market_columns,
             "signal": position,
             "position": executed_position,
             "market_return": daily_returns,
@@ -148,9 +156,9 @@ def _build_trades(close: pd.Series, position: pd.Series) -> pd.DataFrame:
         holding_days = int((exit_date - entry_date).days) if exit_date is not None else None
         trades.append(
             {
-                "entry_date": entry_date.strftime("%Y-%m-%d"),
+                "entry_date": _format_trade_timestamp(entry_date),
                 "entry_price": round(entry_price, 4),
-                "exit_date": exit_date.strftime("%Y-%m-%d") if exit_date is not None else "",
+                "exit_date": _format_trade_timestamp(exit_date) if exit_date is not None else "",
                 "exit_price": round(exit_price, 4) if exit_price is not None else "",
                 "pnl_pct": round(pnl_pct, 2) if pnl_pct is not None else "",
                 "holding_days": holding_days if holding_days is not None else "",
@@ -158,3 +166,9 @@ def _build_trades(close: pd.Series, position: pd.Series) -> pd.DataFrame:
         )
 
     return pd.DataFrame(trades)
+
+
+def _format_trade_timestamp(timestamp: pd.Timestamp) -> str:
+    if timestamp.hour == 0 and timestamp.minute == 0 and timestamp.second == 0:
+        return timestamp.strftime("%Y-%m-%d")
+    return timestamp.strftime("%Y-%m-%d %H:%M")

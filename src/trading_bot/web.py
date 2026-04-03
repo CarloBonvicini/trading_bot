@@ -5,7 +5,14 @@ from pathlib import Path
 
 from flask import Flask, abort, current_app, flash, redirect, render_template, request, send_file, url_for
 
-from trading_bot.reporting import SUMMARY_LABELS, list_saved_items, load_report, load_sweep
+from trading_bot.reporting import (
+    SUMMARY_LABELS,
+    list_saved_items,
+    load_report,
+    load_report_chart_window,
+    load_sweep,
+    load_sweep_chart_window,
+)
 from trading_bot.services import (
     DEFAULT_REPORTS_DIR,
     INTERVAL_OPTIONS,
@@ -106,6 +113,20 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             summary_labels=SUMMARY_LABELS,
         )
 
+    @app.get("/reports/<report_name>/chart")
+    def report_chart_window(report_name: str) -> str:
+        focus = str(request.args.get("focus", "equity")).strip().lower()
+        try:
+            chart = load_report_chart_window(
+                output_dir=current_app.config["REPORTS_DIR"],
+                report_name=report_name,
+                focus=focus,
+            )
+        except FileNotFoundError:
+            abort(404)
+
+        return render_template("chart_window.html", chart=chart)
+
     @app.get("/sweeps/<sweep_name>")
     def sweep_detail(sweep_name: str) -> str:
         try:
@@ -119,6 +140,20 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             saved_items=list_saved_items(current_app.config["REPORTS_DIR"]),
             summary_labels=SUMMARY_LABELS,
         )
+
+    @app.get("/sweeps/<sweep_name>/chart")
+    def sweep_chart_window(sweep_name: str) -> str:
+        focus = str(request.args.get("focus", "equity")).strip().lower()
+        try:
+            chart = load_sweep_chart_window(
+                output_dir=current_app.config["REPORTS_DIR"],
+                sweep_name=sweep_name,
+                focus=focus,
+            )
+        except FileNotFoundError:
+            abort(404)
+
+        return render_template("chart_window.html", chart=chart)
 
     @app.get("/reports/<report_name>/files/<filename>")
     def download_report_file(report_name: str, filename: str):

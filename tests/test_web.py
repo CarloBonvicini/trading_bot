@@ -287,6 +287,7 @@ def test_report_detail_renders_chart_and_trade_table(tmp_path: Path) -> None:
     assert "Delta vs hold" in body
     assert "Spese totali" in body
     assert "Prime 20 operazioni" in body
+    assert f"/reports/{report_name}/chart?focus=equity" in body
     assert 'id="panel-backdrop"' in body
 
 
@@ -304,6 +305,21 @@ def test_sweep_detail_renders_ranking_and_best_run(tmp_path: Path) -> None:
     assert "Migliori combinazioni SMA" in body
     assert "Prime 20 operazioni del best run" in body
     assert "20 / 100" in body
+
+
+def test_report_chart_window_renders_interactive_chart(tmp_path: Path) -> None:
+    report_name = "SPY-sma_cross-20260403-090000"
+    create_report_fixture(tmp_path / report_name)
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+
+    client = app.test_client()
+    response = client.get(f"/reports/{report_name}/chart?focus=equity")
+
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "interactive-chart-root" in body
+    assert "Plotly.newPlot" in body
+    assert "Layout ispirato a TradingView" in body
 
 
 def test_create_preset_saves_named_strategy_setup(tmp_path: Path) -> None:

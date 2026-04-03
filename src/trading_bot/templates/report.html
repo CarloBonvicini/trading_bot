@@ -62,7 +62,11 @@
   </section>
 
   <section class="layout-grid report-layout">
-    <article class="panel chart-panel panel-expandable" data-expandable-panel>
+    <article
+      class="panel chart-panel panel-expandable"
+      data-expandable-panel
+      data-detached-url="{{ url_for('report_chart_window', report_name=report.name, focus='equity') }}"
+    >
       <div class="panel-header">
         <p class="eyebrow">equity curve</p>
         <h3>Strategia vs buy &amp; hold</h3>
@@ -89,7 +93,11 @@
       </div>
     </article>
 
-    <article class="panel chart-panel panel-expandable" data-expandable-panel>
+    <article
+      class="panel chart-panel panel-expandable"
+      data-expandable-panel
+      data-detached-url="{{ url_for('report_chart_window', report_name=report.name, focus='drawdown') }}"
+    >
       <div class="panel-header">
         <p class="eyebrow">rischio</p>
         <h3>Drawdown</h3>

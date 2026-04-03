@@ -82,7 +82,11 @@
   </section>
 
   <section class="layout-grid report-layout">
-    <article class="panel chart-panel panel-expandable" data-expandable-panel>
+    <article
+      class="panel chart-panel panel-expandable"
+      data-expandable-panel
+      data-detached-url="{{ url_for('sweep_chart_window', sweep_name=sweep.name, focus='equity') }}"
+    >
       <div class="panel-header">
         <p class="eyebrow">best equity curve</p>
         <h3>Best SMA vs buy &amp; hold</h3>
@@ -109,7 +113,11 @@
       </div>
     </article>
 
-    <article class="panel chart-panel panel-expandable" data-expandable-panel>
+    <article
+      class="panel chart-panel panel-expandable"
+      data-expandable-panel
+      data-detached-url="{{ url_for('sweep_chart_window', sweep_name=sweep.name, focus='drawdown') }}"
+    >
       <div class="panel-header">
         <p class="eyebrow">rischio</p>
         <h3>Drawdown del best run</h3>
@@ -130,7 +138,11 @@
   </section>
 
   <section class="layout-grid report-layout">
-    <article class="panel chart-panel panel-expandable" data-expandable-panel>
+    <article
+      class="panel chart-panel panel-expandable"
+      data-expandable-panel
+      data-detached-url="{{ url_for('sweep_chart_window', sweep_name=sweep.name, focus='ranking') }}"
+    >
       <div class="panel-header">
         <p class="eyebrow">classifica</p>
         <h3>Top risultati ordinati</h3>

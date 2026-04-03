@@ -77,7 +77,8 @@
 
         expandablePanels.forEach((panel) => {
           panel.setAttribute("aria-expanded", "false");
-          panel.setAttribute("title", "Clicca per espandere");
+          const detachedUrl = panel.dataset.detachedUrl;
+          panel.setAttribute("title", detachedUrl ? "Clicca per aprire il chart avanzato" : "Clicca per espandere");
 
           const closeButton = document.createElement("button");
           closeButton.type = "button";
@@ -94,6 +95,18 @@
 
           panel.addEventListener("click", (event) => {
             if (isInteractiveTarget(event.target)) {
+              return;
+            }
+
+            if (detachedUrl) {
+              const popup = window.open(
+                detachedUrl,
+                "_blank",
+                "popup=yes,width=1480,height=960,resizable=yes,scrollbars=yes"
+              );
+              if (popup) {
+                popup.focus();
+              }
               return;
             }
 
