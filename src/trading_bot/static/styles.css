@@ -2534,6 +2534,29 @@ td {
   animation: rise-in 220ms ease both;
 }
 
+.strategy-draft-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem 1.05rem;
+  border-radius: 20px;
+  border: 1px solid rgba(59, 130, 246, 0.16);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(255, 255, 255, 0.03));
+}
+
+.strategy-draft-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.strategy-draft-top h4 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-family: var(--font-sans);
+}
+
 .home-results-shell {
   display: grid;
   gap: 1rem;

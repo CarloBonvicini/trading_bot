@@ -39,6 +39,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const strategyPickerDescription = document.getElementById("strategy-picker-description");
   const strategyPickerChip = document.getElementById("strategy-picker-chip");
   const strategyPickerRules = document.getElementById("strategy-picker-rules");
+  const currentBacktestLabel = document.getElementById("current-backtest-label");
+  const currentBacktestMeta = document.getElementById("current-backtest-meta");
   const openStrategyLabButton = document.getElementById("open-strategy-lab");
   const applyStrategyLabButton = document.getElementById("apply-strategy-lab");
   const strategyModal = document.getElementById("strategy-modal");
@@ -51,6 +53,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const sweepOption = runModeSelect.querySelector('option[value="sweep"]');
   const intervalHint = document.getElementById("interval-hint");
   const symbolInput = document.querySelector('[name="symbol"]');
+  const startInput = document.querySelector('[name="start"]');
+  const endInput = document.querySelector('[name="end"]');
+  const initialCapitalInput = document.querySelector('[name="initial_capital"]');
+  const feeBpsInput = document.querySelector('[name="fee_bps"]');
 
   function syncHomeFormTabs(tabId = "setup") {
     const activeFormTab = tabId === "strategies" ? "strategies" : "setup";
@@ -168,6 +174,34 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     ruleLogicHelp.textContent = "OR: il test entra quando almeno una delle regole attive da' segnale.";
+  }
+
+  function formatBacktestNumber(value) {
+    const numericValue = Number(value);
+    if (Number.isNaN(numericValue)) {
+      return String(value || "").trim() || "n/d";
+    }
+
+    return new Intl.NumberFormat("it-IT", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(numericValue);
+  }
+
+  function syncCurrentBacktestCard() {
+    if (!currentBacktestLabel || !currentBacktestMeta) {
+      return;
+    }
+
+    const symbol = (symbolInput?.value || "").trim().toUpperCase() || "Simbolo";
+    const interval = (intervalSelect?.value || "").trim() || "n/d";
+    const start = (startInput?.value || "").trim() || "data iniziale";
+    const end = (endInput?.value || "").trim() || "data finale";
+    const capital = formatBacktestNumber(initialCapitalInput?.value);
+    const feeBps = formatBacktestNumber(feeBpsInput?.value);
+
+    currentBacktestLabel.textContent = `${symbol} • ${interval}`;
+    currentBacktestMeta.textContent = `${start} -> ${end} • capitale ${capital} • fee ${feeBps} bps`;
   }
 
   function toggleStrategyActivation(strategyId) {
@@ -292,6 +326,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function syncStrategyWorkspace() {
+    syncCurrentBacktestCard();
     updateRuleLogicHelp();
     syncStrategyFields();
     syncStrategyPickerCard();
@@ -439,6 +474,10 @@ document.addEventListener("DOMContentLoaded", () => {
   runModeSelect.addEventListener("change", syncStrategyWorkspace);
   intervalSelect.addEventListener("change", syncIntervalHint);
   presetSelect.addEventListener("change", (event) => applyPreset(event.target.value));
+  [symbolInput, startInput, endInput, intervalSelect, initialCapitalInput, feeBpsInput].forEach((field) => {
+    field?.addEventListener("input", syncCurrentBacktestCard);
+    field?.addEventListener("change", syncCurrentBacktestCard);
+  });
   resumeBacktestButtons.forEach((button) => {
     button.addEventListener("click", () => resumeBacktest(button.dataset.resumeBacktest || ""));
   });
