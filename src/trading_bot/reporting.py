@@ -194,6 +194,7 @@ def load_sweep_chart_window(output_dir: str | Path, sweep_name: str, focus: str 
     best_summary = enrich_summary(_read_json(sweep_dir / "best_summary.json"), sweep_dir)
     best_equity_curve = _read_best_equity_curve(sweep_dir)
     best_trades = pd.read_csv(sweep_dir / "best_trades.csv")
+    parameter_labels = metadata.get("parameter_labels", {"fast": "Fast", "slow": "Slow"})
 
     return _build_chart_window_context(
         artifact_type="sweep",
@@ -205,7 +206,8 @@ def load_sweep_chart_window(output_dir: str | Path, sweep_name: str, focus: str 
         focus=focus,
         title=f"{metadata.get('symbol') or sweep_name} · Best {metadata.get('strategy_label') or metadata.get('strategy') or 'Sweep'}",
         subtitle=(
-            f"Best SMA {summary.get('best_fast', 'n/a')} / {summary.get('best_slow', 'n/a')} · "
+            f"Best {parameter_labels.get('fast', 'Fast')} {summary.get('best_fast', 'n/a')} / "
+            f"{parameter_labels.get('slow', 'Slow')} {summary.get('best_slow', 'n/a')} · "
             f"Periodo {metadata.get('start', 'n/a')} -> {metadata.get('end', 'n/a')} · "
             f"Intervallo {metadata.get('interval', 'n/a')}"
         ),
@@ -240,8 +242,8 @@ def build_sweep_summary_cards(summary: dict[str, object]) -> list[dict[str, obje
     labels = {
         "run_count": "Combinazioni valide",
         "invalid_combinations": "Combinazioni scartate",
-        "best_fast": "Best fast SMA",
-        "best_slow": "Best slow SMA",
+        "best_fast": "Best fast",
+        "best_slow": "Best slow",
         "best_total_return_pct": "Best rendimento",
         "best_sharpe_ratio": "Best Sharpe",
         "best_max_drawdown_pct": "Best max drawdown",

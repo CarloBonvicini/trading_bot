@@ -306,6 +306,49 @@ def test_create_sweep_redirects_to_sweep_detail(monkeypatch, tmp_path: Path) -> 
     assert "/sweeps/SPY-sma_cross-sweep-20260403-100000" in response.headers["Location"]
 
 
+def test_create_ema_sweep_redirects_to_sweep_detail(monkeypatch, tmp_path: Path) -> None:
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+
+    def fake_run(sweep_request, output_dir: Path):
+        sweep_dir = output_dir / "SPY-ema_cross-sweep-20260403-100000"
+        create_sweep_fixture(sweep_dir)
+
+        class Completed:
+            def __init__(self) -> None:
+                self.sweep_dir = sweep_dir
+                self.summary = {"run_count": 6}
+
+        return Completed()
+
+    monkeypatch.setattr("trading_bot.web.run_sma_sweep_request", fake_run)
+    client = app.test_client()
+    response = client.post(
+        "/backtests",
+        data={
+            "symbol": "SPY",
+            "start": "2020-01-01",
+            "end": "2024-12-31",
+            "run_mode": "sweep",
+            "interval": "1d",
+            "strategy": "ema_cross",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "fast_start": "10",
+            "fast_end": "30",
+            "fast_step": "10",
+            "slow_start": "80",
+            "slow_end": "120",
+            "slow_step": "20",
+            "sort_by": "total_return_pct",
+            "ema_cross__fast": "12",
+            "ema_cross__slow": "26",
+        },
+    )
+
+    assert response.status_code == 302
+    assert "/sweeps/SPY-ema_cross-sweep-20260403-100000" in response.headers["Location"]
+
+
 def test_report_detail_renders_chart_and_trade_table(tmp_path: Path) -> None:
     report_name = "SPY-sma_cross-20260403-090000"
     create_report_fixture(tmp_path / report_name)
@@ -334,8 +377,8 @@ def test_sweep_detail_renders_ranking_and_best_run(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Best SMA vs semplice buy &amp; hold" in body
-    assert "Migliori combinazioni SMA" in body
+    assert "Best SMA Crossover vs semplice buy &amp; hold" in body
+    assert "Migliori combinazioni" in body
     assert "Prime 20 operazioni del best run" in body
     assert "20 / 100" in body
 

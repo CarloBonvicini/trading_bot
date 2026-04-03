@@ -91,7 +91,7 @@ def run_sma_sweep_request(
             continue
 
         parameters = {"fast": fast, "slow": slow}
-        signal = build_strategy_signal(strategy_id="sma_cross", data=data, parameters=parameters)
+        signal = build_strategy_signal(strategy_id=sweep_request.strategy, data=data, parameters=parameters)
         result = run_backtest(
             data=data,
             signal=signal,

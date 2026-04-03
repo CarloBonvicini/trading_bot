@@ -292,6 +292,7 @@ STRATEGY_SPECS: dict[str, StrategySpec] = {
             StrategyParameter("fast", "Fast EMA", "int", 12, minimum=1, step=1),
             StrategyParameter("slow", "Slow EMA", "int", 26, minimum=2, step=1),
         ),
+        supports_sweep=True,
     ),
     "rsi_mean_reversion": StrategySpec(
         key="rsi_mean_reversion",
@@ -371,6 +372,7 @@ STRATEGY_SPECS: dict[str, StrategySpec] = {
             StrategyParameter("fast", "Fast OBV", "int", 10, minimum=1, step=1),
             StrategyParameter("slow", "Slow OBV", "int", 30, minimum=2, step=1),
         ),
+        supports_sweep=True,
     ),
 }
 

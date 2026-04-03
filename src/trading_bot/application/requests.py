@@ -5,7 +5,7 @@ from typing import Mapping
 
 from trading_bot.application.constants import INTERVAL_OPTIONS, STRATEGY_OPTIONS
 from trading_bot.errors import FormValidationError
-from trading_bot.strategies import parse_strategy_parameters
+from trading_bot.strategies import STRATEGY_SPECS, parse_strategy_parameters
 
 
 def _text_value(raw: Mapping[str, object], name: str, default: str = "") -> str:
@@ -121,9 +121,10 @@ class SweepRequest:
     @classmethod
     def from_mapping(cls, raw: Mapping[str, object]) -> "SweepRequest":
         base_request = BacktestRequest.from_mapping(raw)
-        if base_request.strategy != "sma_cross":
+        strategy_spec = STRATEGY_SPECS[base_request.strategy]
+        if not strategy_spec.supports_sweep:
             raise FormValidationError(
-                "La modalita' sweep e' disponibile per ora solo sulla strategia SMA Crossover.",
+                "La modalita' sweep e' disponibile solo sulle strategie che supportano il test multiplo dei parametri.",
                 fields=("run_mode", "strategy"),
                 display_field="run_mode",
             )
@@ -167,6 +168,10 @@ class SweepRequest:
             "parameter_space": {
                 "fast": self.fast_range.as_dict(),
                 "slow": self.slow_range.as_dict(),
+            },
+            "parameter_labels": {
+                "fast": STRATEGY_SPECS[self.strategy].parameter_map()["fast"].label,
+                "slow": STRATEGY_SPECS[self.strategy].parameter_map()["slow"].label,
             },
             "sort_by": self.sort_by,
         }

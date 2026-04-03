@@ -42,10 +42,39 @@ def test_run_sma_sweep_request_generates_all_valid_combinations(monkeypatch, tmp
     assert (tmp_path / completed.sweep_dir.name / "best_summary.json").exists()
 
 
+def test_run_sma_sweep_request_supports_ema_crossover(monkeypatch, tmp_path: Path) -> None:
+    data = pd.DataFrame(
+        {
+            "close": [100, 101, 103, 102, 105, 107, 106, 110, 111, 113, 112, 116],
+        },
+        index=pd.date_range("2024-01-01", periods=12, freq="D"),
+    )
+    monkeypatch.setattr("trading_bot.services.download_price_data", lambda **_: data)
+
+    sweep_request = SweepRequest(
+        symbol="SPY",
+        start="2024-01-01",
+        end="2024-01-12",
+        interval="1d",
+        strategy="ema_cross",
+        fast_range=IntegerRange(2, 4, 1),
+        slow_range=IntegerRange(5, 7, 1),
+        fee_bps=0.0,
+    )
+
+    completed = run_sma_sweep_request(sweep_request=sweep_request, output_dir=tmp_path)
+
+    assert completed.request.strategy == "ema_cross"
+    assert completed.summary["run_count"] == 9
+    assert completed.summary["best_fast"] >= 2
+    assert completed.summary["best_slow"] >= 5
+
+
 def test_strategy_catalog_and_presets_cover_extended_setup(tmp_path: Path) -> None:
     assert len(STRATEGY_OPTIONS) >= 10
     assert "macd_trend" in STRATEGY_OPTIONS
     assert "obv_trend" in STRATEGY_OPTIONS
+    assert STRATEGY_OPTIONS["ema_cross"]["supports_sweep"] is True
 
     saved = save_strategy_preset(
         raw={

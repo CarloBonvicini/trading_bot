@@ -1,8 +1,9 @@
 {% extends "base.html" %}
-{% block title %}{{ sweep.metadata.symbol or sweep.name }} - Sweep SMA{% endblock %}
+{% block title %}{{ sweep.metadata.symbol or sweep.name }} - Sweep {{ sweep.metadata.strategy_label or sweep.metadata.strategy }}{% endblock %}
 {% block content %}
   {% set fast_space = sweep.metadata.parameter_space["fast"] %}
   {% set slow_space = sweep.metadata.parameter_space["slow"] %}
+  {% set parameter_labels = sweep.metadata.get("parameter_labels", {"fast": "Fast", "slow": "Slow"}) %}
   <section class="hero-panel report-hero panel-expandable" data-expandable-panel>
     <div>
       <p class="eyebrow">sweep {{ sweep.metadata.strategy_label or sweep.metadata.strategy }}</p>
@@ -11,8 +12,8 @@
         Periodo {{ sweep.metadata.start or "n/a" }} -> {{ sweep.metadata.end or "n/a" }},
         intervallo {{ sweep.metadata.interval or "n/a" }},
         fee {{ sweep.metadata.fee_bps or "n/a" }} bps.
-        Fast {{ fast_space["start"] }} -> {{ fast_space["end"] }} step {{ fast_space["step"] }},
-        slow {{ slow_space["start"] }} -> {{ slow_space["end"] }} step {{ slow_space["step"] }}.
+        {{ parameter_labels.fast }} {{ fast_space["start"] }} -> {{ fast_space["end"] }} step {{ fast_space["step"] }},
+        {{ parameter_labels.slow }} {{ slow_space["start"] }} -> {{ slow_space["end"] }} step {{ slow_space["step"] }}.
       </p>
     </div>
     <div class="hero-actions">
@@ -35,7 +36,7 @@
   <section class="panel comparison-panel panel-expandable" data-expandable-panel>
     <div class="panel-header">
       <p class="eyebrow">migliore combinazione</p>
-      <h3>Best SMA vs semplice buy &amp; hold</h3>
+      <h3>Best {{ sweep.metadata.strategy_label or sweep.metadata.strategy }} vs semplice buy &amp; hold</h3>
     </div>
     <div class="comparison-grid">
       <article class="comparison-card comparison-card-accent">
@@ -89,7 +90,7 @@
     >
       <div class="panel-header">
         <p class="eyebrow">best equity curve</p>
-        <h3>Best SMA vs buy &amp; hold</h3>
+        <h3>Best {{ sweep.metadata.strategy_label or sweep.metadata.strategy }} vs buy &amp; hold</h3>
       </div>
       <div class="chart-shell">
         <div class="chart-meta">
@@ -201,15 +202,15 @@
     <article class="panel panel-expandable" data-expandable-panel>
       <div class="panel-header">
         <p class="eyebrow">tabella ranking</p>
-        <h3>Migliori combinazioni SMA</h3>
+        <h3>Migliori combinazioni</h3>
       </div>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
               <th>Rank</th>
-              <th>Fast</th>
-              <th>Slow</th>
+              <th>{{ parameter_labels.fast }}</th>
+              <th>{{ parameter_labels.slow }}</th>
               <th>Return %</th>
               <th>Hold %</th>
               <th>Delta %</th>
