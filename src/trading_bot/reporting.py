@@ -92,7 +92,7 @@ def load_report(output_dir: str | Path, report_name: str) -> dict[str, object]:
         ),
         "equity_curve_rows": equity_curve.tail(20).to_dict(orient="records"),
         "trades": trades.fillna("").to_dict(orient="records"),
-        "trade_preview": trades.fillna("").head(20).to_dict(orient="records"),
+        "trade_preview": build_trade_preview(trades, limit=20),
     }
 
 
@@ -154,7 +154,7 @@ def load_sweep(output_dir: str | Path, sweep_name: str) -> dict[str, object]:
             "max_drawdown_pct",
             "fees_paid",
         ],
-        "best_trade_preview": best_trades.fillna("").head(20).to_dict(orient="records"),
+        "best_trade_preview": build_trade_preview(best_trades, limit=20),
     }
 
 
@@ -507,7 +507,7 @@ def _build_chart_window_context(
         "metadata": metadata,
         "summary": summary,
         "summary_cards": build_summary_cards(summary),
-        "trade_preview": normalized_trades.head(30).to_dict(orient="records"),
+        "trade_preview": build_trade_preview(normalized_trades, limit=30),
         "chart_payload": payload,
     }
 
@@ -612,6 +612,108 @@ def _build_trade_markers(trades: pd.DataFrame, side: str) -> dict[str, list[obje
         markers["text"].append(f"{side.title()} · PnL {pnl}%")
 
     return markers
+
+
+def build_trade_preview(trades: pd.DataFrame, limit: int) -> list[dict[str, object]]:
+    if trades.empty:
+        return []
+
+    normalized = trades.fillna("").head(limit).to_dict(orient="records")
+    return [_format_trade_preview_row(row) for row in normalized]
+
+
+def _format_trade_preview_row(row: dict[str, object]) -> dict[str, object]:
+    entry_raw = str(row.get("entry_date", "")).strip()
+    exit_raw = str(row.get("exit_date", "")).strip()
+    entry_date_display, entry_time_display = _split_trade_timestamp(entry_raw)
+    exit_date_display, exit_time_display = _split_trade_timestamp(exit_raw) if exit_raw else ("In corso", "")
+    pnl_value = _to_float(row.get("pnl_pct"))
+    status_label, status_class = _trade_status(exit_raw=exit_raw, pnl_value=pnl_value)
+
+    return {
+        "status_label": status_label,
+        "status_class": status_class,
+        "entry_price_display": _format_trade_price(row.get("entry_price")),
+        "exit_price_display": _format_trade_price(row.get("exit_price")) if exit_raw else "In corso",
+        "entry_date_display": entry_date_display,
+        "entry_time_display": entry_time_display,
+        "exit_date_display": exit_date_display,
+        "exit_time_display": exit_time_display,
+        "pnl_display": f"{pnl_value:+.2f}%" if pnl_value is not None else "-",
+        "duration_display": _format_trade_duration(
+            entry_raw=entry_raw,
+            exit_raw=exit_raw,
+            fallback_days=row.get("holding_days"),
+        ),
+    }
+
+
+def _split_trade_timestamp(raw: str) -> tuple[str, str]:
+    if not raw:
+        return "-", ""
+
+    timestamp = pd.to_datetime(raw, errors="coerce")
+    if pd.isna(timestamp):
+        return raw, ""
+
+    if ":" in raw:
+        return timestamp.strftime("%d/%m/%Y"), timestamp.strftime("%H:%M")
+    return timestamp.strftime("%d/%m/%Y"), ""
+
+
+def _trade_status(exit_raw: str, pnl_value: float | None) -> tuple[str, str]:
+    if not exit_raw:
+        return "OPEN", "open"
+    if pnl_value is None:
+        return "CLOSED", "neutral"
+    if pnl_value > 0:
+        return "WIN", "positive"
+    if pnl_value < 0:
+        return "LOSS", "negative"
+    return "FLAT", "neutral"
+
+
+def _format_trade_duration(entry_raw: str, exit_raw: str, fallback_days: object) -> str:
+    if not entry_raw or not exit_raw:
+        return "In corso"
+
+    entry_ts = pd.to_datetime(entry_raw, errors="coerce")
+    exit_ts = pd.to_datetime(exit_raw, errors="coerce")
+    if not pd.isna(entry_ts) and not pd.isna(exit_ts):
+        total_minutes = max(int((exit_ts - entry_ts).total_seconds() // 60), 0)
+        days = total_minutes // (24 * 60)
+        hours = (total_minutes % (24 * 60)) // 60
+        minutes = total_minutes % 60
+        if days > 0:
+            return f"{days} g {hours} h" if hours else f"{days} g"
+        if hours > 0:
+            return f"{hours} h {minutes} min" if minutes else f"{hours} h"
+        if minutes > 0:
+            return f"{minutes} min"
+        return "< 1 min"
+
+    days_value = _to_float(fallback_days)
+    if days_value is None:
+        return "-"
+    if days_value == 1:
+        return "1 g"
+    return f"{int(days_value)} g"
+
+
+def _format_trade_price(value: object) -> str:
+    numeric = _to_float(value)
+    if numeric is None:
+        return "-"
+    return f"{numeric:.4f}".rstrip("0").rstrip(".")
+
+
+def _to_float(value: object) -> float | None:
+    if value in ("", None):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _ensure_gross_equity(equity_curve: pd.DataFrame, initial_capital: float) -> pd.Series:

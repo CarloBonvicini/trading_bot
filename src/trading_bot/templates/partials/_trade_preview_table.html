@@ -1,0 +1,46 @@
+{% if trades %}
+  <div class="table-wrap trade-table-wrap">
+    <table class="trade-table">
+      <thead>
+        <tr>
+          <th>Esito</th>
+          <th>Entrata</th>
+          <th>Uscita</th>
+          <th>PnL</th>
+          <th>Durata</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for trade in trades %}
+          <tr>
+            <td>
+              <span class="trade-badge trade-badge-{{ trade.status_class }}">{{ trade.status_label }}</span>
+            </td>
+            <td>
+              <div class="trade-cell">
+                <strong>{{ trade.entry_price_display }}</strong>
+                <span>{{ trade.entry_date_display }}</span>
+                {% if trade.entry_time_display %}
+                  <span>{{ trade.entry_time_display }}</span>
+                {% endif %}
+              </div>
+            </td>
+            <td>
+              <div class="trade-cell">
+                <strong>{{ trade.exit_price_display }}</strong>
+                <span>{{ trade.exit_date_display }}</span>
+                {% if trade.exit_time_display %}
+                  <span>{{ trade.exit_time_display }}</span>
+                {% endif %}
+              </div>
+            </td>
+            <td>
+              <span class="trade-pnl trade-pnl-{{ trade.status_class }}">{{ trade.pnl_display }}</span>
+            </td>
+            <td>{{ trade.duration_display }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}

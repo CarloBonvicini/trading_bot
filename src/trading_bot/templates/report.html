@@ -124,28 +124,8 @@
         <h3>Prime 20 operazioni</h3>
       </div>
       {% if report.trade_preview %}
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Entry</th>
-                <th>Exit</th>
-                <th>PnL %</th>
-                <th>Holding</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for trade in report.trade_preview %}
-                <tr>
-                  <td>{{ trade.entry_date }} @ {{ trade.entry_price }}</td>
-                  <td>{{ trade.exit_date or "-" }} {% if trade.exit_price %}@ {{ trade.exit_price }}{% endif %}</td>
-                  <td>{{ trade.pnl_pct or "-" }}</td>
-                  <td>{{ trade.holding_days or "-" }}</td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+        {% set trades = report.trade_preview %}
+        {% include "partials/_trade_preview_table.html" %}
       {% else %}
         <div class="empty-state">
           <p>Nessun trade registrato in questo report.</p>

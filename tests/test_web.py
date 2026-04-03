@@ -363,6 +363,9 @@ def test_report_detail_renders_chart_and_trade_table(tmp_path: Path) -> None:
     assert "Delta vs hold" in body
     assert "Spese totali" in body
     assert "Prime 20 operazioni" in body
+    assert "Esito" in body
+    assert "Durata" in body
+    assert "WIN" in body
     assert f"/reports/{report_name}/chart?focus=equity" in body
     assert 'id="panel-backdrop"' in body
 
