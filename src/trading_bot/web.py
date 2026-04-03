@@ -5,6 +5,7 @@ from pathlib import Path
 
 from flask import Flask, abort, current_app, flash, redirect, render_template, request, send_file, url_for
 
+from trading_bot.application.dashboard import build_dashboard_context
 from trading_bot.errors import FormValidationError
 from trading_bot.reporting import (
     SUMMARY_LABELS,
@@ -226,12 +227,16 @@ def _render_home(
         elif isinstance(values.get("active_strategies"), str):
             values["active_strategies"] = [values["active_strategies"]]
 
+    saved_items = list_saved_items(current_app.config["REPORTS_DIR"])
+    dashboard = build_dashboard_context(saved_items=saved_items, strategies=STRATEGY_OPTIONS)
+
     return render_template(
         "index.html",
         form_values=values,
         field_errors=field_errors or {},
         invalid_fields=set(invalid_fields or ()),
-        saved_items=list_saved_items(current_app.config["REPORTS_DIR"]),
+        saved_items=saved_items,
+        dashboard=dashboard,
         strategy_presets=list_strategy_presets(current_app.config["REPORTS_DIR"]),
         strategies=STRATEGY_OPTIONS,
         rule_logic_options=RULE_LOGIC_OPTIONS,
