@@ -5,6 +5,7 @@ from pathlib import Path
 
 from flask import Flask, abort, current_app, flash, redirect, render_template, request, send_file, url_for
 
+from trading_bot.errors import FormValidationError
 from trading_bot.reporting import (
     SUMMARY_LABELS,
     list_saved_items,
@@ -78,6 +79,13 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
                 backtest_request=backtest_request,
                 output_dir=current_app.config["REPORTS_DIR"],
             )
+        except FormValidationError as exc:
+            return _render_home(
+                form_values=dict(request.form),
+                field_errors=_field_errors(exc),
+                invalid_fields=exc.field_names,
+                status=400,
+            )
         except Exception as exc:
             flash(str(exc), "error")
             return _render_home(form_values=dict(request.form), status=400)
@@ -91,6 +99,13 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             preset = save_strategy_preset(
                 raw=request.form,
                 output_dir=current_app.config["REPORTS_DIR"],
+            )
+        except FormValidationError as exc:
+            return _render_home(
+                form_values=dict(request.form),
+                field_errors=_field_errors(exc),
+                invalid_fields=exc.field_names,
+                status=400,
             )
         except Exception as exc:
             flash(str(exc), "error")
@@ -195,7 +210,13 @@ def main() -> None:
     app.run(host=args.host, port=args.port, debug=args.debug)
 
 
-def _render_home(form_values: dict[str, object] | None = None, status: int = 200) -> str:
+def _render_home(
+    form_values: dict[str, object] | None = None,
+    *,
+    field_errors: dict[str, str] | None = None,
+    invalid_fields: tuple[str, ...] | list[str] | set[str] | None = None,
+    status: int = 200,
+) -> str:
     values = as_form_values()
     if form_values:
         values.update(form_values)
@@ -203,6 +224,8 @@ def _render_home(form_values: dict[str, object] | None = None, status: int = 200
     return render_template(
         "index.html",
         form_values=values,
+        field_errors=field_errors or {},
+        invalid_fields=set(invalid_fields or ()),
         saved_items=list_saved_items(current_app.config["REPORTS_DIR"]),
         strategy_presets=list_strategy_presets(current_app.config["REPORTS_DIR"]),
         strategies=STRATEGY_OPTIONS,
@@ -211,6 +234,12 @@ def _render_home(form_values: dict[str, object] | None = None, status: int = 200
         run_modes=RUN_MODE_OPTIONS,
         sweep_sort_options=SWEEP_SORT_OPTIONS,
     ), status
+
+
+def _field_errors(exc: FormValidationError) -> dict[str, str]:
+    if not exc.display_field:
+        return {}
+    return {exc.display_field: str(exc)}
 
 
 if __name__ == "__main__":

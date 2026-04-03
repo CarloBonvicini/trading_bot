@@ -5,6 +5,8 @@ from datetime import datetime, timedelta
 import pandas as pd
 import yfinance as yf
 
+from trading_bot.errors import FormValidationError
+
 INTRADAY_LOOKBACK_DAYS = {
     "1m": 8,
     "2m": 60,
@@ -38,7 +40,11 @@ def download_price_data(
         threads=False,
     )
     if raw.empty:
-        raise ValueError(build_no_data_message(symbol=symbol, interval=normalized_interval, start=start_dt, end=end_dt))
+        raise FormValidationError(
+            build_no_data_message(symbol=symbol, interval=normalized_interval, start=start_dt, end=end_dt),
+            fields=("symbol", "start", "end", "interval"),
+            display_field="symbol",
+        )
 
     if isinstance(raw.columns, pd.MultiIndex):
         raw.columns = raw.columns.get_level_values(0)
@@ -63,7 +69,11 @@ def normalize_request_window(start: str, end: str) -> tuple[datetime, datetime]:
     start_dt = _parse_timestamp(start, is_end=False)
     end_dt = _parse_timestamp(end, is_end=True)
     if end_dt <= start_dt:
-        raise ValueError("La data finale deve essere successiva a quella iniziale.")
+        raise FormValidationError(
+            "La data finale deve essere successiva a quella iniziale.",
+            fields=("start", "end"),
+            display_field="end",
+        )
     return start_dt, end_dt
 
 
@@ -75,12 +85,14 @@ def validate_interval_window(interval: str, start: datetime, end: datetime, now:
     reference_now = now or datetime.now()
     oldest_allowed = reference_now - timedelta(days=lookback_days)
     if start < oldest_allowed:
-        raise ValueError(
+        raise FormValidationError(
             (
                 f"Per l'intervallo {interval} Yahoo Finance consente richieste solo negli ultimi {lookback_days} giorni. "
                 f"Hai chiesto da {start.strftime('%Y-%m-%d %H:%M')} a {end.strftime('%Y-%m-%d %H:%M')}. "
                 f"Usa una data iniziale dal {oldest_allowed.strftime('%Y-%m-%d %H:%M')} in poi."
-            )
+            ),
+            fields=("interval", "start", "end"),
+            display_field="interval",
         )
 
 

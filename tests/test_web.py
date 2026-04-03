@@ -227,6 +227,35 @@ def test_create_backtest_redirects_to_report(monkeypatch, tmp_path: Path) -> Non
     assert "/reports/SPY-sma_cross-20260403-100000" in response.headers["Location"]
 
 
+def test_create_backtest_shows_intraday_validation_near_form_fields(tmp_path: Path) -> None:
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+    client = app.test_client()
+
+    response = client.post(
+        "/backtests",
+        data={
+            "symbol": "SPY",
+            "start": "2020-01-01",
+            "end": "2026-01-01",
+            "run_mode": "single",
+            "interval": "5m",
+            "strategy": "sma_cross",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "sma_cross__fast": "20",
+            "sma_cross__slow": "100",
+        },
+    )
+
+    assert response.status_code == 400
+    body = response.get_data(as_text=True)
+    assert "Yahoo Finance consente richieste solo negli ultimi 60 giorni." in body
+    assert 'class="field-error"' in body
+    assert 'name="interval" id="interval-select" class="input-error"' in body
+    assert 'name="start"' in body
+    assert 'class="flash flash-error"' not in body
+
+
 def test_create_sweep_redirects_to_sweep_detail(monkeypatch, tmp_path: Path) -> None:
     app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
 

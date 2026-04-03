@@ -5,6 +5,7 @@ from datetime import datetime
 import pytest
 
 from trading_bot.data import normalize_request_window, validate_interval_window
+from trading_bot.errors import FormValidationError
 
 
 def test_normalize_request_window_makes_date_end_inclusive() -> None:
@@ -15,7 +16,7 @@ def test_normalize_request_window_makes_date_end_inclusive() -> None:
 
 
 def test_validate_interval_window_rejects_old_intraday_requests() -> None:
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(FormValidationError) as exc_info:
         validate_interval_window(
             interval="1h",
             start=datetime(2023, 1, 1, 0, 0),
@@ -26,3 +27,5 @@ def test_validate_interval_window_rejects_old_intraday_requests() -> None:
     message = str(exc_info.value)
     assert "ultimi 730 giorni" in message
     assert "2023-01-01 00:00" in message
+    assert exc_info.value.field_names == ("interval", "start", "end")
+    assert exc_info.value.display_field == "interval"

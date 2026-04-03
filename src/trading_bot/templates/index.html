@@ -33,76 +33,138 @@
             </div>
           </div>
           <div class="input-grid">
-            <label>
-              <span>Preset salvati</span>
-              <select id="preset-select">
-                <option value="">Seleziona un preset</option>
-                {% for preset in strategy_presets %}
-                  <option value="{{ preset.id }}">{{ preset.name }}</option>
-                {% endfor %}
-              </select>
-            </label>
-            <label>
-              <span>Nome preset</span>
-              <input name="preset_name" value="{{ form_values.preset_name }}" placeholder="Es. RSI pullback intraday">
-            </label>
+            <div class="field-block">
+              <label>
+                <span>Preset salvati</span>
+                <select id="preset-select">
+                  <option value="">Seleziona un preset</option>
+                  {% for preset in strategy_presets %}
+                    <option value="{{ preset.id }}">{{ preset.name }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            <div class="field-block">
+              <label>
+                <span>Nome preset</span>
+                <input
+                  name="preset_name"
+                  value="{{ form_values.preset_name }}"
+                  placeholder="Es. RSI pullback intraday"
+                  {% if 'preset_name' in invalid_fields %}class="input-error"{% endif %}
+                >
+              </label>
+              {% if field_errors.get('preset_name') %}
+                <p class="field-error">{{ field_errors['preset_name'] }}</p>
+              {% endif %}
+            </div>
           </div>
           <div class="button-row">
             <button class="ghost-button" type="submit" formaction="{{ url_for('create_preset') }}">Salva preset</button>
           </div>
         </section>
 
-        <label>
-          <span>Simbolo</span>
-          <input name="symbol" value="{{ form_values.symbol }}" placeholder="SPY o BTC-USD" required>
-        </label>
-
-        <div class="input-grid">
+        <div class="field-block">
           <label>
-            <span>Data iniziale</span>
-            <input type="date" name="start" value="{{ form_values.start }}" required>
+            <span>Simbolo</span>
+            <input
+              name="symbol"
+              value="{{ form_values.symbol }}"
+              placeholder="SPY o BTC-USD"
+              required
+              {% if 'symbol' in invalid_fields %}class="input-error"{% endif %}
+            >
           </label>
-          <label>
-            <span>Data finale</span>
-            <input type="date" name="end" value="{{ form_values.end }}" required>
-          </label>
+          {% if field_errors.get('symbol') %}
+            <p class="field-error">{{ field_errors['symbol'] }}</p>
+          {% endif %}
         </div>
 
         <div class="input-grid">
-          <label>
-            <span>Modalita</span>
-            <select name="run_mode" id="run-mode-select">
-              {% for run_mode in run_modes %}
-                <option value="{{ run_mode }}" {% if form_values.run_mode == run_mode %}selected{% endif %}>
-                  {% if run_mode == "single" %}Test singolo{% else %}Sweep parametri{% endif %}
-                </option>
-              {% endfor %}
-            </select>
-          </label>
-          <label>
-            <span>Intervallo</span>
-            <select name="interval" id="interval-select">
-              {% for interval in intervals %}
-                <option value="{{ interval }}" {% if form_values.interval == interval %}selected{% endif %}>{{ interval }}</option>
-              {% endfor %}
-            </select>
-          </label>
+          <div class="field-block">
+            <label>
+              <span>Data iniziale</span>
+              <input
+                type="date"
+                name="start"
+                value="{{ form_values.start }}"
+                required
+                {% if 'start' in invalid_fields %}class="input-error"{% endif %}
+              >
+            </label>
+            {% if field_errors.get('start') %}
+              <p class="field-error">{{ field_errors['start'] }}</p>
+            {% endif %}
+          </div>
+          <div class="field-block">
+            <label>
+              <span>Data finale</span>
+              <input
+                type="date"
+                name="end"
+                value="{{ form_values.end }}"
+                required
+                {% if 'end' in invalid_fields %}class="input-error"{% endif %}
+              >
+            </label>
+            {% if field_errors.get('end') %}
+              <p class="field-error">{{ field_errors['end'] }}</p>
+            {% endif %}
+          </div>
         </div>
-        <p class="inline-note" id="interval-hint">{{ interval_hints[form_values.interval] }}</p>
 
         <div class="input-grid">
-          <label>
-            <span>Strategia</span>
-            <select name="strategy" id="strategy-select">
-              {% for strategy_id, strategy in strategies.items() %}
-                <option value="{{ strategy_id }}" {% if form_values.strategy == strategy_id %}selected{% endif %}>{{ strategy.label }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label>
-            <span>Capitale iniziale</span>
-            <input type="number" step="100" min="100" name="initial_capital" value="{{ form_values.initial_capital }}">
-          </label>
+          <div class="field-block">
+            <label>
+              <span>Modalita</span>
+              <select name="run_mode" id="run-mode-select" {% if 'run_mode' in invalid_fields %}class="input-error"{% endif %}>
+                {% for run_mode in run_modes %}
+                  <option value="{{ run_mode }}" {% if form_values.run_mode == run_mode %}selected{% endif %}>
+                    {% if run_mode == "single" %}Test singolo{% else %}Sweep parametri{% endif %}
+                  </option>
+                {% endfor %}
+              </select>
+            </label>
+            {% if field_errors.get('run_mode') %}
+              <p class="field-error">{{ field_errors['run_mode'] }}</p>
+            {% endif %}
+          </div>
+          <div class="field-block">
+            <label>
+              <span>Intervallo</span>
+              <select name="interval" id="interval-select" {% if 'interval' in invalid_fields %}class="input-error"{% endif %}>
+                {% for interval in intervals %}
+                  <option value="{{ interval }}" {% if form_values.interval == interval %}selected{% endif %}>{{ interval }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            <p class="inline-note" id="interval-hint">{{ interval_hints.get(form_values.interval, '') }}</p>
+            {% if field_errors.get('interval') %}
+              <p class="field-error">{{ field_errors['interval'] }}</p>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="input-grid">
+          <div class="field-block">
+            <label>
+              <span>Strategia</span>
+              <select name="strategy" id="strategy-select" {% if 'strategy' in invalid_fields %}class="input-error"{% endif %}>
+                {% for strategy_id, strategy in strategies.items() %}
+                  <option value="{{ strategy_id }}" {% if form_values.strategy == strategy_id %}selected{% endif %}>{{ strategy.label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+            {% if field_errors.get('strategy') %}
+              <p class="field-error">{{ field_errors['strategy'] }}</p>
+            {% endif %}
+          </div>
+          <div class="field-block">
+            <label>
+              <span>Capitale iniziale</span>
+              <input type="number" step="100" min="100" name="initial_capital" value="{{ form_values.initial_capital }}">
+            </label>
+          </div>
         </div>
 
         <div class="input-grid">

@@ -11,6 +11,7 @@ import pandas as pd
 
 from trading_bot.backtest import BacktestResult, run_backtest, save_report
 from trading_bot.data import INTRADAY_LOOKBACK_DAYS, download_price_data
+from trading_bot.errors import FormValidationError
 from trading_bot.strategies import (
     STRATEGY_SPECS,
     build_strategy_signal,
@@ -58,13 +59,27 @@ class BacktestRequest:
         strategy = text("strategy", "sma_cross")
 
         if not symbol:
-            raise ValueError("Inserisci un simbolo, per esempio SPY o BTC-USD.")
+            raise FormValidationError(
+                "Inserisci un simbolo, per esempio SPY o BTC-USD.",
+                fields=("symbol",),
+            )
         if not start or not end:
-            raise ValueError("Inserisci data iniziale e finale.")
+            missing_fields = tuple(field for field, value in (("start", start), ("end", end)) if not value)
+            raise FormValidationError(
+                "Inserisci data iniziale e finale.",
+                fields=missing_fields or ("start", "end"),
+                display_field=missing_fields[0] if missing_fields else "start",
+            )
         if strategy not in STRATEGY_OPTIONS:
-            raise ValueError(f"Strategia non supportata: {strategy}.")
+            raise FormValidationError(
+                f"Strategia non supportata: {strategy}.",
+                fields=("strategy",),
+            )
         if interval not in INTERVAL_OPTIONS:
-            raise ValueError(f"Intervallo non supportato: {interval}.")
+            raise FormValidationError(
+                f"Intervallo non supportato: {interval}.",
+                fields=("interval",),
+            )
 
         return cls(
             symbol=symbol,
@@ -140,7 +155,11 @@ class SweepRequest:
     def from_mapping(cls, raw: Mapping[str, object]) -> "SweepRequest":
         base_request = BacktestRequest.from_mapping(raw)
         if base_request.strategy != "sma_cross":
-            raise ValueError("La modalita' sweep e' disponibile per ora solo sulla strategia SMA Crossover.")
+            raise FormValidationError(
+                "La modalita' sweep e' disponibile per ora solo sulla strategia SMA Crossover.",
+                fields=("run_mode", "strategy"),
+                display_field="run_mode",
+            )
 
         def text(name: str, default: str = "") -> str:
             value = raw.get(name, default)
@@ -374,7 +393,10 @@ def list_strategy_presets(output_dir: str | Path = DEFAULT_REPORTS_DIR) -> list[
 def save_strategy_preset(raw: Mapping[str, object], output_dir: str | Path = DEFAULT_REPORTS_DIR) -> dict[str, object]:
     preset_name = str(raw.get("preset_name", "")).strip()
     if not preset_name:
-        raise ValueError("Dammi un nome per salvare il preset strategia.")
+        raise FormValidationError(
+            "Dammi un nome per salvare il preset strategia.",
+            fields=("preset_name",),
+        )
 
     request = BacktestRequest.from_mapping(raw)
     run_mode = str(raw.get("run_mode", "single")).strip().lower()
