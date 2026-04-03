@@ -14,11 +14,11 @@
         <h2>{{ chart.title }}</h2>
         {% if chart.market_snapshot.has_market %}
           <div class="chart-terminal-headline">
-            <strong>{{ chart.market_snapshot.close_display }}</strong>
-            <span class="terminal-change terminal-change-{{ chart.market_snapshot.change_class }}">
+            <strong data-market-close>{{ chart.market_snapshot.close_display }}</strong>
+            <span class="terminal-change terminal-change-{{ chart.market_snapshot.change_class }}" data-market-change>
               {{ chart.market_snapshot.change_display }}
             </span>
-            <span class="terminal-change terminal-change-{{ chart.market_snapshot.change_class }}">
+            <span class="terminal-change terminal-change-{{ chart.market_snapshot.change_class }}" data-market-change-pct>
               {{ chart.market_snapshot.change_pct_display }}
             </span>
           </div>
@@ -30,10 +30,10 @@
         <div class="chart-terminal-meta-strip">
           <span>{{ chart.subtitle }}</span>
           {% if chart.market_snapshot.timestamp_display %}
-            <span>Ultima barra {{ chart.market_snapshot.timestamp_display }}</span>
+            <span>Ultima barra <strong data-market-timestamp>{{ chart.market_snapshot.timestamp_display }}</strong></span>
           {% endif %}
           {% if chart.market_snapshot.volume_display %}
-            <span>Volume {{ chart.market_snapshot.volume_display }}</span>
+            <span>Volume <strong data-market-volume>{{ chart.market_snapshot.volume_display }}</strong></span>
           {% endif %}
         </div>
       </div>
@@ -71,6 +71,86 @@
       </aside>
 
       <article class="panel chart-terminal-main">
+        <div class="chart-terminal-playerbar">
+          <div class="terminal-player-cluster">
+            <span class="terminal-toolbar-label">Replay</span>
+            <div class="terminal-chip-row">
+              <button type="button" class="terminal-chip is-active" data-playback-mode="all">Tutto subito</button>
+              <button type="button" class="terminal-chip" data-playback-mode="replay">Replay</button>
+              <button type="button" class="terminal-chip terminal-chip-icon" data-playback-action="restart" aria-label="Riavvia replay">|&lt;</button>
+              <button type="button" class="terminal-chip terminal-chip-icon" data-playback-action="step-back" aria-label="Indietro di uno step">&lt;</button>
+              <button type="button" class="terminal-chip terminal-chip-icon" data-playback-action="toggle-play" aria-label="Play o pausa">
+                <span data-playback-toggle-label>Play</span>
+              </button>
+              <button type="button" class="terminal-chip terminal-chip-icon" data-playback-action="step-forward" aria-label="Avanti di uno step">&gt;</button>
+            </div>
+          </div>
+
+          <div class="terminal-player-cluster terminal-player-cluster-grow">
+            <span class="terminal-toolbar-label">Serie dati</span>
+            <div class="terminal-player-field">
+              <input type="range" min="1" max="1" value="1" data-series-start aria-label="Inizio serie dati">
+              <div class="terminal-player-readout">
+                <strong data-series-start-label>Da 1</strong>
+                <span data-series-start-date>-</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="terminal-player-cluster">
+            <span class="terminal-toolbar-label">Candele</span>
+            <div class="terminal-player-selects">
+              <label class="terminal-select-field">
+                <span>Sequenza</span>
+                <select data-segment-length aria-label="Numero di candele nella sequenza">
+                  <option value="25">25 candele</option>
+                  <option value="50">50 candele</option>
+                  <option value="100" selected>100 candele</option>
+                  <option value="200">200 candele</option>
+                  <option value="500">500 candele</option>
+                  <option value="all">Tutte</option>
+                </select>
+              </label>
+              <label class="terminal-select-field">
+                <span>Finestra</span>
+                <select data-visible-window aria-label="Numero di candele visibili">
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100" selected>100</option>
+                  <option value="200">200</option>
+                  <option value="all">Tutte</option>
+                </select>
+              </label>
+              <label class="terminal-select-field">
+                <span>Step</span>
+                <select data-playback-step aria-label="Candele per step">
+                  <option value="1" selected>1 candle</option>
+                  <option value="2">2 candele</option>
+                  <option value="5">5 candele</option>
+                  <option value="10">10 candele</option>
+                  <option value="25">25 candele</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="terminal-player-cluster">
+            <span class="terminal-toolbar-label">Velocita'</span>
+            <div class="terminal-speed-panel">
+              <span class="terminal-speed-badge" data-playback-speed-badge>6x/sec</span>
+              <input type="range" min="1" max="20" value="6" data-playback-speed aria-label="Velocita replay in candele per secondo">
+            </div>
+          </div>
+        </div>
+
+        <div class="terminal-player-progressbar">
+          <div class="terminal-player-progress-meta">
+            <strong data-playback-progress-label>Ultima candle</strong>
+            <span data-playback-progress-date>-</span>
+          </div>
+          <input type="range" min="1" max="1" value="1" data-playback-progress aria-label="Posizione replay">
+        </div>
+
         <div class="chart-terminal-toolbar">
           <div class="terminal-toolbar-group">
             <span class="terminal-toolbar-label">Vista</span>
@@ -110,6 +190,8 @@
           <span>Modo <strong data-chart-status="mode">Pan</strong></span>
           <span>Vista <strong data-chart-status="focus">Multi panel</strong></span>
           <span>Range <strong data-chart-status="range">All</strong></span>
+          <span>Replay <strong data-chart-status="playback">Tutto subito</strong></span>
+          <span>Velocita' <strong data-chart-status="speed">6x/sec</strong></span>
           <span>Mouse wheel per zoom, drag per navigare</span>
         </div>
       </article>
@@ -161,19 +243,19 @@
           <div class="terminal-ohlc-grid">
             <article class="terminal-ohlc-card">
               <span>Open</span>
-              <strong>{{ chart.market_snapshot.open_display }}</strong>
+              <strong data-market-open>{{ chart.market_snapshot.open_display }}</strong>
             </article>
             <article class="terminal-ohlc-card">
               <span>High</span>
-              <strong>{{ chart.market_snapshot.high_display }}</strong>
+              <strong data-market-high>{{ chart.market_snapshot.high_display }}</strong>
             </article>
             <article class="terminal-ohlc-card">
               <span>Low</span>
-              <strong>{{ chart.market_snapshot.low_display }}</strong>
+              <strong data-market-low>{{ chart.market_snapshot.low_display }}</strong>
             </article>
             <article class="terminal-ohlc-card">
               <span>Close</span>
-              <strong>{{ chart.market_snapshot.close_display }}</strong>
+              <strong data-market-close-panel>{{ chart.market_snapshot.close_display }}</strong>
             </article>
           </div>
         </section>

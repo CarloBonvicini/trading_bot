@@ -492,6 +492,10 @@ def test_report_chart_window_renders_interactive_chart(tmp_path: Path) -> None:
     assert 'data-focus-view="price"' in body
     assert 'data-trace-toggle="benchmark"' in body
     assert "Ultima barra" in body
+    assert 'data-playback-mode="replay"' in body
+    assert 'data-series-start' in body
+    assert 'data-visible-window' in body
+    assert 'data-playback-speed' in body
 
 
 def test_create_preset_saves_named_strategy_setup(tmp_path: Path) -> None:

@@ -1293,6 +1293,108 @@ td {
   padding: 1rem;
 }
 
+.chart-terminal-playerbar,
+.terminal-player-progressbar {
+  display: grid;
+  gap: 0.9rem;
+  padding: 0.9rem;
+  margin-bottom: 0.9rem;
+  border-radius: 18px;
+  border: 1px solid rgba(171, 184, 214, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.chart-terminal-playerbar {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.terminal-player-cluster {
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+}
+
+.terminal-player-cluster-grow {
+  grid-column: span 2;
+}
+
+.terminal-chip-icon {
+  min-width: 3rem;
+  justify-content: center;
+}
+
+.terminal-player-field {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.terminal-player-field input[type="range"],
+.terminal-speed-panel input[type="range"],
+.terminal-player-progressbar input[type="range"] {
+  width: 100%;
+  accent-color: #3b82f6;
+}
+
+.terminal-player-readout,
+.terminal-player-progress-meta {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.terminal-player-readout strong,
+.terminal-player-progress-meta strong {
+  font-size: 0.92rem;
+}
+
+.terminal-player-readout span,
+.terminal-player-progress-meta span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.terminal-player-selects {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.terminal-select-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.terminal-select-field span {
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.terminal-select-field select {
+  min-width: 0;
+  padding: 0.72rem 0.82rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ink);
+  border-color: rgba(171, 184, 214, 0.12);
+}
+
+.terminal-speed-panel {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.terminal-speed-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  padding: 0.28rem 0.62rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: white;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .chart-terminal-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1581,6 +1683,7 @@ td {
   }
 
   .chart-terminal-grid,
+  .chart-terminal-playerbar,
   .terminal-metric-grid,
   .terminal-ohlc-grid {
     grid-template-columns: 1fr;
@@ -1590,5 +1693,11 @@ td {
     grid-auto-flow: column;
     justify-content: start;
     position: static;
+  }
+
+  .terminal-player-cluster-grow,
+  .terminal-player-selects {
+    grid-column: auto;
+    grid-template-columns: 1fr;
   }
 }
