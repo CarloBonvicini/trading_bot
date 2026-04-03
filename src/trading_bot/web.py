@@ -15,6 +15,7 @@ from trading_bot.services import (
     BacktestRequest,
     SweepRequest,
     as_form_values,
+    interval_helper_texts,
     list_strategy_presets,
     run_backtest_request,
     run_sma_sweep_request,
@@ -171,6 +172,7 @@ def _render_home(form_values: dict[str, object] | None = None, status: int = 200
         strategy_presets=list_strategy_presets(current_app.config["REPORTS_DIR"]),
         strategies=STRATEGY_OPTIONS,
         intervals=INTERVAL_OPTIONS,
+        interval_hints=interval_helper_texts(),
         run_modes=RUN_MODE_OPTIONS,
         sweep_sort_options=SWEEP_SORT_OPTIONS,
     ), status

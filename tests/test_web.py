@@ -183,6 +183,9 @@ def test_index_lists_existing_reports(tmp_path: Path) -> None:
     assert "Sweep parametri" in body
     assert "Run valide" in body
     assert "MACD Trend" in body
+    assert 'value="1m"' in body
+    assert 'value="15m"' in body
+    assert "ultimi 730 giorni" in body
     assert "data-expandable-panel" in body
 
 

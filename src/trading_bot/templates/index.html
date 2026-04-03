@@ -88,6 +88,7 @@
             </select>
           </label>
         </div>
+        <p class="inline-note" id="interval-hint">{{ interval_hints[form_values.interval] }}</p>
 
         <div class="input-grid">
           <label>
@@ -306,6 +307,8 @@
     const sweepOption = runModeSelect.querySelector('option[value="sweep"]');
     const presetData = {{ strategy_presets | tojson }};
     const presetsById = Object.fromEntries(presetData.map((preset) => [preset.id, preset]));
+    const intervalHints = {{ interval_hints | tojson }};
+    const intervalHint = document.getElementById("interval-hint");
 
     function setSectionInputsState(section, isEnabled) {
       section.querySelectorAll("input, select, textarea").forEach((field) => {
@@ -379,9 +382,16 @@
       syncStrategyFields();
     }
 
+    function syncIntervalHint() {
+      const selectedInterval = intervalSelect.value;
+      intervalHint.textContent = intervalHints[selectedInterval] || "";
+    }
+
     strategySelect.addEventListener("change", syncStrategyFields);
     runModeSelect.addEventListener("change", syncStrategyFields);
+    intervalSelect.addEventListener("change", syncIntervalHint);
     presetSelect.addEventListener("change", (event) => applyPreset(event.target.value));
     syncStrategyFields();
+    syncIntervalHint();
   </script>
 {% endblock %}

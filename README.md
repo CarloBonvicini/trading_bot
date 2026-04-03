@@ -101,6 +101,16 @@ Dalla UI locale puoi:
 - usare i punti di intervento specifici per ogni strategia
 - lanciare sweep multipli sulla `SMA Crossover`
 
+## Intraday
+
+La UI ora espone anche timeframe intraday (`1m`, `2m`, `5m`, `15m`, `30m`, `1h`, `90m`).
+
+Limiti pratici Yahoo Finance gestiti nell'app:
+
+- `1m`: ultimi `8` giorni
+- `2m`, `5m`, `15m`, `30m`, `90m`: ultimi `60` giorni
+- `1h`: ultimi `730` giorni
+
 ## Come usarlo bene
 
 1. Parti con un solo mercato e un solo timeframe.

@@ -10,7 +10,7 @@ from typing import Mapping
 import pandas as pd
 
 from trading_bot.backtest import BacktestResult, run_backtest, save_report
-from trading_bot.data import download_price_data
+from trading_bot.data import INTRADAY_LOOKBACK_DAYS, download_price_data
 from trading_bot.strategies import (
     STRATEGY_SPECS,
     build_strategy_signal,
@@ -21,7 +21,7 @@ from trading_bot.strategies import (
 )
 
 DEFAULT_REPORTS_DIR = Path("reports")
-INTERVAL_OPTIONS = ("1h", "1d", "1wk", "1mo")
+INTERVAL_OPTIONS = ("1m", "2m", "5m", "15m", "30m", "1h", "90m", "1d", "1wk", "1mo")
 RUN_MODE_OPTIONS = ("single", "sweep")
 SWEEP_SORT_OPTIONS = {
     "total_return_pct": "Best rendimento totale",
@@ -463,3 +463,14 @@ def as_form_values(backtest_request: BacktestRequest | None = None) -> dict[str,
 def _preset_slug(name: str) -> str:
     normalized = PRESET_NAME_PATTERN.sub("-", name.lower()).strip("-")
     return normalized or "strategy-preset"
+
+
+def interval_helper_texts() -> dict[str, str]:
+    hints: dict[str, str] = {}
+    for interval in INTERVAL_OPTIONS:
+        lookback_days = INTRADAY_LOOKBACK_DAYS.get(interval)
+        if lookback_days is None:
+            hints[interval] = "Storico ampio disponibile."
+        else:
+            hints[interval] = f"Yahoo limita questo timeframe agli ultimi {lookback_days} giorni."
+    return hints
