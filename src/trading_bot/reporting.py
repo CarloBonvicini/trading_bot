@@ -501,6 +501,30 @@ def build_summary_cards(summary: dict[str, object]) -> list[dict[str, object]]:
     return cards
 
 
+def build_chart_snapshot_cards(summary: dict[str, object]) -> list[dict[str, str]]:
+    fields = (
+        ("Rendimento", "total_return_pct", "percent"),
+        ("Buy & hold", "benchmark_return_pct", "percent"),
+        ("Delta", "excess_return_pct", "signed_percent"),
+        ("Equity finale", "final_equity", "number"),
+        ("Max DD", "max_drawdown_pct", "percent"),
+        ("Sharpe", "sharpe_ratio", "ratio"),
+    )
+    cards: list[dict[str, str]] = []
+    for label, key, kind in fields:
+        value = summary.get(key)
+        if kind == "percent":
+            display_value = _format_percent_metric(value)
+        elif kind == "signed_percent":
+            display_value = _format_percent_metric(value, signed=True)
+        elif kind == "ratio":
+            display_value = _format_ratio_metric(value)
+        else:
+            display_value = _format_number_metric(value)
+        cards.append({"label": label, "value": display_value})
+    return cards
+
+
 def build_sweep_summary_cards(summary: dict[str, object]) -> list[dict[str, object]]:
     labels = {
         "run_count": "Combinazioni valide",
@@ -1024,6 +1048,7 @@ def _build_chart_window_context(
         "market_snapshot": build_market_snapshot(equity_curve),
         "layers": build_chart_layers(payload),
         "summary_cards": build_summary_cards(summary),
+        "snapshot_cards": build_chart_snapshot_cards(summary),
         "trade_preview": build_trade_preview(normalized_trades, limit=30),
         "chart_payload": payload,
     }

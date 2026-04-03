@@ -124,6 +124,10 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
 
     @app.get("/reports/<report_name>")
     def report_detail(report_name: str) -> str:
+        return redirect(url_for("report_chart_window", report_name=report_name, focus="equity"))
+
+    @app.get("/reports/<report_name>/overview")
+    def report_overview(report_name: str) -> str:
         try:
             report = load_report(output_dir=current_app.config["REPORTS_DIR"], report_name=report_name)
         except FileNotFoundError:

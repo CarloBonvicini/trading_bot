@@ -41,7 +41,7 @@
 
       <div class="chart-terminal-actions">
         {% if chart.artifact_type == "report" %}
-          <a class="ghost-link chart-action-link" href="{{ url_for('report_detail', report_name=chart.artifact_name) }}">Torna al report</a>
+          <a class="ghost-link chart-action-link" href="{{ url_for('report_overview', report_name=chart.artifact_name) }}">Overview dati</a>
           <a class="ghost-link chart-action-link" href="{{ url_for('download_report_file', report_name=chart.artifact_name, filename='equity_curve.csv') }}">equity_curve.csv</a>
           <a class="ghost-link chart-action-link" href="{{ url_for('download_report_file', report_name=chart.artifact_name, filename='trades.csv') }}">trades.csv</a>
         {% else %}
@@ -102,18 +102,18 @@
             <span class="terminal-toolbar-label">Candele</span>
             <div class="terminal-player-selects">
               <label class="terminal-select-field">
-                <span>Sequenza</span>
+                <span>Seq.</span>
                 <select data-segment-length aria-label="Numero di candele nella sequenza">
-                  <option value="25">25 candele</option>
-                  <option value="50">50 candele</option>
-                  <option value="100" selected>100 candele</option>
-                  <option value="200">200 candele</option>
-                  <option value="500">500 candele</option>
+                  <option value="25">25 c.</option>
+                  <option value="50">50 c.</option>
+                  <option value="100" selected>100 c.</option>
+                  <option value="200">200 c.</option>
+                  <option value="500">500 c.</option>
                   <option value="all">Tutte</option>
                 </select>
               </label>
               <label class="terminal-select-field">
-                <span>Finestra</span>
+                <span>Win.</span>
                 <select data-visible-window aria-label="Numero di candele visibili">
                   <option value="25">25</option>
                   <option value="50">50</option>
@@ -125,11 +125,11 @@
               <label class="terminal-select-field">
                 <span>Step</span>
                 <select data-playback-step aria-label="Candele per step">
-                  <option value="1" selected>1 candle</option>
-                  <option value="2">2 candele</option>
-                  <option value="5">5 candele</option>
-                  <option value="10">10 candele</option>
-                  <option value="25">25 candele</option>
+                  <option value="1" selected>1 c.</option>
+                  <option value="2">2 c.</option>
+                  <option value="5">5 c.</option>
+                  <option value="10">10 c.</option>
+                  <option value="25">25 c.</option>
                 </select>
               </label>
             </div>
@@ -205,7 +205,7 @@
             <h3>Dati chiave</h3>
           </div>
           <div class="terminal-metric-grid">
-            {% for card in chart.summary_cards[:8] %}
+            {% for card in chart.snapshot_cards %}
               <article class="terminal-metric-card">
                 <p>{{ card.label }}</p>
                 <strong>{{ card.value }}</strong>
@@ -318,6 +318,7 @@
             <label
               class="chart-live-toggle-card {% if strategy_id in chart.chart_lab.active_strategy_ids %}is-active{% endif %}"
               data-chart-strategy-card="{{ strategy_id }}"
+              title="{{ strategy.description }}"
             >
               <input
                 type="checkbox"

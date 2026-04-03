@@ -464,7 +464,7 @@ def test_create_sweep_rejects_combined_rules(tmp_path: Path) -> None:
     assert "Lo sweep multiplo richiede una sola regola attiva." in body
 
 
-def test_report_detail_renders_chart_and_trade_table(tmp_path: Path) -> None:
+def test_report_detail_redirects_to_chart_terminal(tmp_path: Path) -> None:
     report_name = "SPY-sma_cross-20260403-090000"
     create_report_fixture(tmp_path / report_name)
     app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
@@ -472,36 +472,44 @@ def test_report_detail_renders_chart_and_trade_table(tmp_path: Path) -> None:
     client = app.test_client()
     response = client.get(f"/reports/{report_name}")
 
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith(f"/reports/{report_name}/chart?focus=equity")
+
+
+def test_report_overview_renders_dashboard(tmp_path: Path) -> None:
+    report_name = "SPY-sma_cross-20260403-090000"
+    create_report_fixture(tmp_path / report_name)
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+
+    client = app.test_client()
+    response = client.get(f"/reports/{report_name}/overview")
+
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "report-dashboard-body" in body
     assert "Cosa dicono i numeri" in body
     assert "Rendimento e benchmark" in body
     assert "Costi e attrito" in body
-    assert "Delta vs hold" in body
-    assert "Apri il Chart Lab" in body
     assert "Prime 20 operazioni" in body
     assert "Esito" in body
     assert "Durata" in body
     assert "WIN" in body
-    assert f"/reports/{report_name}/chart?focus=equity" in body
-    assert 'id="panel-backdrop"' in body
 
 
-def test_report_detail_handles_empty_trades_file(tmp_path: Path) -> None:
+def test_report_chart_handles_empty_trades_file(tmp_path: Path) -> None:
     report_name = "SPY-multi_rules_all-20260403-164850"
     create_report_fixture(tmp_path / report_name, with_trades=False)
     app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
 
     client = app.test_client()
-    response = client.get(f"/reports/{report_name}")
+    response = client.get(f"/reports/{report_name}/chart?focus=equity")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Nessun trade registrato in questo report." in body
+    assert "Nessun trade disponibile per questo chart." in body
 
 
-def test_report_detail_infers_period_from_equity_curve_when_metadata_missing(tmp_path: Path) -> None:
+def test_report_overview_infers_period_from_equity_curve_when_metadata_missing(tmp_path: Path) -> None:
     report_name = "SPY-sma_cross-20260403-090000"
     report_dir = tmp_path / report_name
     create_report_fixture(report_dir)
@@ -509,7 +517,7 @@ def test_report_detail_infers_period_from_equity_curve_when_metadata_missing(tmp
     app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
 
     client = app.test_client()
-    response = client.get(f"/reports/{report_name}")
+    response = client.get(f"/reports/{report_name}/overview")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
@@ -547,6 +555,7 @@ def test_report_chart_window_renders_interactive_chart(tmp_path: Path) -> None:
     assert "interactive-chart-root" in body
     assert 'id="chart-window-data"' in body
     assert "FXReplay-inspired terminal" in body
+    assert "Overview dati" in body
     assert 'data-focus-view="price"' in body
     assert 'data-trace-toggle="benchmark"' in body
     assert "Ultima barra" in body
