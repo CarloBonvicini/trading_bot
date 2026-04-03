@@ -2439,6 +2439,15 @@ td {
   gap: 1rem;
 }
 
+.home-results-shell {
+  display: grid;
+  gap: 1rem;
+}
+
+.home-results-shell.is-active {
+  animation: rise-in 220ms ease both;
+}
+
 .home-side-stack {
   display: grid;
   gap: 1rem;

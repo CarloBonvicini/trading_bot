@@ -17,7 +17,7 @@
         <a class="home-nav-link is-active" href="#dashboard-home" data-home-tab-link="dashboard">Dashboard</a>
         <a class="home-nav-link" href="#launch-panel" data-home-tab-link="setup">Nuovo backtest</a>
         <a class="home-nav-link" href="#strategy-rules-panel" data-home-tab-link="strategies">Strategie</a>
-        <a class="home-nav-link" href="#saved-results-panel" data-home-tab-link="results">Risultati</a>
+        <a class="home-nav-link" href="#saved-results-panel" data-home-tab-link="results">Storico</a>
       </nav>
 
       <div class="home-sidebar-footer">
@@ -50,7 +50,7 @@
             <a class="home-tab is-active" href="#dashboard-home" data-home-tab-link="dashboard">Dashboard</a>
             <a class="home-tab" href="#launch-panel" data-home-tab-link="setup">Setup test</a>
             <a class="home-tab" href="#strategy-rules-panel" data-home-tab-link="strategies">Strategies</a>
-            <a class="home-tab" href="#saved-results-panel" data-home-tab-link="results">Saved results</a>
+            <a class="home-tab" href="#saved-results-panel" data-home-tab-link="results">Storico</a>
           </div>
         </div>
         <div class="home-streak-card">
@@ -65,7 +65,7 @@
           <strong>Ultima attivita'</strong>
           <p>{{ dashboard.latest_label }}</p>
         </div>
-        <a class="ghost-link" href="#saved-results-panel">Apri risultati salvati</a>
+        <a class="ghost-link" href="#saved-results-panel" data-home-tab-link="results">Apri storico</a>
       </section>
 
       <section class="home-metrics-grid">
@@ -362,85 +362,87 @@
               </article>
             </div>
           </article>
-
-          <article class="panel panel-results panel-expandable home-results-panel" data-expandable-panel id="saved-results-panel">
-            <div class="panel-header home-panel-header">
-              <div>
-                <p class="eyebrow">storico</p>
-                <h3>Risultati salvati</h3>
-              </div>
-              <span class="strategy-chip">{{ saved_items|length }} items</span>
-            </div>
-            {% if saved_items %}
-              <div class="report-list">
-                {% for item in saved_items %}
-                  <a class="report-card" href="{{ item.detail_url }}">
-                    <div class="report-card-head">
-                      <strong>{{ item.metadata.symbol or item.name }}</strong>
-                      <span>
-                        {% if item.artifact_type == "sweep" %}
-                          Sweep {{ item.metadata.strategy_label or item.metadata.strategy or "SMA" }}
-                        {% else %}
-                          {{ item.metadata.strategy_label or item.metadata.strategy or "Backtest" }}
-                        {% endif %}
-                      </span>
-                    </div>
-                    {% if item.artifact_type == "sweep" %}
-                      <div class="report-card-metrics">
-                        <div>
-                          <label>Best return</label>
-                          <span>{{ item.summary.best_total_return_pct }}%</span>
-                        </div>
-                        <div>
-                          <label>Run valide</label>
-                          <span>{{ item.summary.run_count }}</span>
-                        </div>
-                        <div>
-                          <label>Best params</label>
-                          <span>{{ item.summary.best_fast }} / {{ item.summary.best_slow }}</span>
-                        </div>
-                        <div>
-                          <label>Delta hold</label>
-                          <span>{{ item.summary.best_excess_return_pct }}%</span>
-                        </div>
-                      </div>
-                    {% else %}
-                      <div class="report-card-metrics">
-                        <div>
-                          <label>Strategia</label>
-                          <span>{{ item.summary.total_return_pct }}%</span>
-                        </div>
-                        <div>
-                          <label>Buy &amp; hold</label>
-                          <span>{{ item.summary.benchmark_return_pct }}%</span>
-                        </div>
-                        <div>
-                          <label>Delta</label>
-                          <span>{{ item.summary.excess_return_pct }}%</span>
-                        </div>
-                        <div>
-                          <label>Max DD</label>
-                          <span>{{ item.summary.max_drawdown_pct }}%</span>
-                        </div>
-                      </div>
-                    {% endif %}
-                    <div class="mini-chart-shell">
-                      <svg viewBox="0 0 {{ item.preview_chart.width }} {{ item.preview_chart.height }}" class="mini-chart-svg" aria-label="Anteprima grafico risultato salvato">
-                        {% for series in item.preview_chart.series %}
-                          <polyline points="{{ series.points }}" stroke="{{ series.color }}" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
-                        {% endfor %}
-                      </svg>
-                    </div>
-                  </a>
-                {% endfor %}
-              </div>
-            {% else %}
-              <div class="empty-state">
-                <p>Nessun risultato ancora. Lancia il primo backtest o sweep dalla dashboard.</p>
-              </div>
-            {% endif %}
-          </article>
         </div>
+      </section>
+
+      <section class="home-results-shell" data-home-tab-panel="results" hidden>
+        <article class="panel panel-results panel-expandable home-results-panel" data-expandable-panel id="saved-results-panel">
+          <div class="panel-header home-panel-header">
+            <div>
+              <p class="eyebrow">storico</p>
+              <h3>Risultati salvati</h3>
+            </div>
+            <span class="strategy-chip">{{ saved_items|length }} items</span>
+          </div>
+          {% if saved_items %}
+            <div class="report-list">
+              {% for item in saved_items %}
+                <a class="report-card" href="{{ item.detail_url }}">
+                  <div class="report-card-head">
+                    <strong>{{ item.metadata.symbol or item.name }}</strong>
+                    <span>
+                      {% if item.artifact_type == "sweep" %}
+                        Sweep {{ item.metadata.strategy_label or item.metadata.strategy or "SMA" }}
+                      {% else %}
+                        {{ item.metadata.strategy_label or item.metadata.strategy or "Backtest" }}
+                      {% endif %}
+                    </span>
+                  </div>
+                  {% if item.artifact_type == "sweep" %}
+                    <div class="report-card-metrics">
+                      <div>
+                        <label>Best return</label>
+                        <span>{{ item.summary.best_total_return_pct }}%</span>
+                      </div>
+                      <div>
+                        <label>Run valide</label>
+                        <span>{{ item.summary.run_count }}</span>
+                      </div>
+                      <div>
+                        <label>Best params</label>
+                        <span>{{ item.summary.best_fast }} / {{ item.summary.best_slow }}</span>
+                      </div>
+                      <div>
+                        <label>Delta hold</label>
+                        <span>{{ item.summary.best_excess_return_pct }}%</span>
+                      </div>
+                    </div>
+                  {% else %}
+                    <div class="report-card-metrics">
+                      <div>
+                        <label>Strategia</label>
+                        <span>{{ item.summary.total_return_pct }}%</span>
+                      </div>
+                      <div>
+                        <label>Buy &amp; hold</label>
+                        <span>{{ item.summary.benchmark_return_pct }}%</span>
+                      </div>
+                      <div>
+                        <label>Delta</label>
+                        <span>{{ item.summary.excess_return_pct }}%</span>
+                      </div>
+                      <div>
+                        <label>Max DD</label>
+                        <span>{{ item.summary.max_drawdown_pct }}%</span>
+                      </div>
+                    </div>
+                  {% endif %}
+                  <div class="mini-chart-shell">
+                    <svg viewBox="0 0 {{ item.preview_chart.width }} {{ item.preview_chart.height }}" class="mini-chart-svg" aria-label="Anteprima grafico risultato salvato">
+                      {% for series in item.preview_chart.series %}
+                        <polyline points="{{ series.points }}" stroke="{{ series.color }}" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
+                      {% endfor %}
+                    </svg>
+                  </div>
+                </a>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="empty-state">
+              <p>Nessun risultato ancora. Lancia il primo backtest o sweep dalla dashboard.</p>
+            </div>
+          {% endif %}
+        </article>
       </section>
     </div>
   </section>

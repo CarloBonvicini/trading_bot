@@ -15,6 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
     strategies: "strategy-rules-panel",
     results: "saved-results-panel",
   };
+  const homeTabPanels = Array.from(document.querySelectorAll("[data-home-tab-panel]"));
 
   const strategyToggles = Array.from(document.querySelectorAll("[data-strategy-toggle]"));
   const strategyToggleCards = Array.from(document.querySelectorAll("[data-strategy-toggle-card]"));
@@ -51,6 +52,13 @@ document.addEventListener("DOMContentLoaded", () => {
       } else {
         link.removeAttribute("aria-current");
       }
+    });
+
+    homeTabPanels.forEach((panel) => {
+      const visibleTabs = (panel.dataset.homeTabPanel || "").split(/\s+/).filter(Boolean);
+      const isVisible = visibleTabs.includes(tabId);
+      panel.hidden = !isVisible;
+      panel.classList.toggle("is-active", isVisible);
     });
   }
 
