@@ -176,10 +176,10 @@ def load_report_chart_window(output_dir: str | Path, report_name: str, focus: st
         equity_curve=equity_curve,
         trades=trades,
         focus=focus,
-        title=f"{metadata.get('symbol') or report_name} · {metadata.get('strategy_label') or metadata.get('strategy') or 'Backtest'}",
+        title=f"{metadata.get('symbol') or report_name} - {metadata.get('strategy_label') or metadata.get('strategy') or 'Backtest'}",
         subtitle=(
-            f"Periodo {metadata.get('start', 'n/a')} -> {metadata.get('end', 'n/a')} · "
-            f"Intervallo {metadata.get('interval', 'n/a')} · Fee {metadata.get('fee_bps', 'n/a')} bps"
+            f"Periodo {metadata.get('start', 'n/a')} -> {metadata.get('end', 'n/a')} - "
+            f"Intervallo {metadata.get('interval', 'n/a')} - Fee {metadata.get('fee_bps', 'n/a')} bps"
         ),
     )
 
@@ -204,11 +204,11 @@ def load_sweep_chart_window(output_dir: str | Path, sweep_name: str, focus: str 
         equity_curve=best_equity_curve,
         trades=best_trades,
         focus=focus,
-        title=f"{metadata.get('symbol') or sweep_name} · Best {metadata.get('strategy_label') or metadata.get('strategy') or 'Sweep'}",
+        title=f"{metadata.get('symbol') or sweep_name} - Best {metadata.get('strategy_label') or metadata.get('strategy') or 'Sweep'}",
         subtitle=(
             f"Best {parameter_labels.get('fast', 'Fast')} {summary.get('best_fast', 'n/a')} / "
-            f"{parameter_labels.get('slow', 'Slow')} {summary.get('best_slow', 'n/a')} · "
-            f"Periodo {metadata.get('start', 'n/a')} -> {metadata.get('end', 'n/a')} · "
+            f"{parameter_labels.get('slow', 'Slow')} {summary.get('best_slow', 'n/a')} - "
+            f"Periodo {metadata.get('start', 'n/a')} -> {metadata.get('end', 'n/a')} - "
             f"Intervallo {metadata.get('interval', 'n/a')}"
         ),
     )
@@ -292,6 +292,86 @@ def build_comparison(summary: dict[str, object]) -> dict[str, object]:
         "fee_drag_equity": summary.get("fee_drag_equity", ""),
         "verdict": verdict,
     }
+
+
+def build_market_snapshot(equity_curve: pd.DataFrame) -> dict[str, object]:
+    timestamp_display = _extract_date_labels(equity_curve)[-1] if not equity_curve.empty else ""
+    snapshot = {
+        "has_market": False,
+        "timestamp_display": timestamp_display,
+        "open_display": "n/a",
+        "high_display": "n/a",
+        "low_display": "n/a",
+        "close_display": "n/a",
+        "change_display": "n/a",
+        "change_pct_display": "n/a",
+        "change_class": "neutral",
+        "volume_display": "",
+    }
+
+    if equity_curve.empty or "close" not in equity_curve.columns:
+        return snapshot
+
+    last_row = equity_curve.iloc[-1]
+    previous_row = equity_curve.iloc[-2] if len(equity_curve) > 1 else None
+
+    close_value = _to_float(last_row.get("close"))
+    if close_value is None:
+        return snapshot
+
+    open_value = _to_float(last_row.get("open"))
+    high_value = _to_float(last_row.get("high"))
+    low_value = _to_float(last_row.get("low"))
+    previous_close = _to_float(previous_row.get("close")) if previous_row is not None else open_value
+    volume_value = _to_float(last_row.get("volume"))
+
+    change_value = (close_value - previous_close) if previous_close is not None else None
+    change_pct_value = ((change_value / previous_close) * 100) if previous_close not in (None, 0) and change_value is not None else None
+    if change_value is None:
+        change_class = "neutral"
+    elif change_value > 0:
+        change_class = "positive"
+    elif change_value < 0:
+        change_class = "negative"
+    else:
+        change_class = "neutral"
+
+    snapshot.update(
+        {
+            "has_market": True,
+            "open_display": _format_terminal_number(open_value) if open_value is not None else "n/a",
+            "high_display": _format_terminal_number(high_value) if high_value is not None else "n/a",
+            "low_display": _format_terminal_number(low_value) if low_value is not None else "n/a",
+            "close_display": _format_terminal_number(close_value),
+            "change_display": _format_signed_number(change_value) if change_value is not None else "n/a",
+            "change_pct_display": _format_signed_percent(change_pct_value) if change_pct_value is not None else "n/a",
+            "change_class": change_class,
+            "volume_display": _format_compact_number(volume_value) if volume_value is not None else "",
+        }
+    )
+    return snapshot
+
+
+def build_chart_layers(payload: dict[str, object]) -> list[dict[str, object]]:
+    market = payload.get("market", {})
+    equity = payload.get("equity", {})
+    entry_markers = payload.get("entry_markers", {})
+    exit_markers = payload.get("exit_markers", {})
+    return [
+        {"key": "price", "label": "Prezzo", "enabled": True, "locked": True},
+        {
+            "key": "volume",
+            "label": "Volume",
+            "enabled": any(value not in (None, 0, 0.0) for value in market.get("volume", [])),
+            "locked": False,
+        },
+        {"key": "entry", "label": "Entry", "enabled": bool(entry_markers.get("x")), "locked": False},
+        {"key": "exit", "label": "Exit", "enabled": bool(exit_markers.get("x")), "locked": False},
+        {"key": "strategy", "label": "Strategia", "enabled": bool(equity.get("strategy")), "locked": True},
+        {"key": "benchmark", "label": "Buy & hold", "enabled": bool(equity.get("benchmark")), "locked": False},
+        {"key": "gross", "label": "Senza fee", "enabled": bool(equity.get("gross")), "locked": False},
+        {"key": "drawdown", "label": "Drawdown", "enabled": True, "locked": False},
+    ]
 
 
 def enrich_summary(summary: dict[str, object], report_dir: Path) -> dict[str, object]:
@@ -506,6 +586,8 @@ def _build_chart_window_context(
         "subtitle": subtitle,
         "metadata": metadata,
         "summary": summary,
+        "market_snapshot": build_market_snapshot(equity_curve),
+        "layers": build_chart_layers(payload),
         "summary_cards": build_summary_cards(summary),
         "trade_preview": build_trade_preview(normalized_trades, limit=30),
         "chart_payload": payload,
@@ -609,7 +691,7 @@ def _build_trade_markers(trades: pd.DataFrame, side: str) -> dict[str, list[obje
         pnl = str(trade.get("pnl_pct", "")).strip() or "open"
         markers["x"].append(trade_date)
         markers["y"].append(round(y_value, 6))
-        markers["text"].append(f"{side.title()} · PnL {pnl}%")
+        markers["text"].append(f"{side.title()} - PnL {pnl}%")
 
     return markers
 
@@ -705,6 +787,37 @@ def _format_trade_price(value: object) -> str:
     if numeric is None:
         return "-"
     return f"{numeric:.4f}".rstrip("0").rstrip(".")
+
+
+def _format_terminal_number(value: float | None, decimals: int = 3) -> str:
+    if value is None:
+        return "n/a"
+    return f"{value:,.{decimals}f}".rstrip("0").rstrip(".")
+
+
+def _format_signed_number(value: float | None, decimals: int = 3) -> str:
+    if value is None:
+        return "n/a"
+    sign = "+" if value > 0 else ""
+    return f"{sign}{value:,.{decimals}f}".rstrip("0").rstrip(".")
+
+
+def _format_signed_percent(value: float | None, decimals: int = 2) -> str:
+    if value is None:
+        return "n/a"
+    sign = "+" if value > 0 else ""
+    return f"{sign}{value:.{decimals}f}%"
+
+
+def _format_compact_number(value: float, decimals: int = 1) -> str:
+    abs_value = abs(value)
+    if abs_value >= 1_000_000_000:
+        return f"{value / 1_000_000_000:.{decimals}f}B"
+    if abs_value >= 1_000_000:
+        return f"{value / 1_000_000:.{decimals}f}M"
+    if abs_value >= 1_000:
+        return f"{value / 1_000:.{decimals}f}K"
+    return _format_terminal_number(value, decimals=0)
 
 
 def _to_float(value: object) -> float | None:

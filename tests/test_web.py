@@ -52,6 +52,11 @@ def create_report_fixture(report_dir: Path) -> None:
     pd.DataFrame(
         {
             "date": ["2024-01-01", "2024-01-02"],
+            "open": [100.0, 100.4],
+            "high": [101.2, 101.6],
+            "low": [99.5, 100.1],
+            "close": [100.8, 101.1],
+            "volume": [1_250_000, 1_540_000],
             "equity": [10000.0, 10100.0],
             "benchmark_equity": [10000.0, 10080.0],
             "drawdown": [0.0, -0.5],
@@ -150,6 +155,11 @@ def create_sweep_fixture(sweep_dir: Path) -> None:
     pd.DataFrame(
         {
             "date": ["2024-01-01", "2024-01-02"],
+            "open": [100.0, 100.4],
+            "high": [101.2, 101.6],
+            "low": [99.5, 100.1],
+            "close": [100.8, 101.1],
+            "volume": [1_250_000, 1_540_000],
             "equity": [10000.0, 10120.0],
             "benchmark_equity": [10000.0, 10080.0],
             "drawdown": [0.0, -0.3],
@@ -477,8 +487,11 @@ def test_report_chart_window_renders_interactive_chart(tmp_path: Path) -> None:
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "interactive-chart-root" in body
-    assert "Plotly.newPlot" in body
-    assert "Layout ispirato a TradingView" in body
+    assert 'id="chart-window-data"' in body
+    assert "FXReplay-inspired terminal" in body
+    assert 'data-focus-view="price"' in body
+    assert 'data-trace-toggle="benchmark"' in body
+    assert "Ultima barra" in body
 
 
 def test_create_preset_saves_named_strategy_setup(tmp_path: Path) -> None:
