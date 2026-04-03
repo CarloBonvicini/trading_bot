@@ -195,24 +195,24 @@ body.strategy-modal-open {
 
 .panel-expandable.is-expanded {
   position: fixed;
-  top: 1rem;
-  left: 50%;
-  right: auto;
-  bottom: auto;
-  transform: translate3d(-50%, 0, 0);
-  width: min(1320px, calc(100vw - 2rem));
-  max-width: calc(100vw - 2rem);
-  max-height: calc(100vh - 2rem);
+  inset: 1rem;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
   overflow: auto;
   z-index: 100;
   cursor: auto;
   background: rgba(255, 250, 243, 0.98);
   box-shadow: 0 28px 100px rgba(27, 27, 24, 0.28);
   overscroll-behavior: contain;
+  scrollbar-gutter: stable both-edges;
+  margin: 0;
+  isolation: isolate;
 }
 
 .panel-expandable.is-expanded:hover {
-  transform: translate3d(-50%, 0, 0);
+  transform: none;
 }
 
 .panel-expandable.is-expanded::after {
@@ -243,6 +243,12 @@ body.strategy-modal-open {
 
 .panel-expandable.is-expanded .panel-expand-close {
   display: inline-flex;
+}
+
+.panel-expandable.is-expanded .panel-header,
+.panel-expandable.is-expanded .section-head,
+.panel-expandable.is-expanded .strategy-picker-top {
+  padding-right: 5.5rem;
 }
 
 .hero-copy {
@@ -1024,5 +1030,9 @@ td {
   .strategy-modal-dialog {
     width: min(100vw - 0.75rem, 100%);
     max-height: calc(100vh - 1.5rem);
+  }
+
+  .panel-expandable.is-expanded {
+    inset: 0.5rem;
   }
 }

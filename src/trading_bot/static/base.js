@@ -2,8 +2,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const expandablePanels = Array.from(document.querySelectorAll("[data-expandable-panel]"));
   const backdrop = document.getElementById("panel-backdrop");
   let activePanel = null;
-  const EXPANDED_PANEL_MAX_WIDTH = 1320;
   const EXPANDED_PANEL_GAP = 16;
+  const EXPANDED_PANEL_GAP_COMPACT = 8;
 
   function isInteractiveTarget(target) {
     return Boolean(target.closest("a, button, input, select, textarea, summary, [data-no-expand]"));
@@ -12,27 +12,32 @@ document.addEventListener("DOMContentLoaded", () => {
   function applyExpandedLayout(panel) {
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
-    const safeGap = Math.max(12, EXPANDED_PANEL_GAP);
-    const targetWidth = Math.min(EXPANDED_PANEL_MAX_WIDTH, Math.max(320, viewportWidth - safeGap * 2));
+    const safeGap = viewportWidth <= 980 || viewportHeight <= 760
+      ? EXPANDED_PANEL_GAP_COMPACT
+      : EXPANDED_PANEL_GAP;
 
-    panel.style.width = `${targetWidth}px`;
-    panel.style.maxWidth = `calc(100vw - ${safeGap * 2}px)`;
-    panel.style.maxHeight = `calc(100vh - ${safeGap * 2}px)`;
-    panel.style.left = "50%";
-    panel.style.top = viewportWidth <= 980 ? `${safeGap}px` : "1rem";
-    panel.style.transform = "translate3d(-50%, 0, 0)";
-
-    if (viewportHeight <= 760) {
-      panel.style.top = `${safeGap}px`;
-    }
+    panel.style.inset = `${safeGap}px`;
+    panel.style.width = "auto";
+    panel.style.height = "auto";
+    panel.style.maxWidth = "none";
+    panel.style.maxHeight = "none";
+    panel.style.left = "";
+    panel.style.top = "";
+    panel.style.right = "";
+    panel.style.bottom = "";
+    panel.style.transform = "none";
   }
 
   function clearExpandedLayout(panel) {
+    panel.style.inset = "";
     panel.style.width = "";
+    panel.style.height = "";
     panel.style.maxWidth = "";
     panel.style.maxHeight = "";
     panel.style.left = "";
     panel.style.top = "";
+    panel.style.right = "";
+    panel.style.bottom = "";
     panel.style.transform = "";
   }
 
@@ -60,6 +65,7 @@ document.addEventListener("DOMContentLoaded", () => {
     panel.classList.add("is-expanded");
     panel.setAttribute("aria-expanded", "true");
     applyExpandedLayout(panel);
+    panel.scrollTop = 0;
     document.body.classList.add("panel-expanded");
     backdrop.hidden = false;
     requestAnimationFrame(() => backdrop.classList.add("is-visible"));
