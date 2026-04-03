@@ -64,8 +64,6 @@ class BacktestRequest:
     interval: str = "1d"
     strategy: str = "sma_cross"
     active_strategy_ids: tuple[str, ...] = ("sma_cross",)
-    secondary_strategy: str = ""
-    tertiary_strategy: str = ""
     rule_logic: str = "all"
     initial_capital: float = 10_000.0
     fee_bps: float = 5.0
@@ -81,8 +79,6 @@ class BacktestRequest:
         rule_logic = _text_value(raw, "rule_logic", "all")
         active_strategy_ids = _parse_active_strategy_ids(raw)
         strategy = active_strategy_ids[0]
-        secondary_strategy = active_strategy_ids[1] if len(active_strategy_ids) > 1 else ""
-        tertiary_strategy = active_strategy_ids[2] if len(active_strategy_ids) > 2 else ""
 
         if not symbol:
             raise FormValidationError(
@@ -137,8 +133,6 @@ class BacktestRequest:
             interval=interval,
             strategy=strategy,
             active_strategy_ids=tuple(active_strategy_ids),
-            secondary_strategy=secondary_strategy,
-            tertiary_strategy=tertiary_strategy,
             rule_logic=rule_logic,
             initial_capital=float(_text_value(raw, "initial_capital", "10000")),
             fee_bps=float(_text_value(raw, "fee_bps", "5")),
@@ -184,8 +178,6 @@ class BacktestRequest:
             "primary_strategy": self.strategy,
             "primary_strategy_label": STRATEGY_OPTIONS[self.strategy]["label"],
             "active_strategy_ids": list(self.active_strategy_ids),
-            "secondary_strategy": self.secondary_strategy,
-            "tertiary_strategy": self.tertiary_strategy,
             "rule_logic": self.rule_logic,
             "rule_logic_label": self.rule_logic_label,
             "is_composite": self.is_composite,
@@ -270,8 +262,8 @@ class SweepRequest:
         base_request = BacktestRequest.from_mapping(raw)
         if base_request.is_composite:
             raise FormValidationError(
-                "Lo sweep multiplo richiede una sola regola primaria. Rimuovi le regole aggiuntive oppure usa Test singolo.",
-                fields=("run_mode", "secondary_strategy", "tertiary_strategy"),
+                "Lo sweep multiplo richiede una sola regola attiva. Disattiva le altre oppure usa Test singolo.",
+                fields=("run_mode", "active_strategies"),
                 display_field="run_mode",
             )
         strategy_spec = STRATEGY_SPECS[base_request.strategy]

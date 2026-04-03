@@ -426,7 +426,7 @@ def test_create_sweep_rejects_combined_rules(tmp_path: Path) -> None:
 
     assert response.status_code == 400
     body = response.get_data(as_text=True)
-    assert "Lo sweep multiplo richiede una sola regola primaria." in body
+    assert "Lo sweep multiplo richiede una sola regola attiva." in body
 
 
 def test_report_detail_renders_chart_and_trade_table(tmp_path: Path) -> None:

@@ -48,8 +48,6 @@ def save_strategy_preset(raw: Mapping[str, object], output_dir: str | Path = DEF
         "strategy": request.strategy,
         "strategy_label": request.strategy_label,
         "active_strategy_ids": list(request.active_strategy_ids),
-        "secondary_strategy": request.secondary_strategy,
-        "tertiary_strategy": request.tertiary_strategy,
         "rule_logic": request.rule_logic,
         "is_composite": request.is_composite,
         "active_rules": [rule.metadata() for rule in request.active_rules()],

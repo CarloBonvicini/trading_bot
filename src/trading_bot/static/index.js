@@ -209,7 +209,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const presetStrategyIds = preset.active_strategy_ids
       || (preset.active_rules || []).map((rule) => rule.strategy)
-      || [preset.strategy, preset.secondary_strategy, preset.tertiary_strategy].filter(Boolean);
+      || [preset.strategy].filter(Boolean);
 
     strategyToggles.forEach((toggle) => {
       toggle.checked = presetStrategyIds.includes(toggle.value);

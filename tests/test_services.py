@@ -123,6 +123,6 @@ def test_save_strategy_preset_supports_combined_rules(tmp_path: Path) -> None:
     )
 
     assert saved["is_composite"] is True
-    assert saved["secondary_strategy"] == "rsi_mean_reversion"
+    assert saved["active_strategy_ids"] == ["ema_cross", "rsi_mean_reversion"]
     assert saved["parameters_by_strategy"]["ema_cross"] == {"fast": 12, "slow": 26}
     assert saved["parameters_by_strategy"]["rsi_mean_reversion"] == {"period": 14, "lower": 30.0, "upper": 55.0}
