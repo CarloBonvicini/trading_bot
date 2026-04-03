@@ -158,6 +158,18 @@
             {% if field_errors.get('strategy') %}
               <p class="field-error">{{ field_errors['strategy'] }}</p>
             {% endif %}
+            <article class="strategy-picker-card" id="strategy-picker-card">
+              <div class="strategy-picker-top">
+                <strong id="strategy-picker-label"></strong>
+                <span class="strategy-chip" id="strategy-picker-chip"></span>
+              </div>
+              <p class="inline-note" id="strategy-picker-description"></p>
+              <div class="button-row">
+                <button class="ghost-button" type="button" id="open-strategy-lab" data-no-expand="true">
+                  Apri finestra strategia
+                </button>
+              </div>
+            </article>
           </div>
           <div class="field-block">
             <label>
@@ -359,12 +371,194 @@
     </article>
   </section>
 
+  <div class="strategy-modal" id="strategy-modal" hidden>
+    <div class="strategy-modal-backdrop" data-close-strategy-modal></div>
+    <div class="strategy-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="strategy-modal-title" data-no-expand="true">
+      <div class="strategy-modal-header">
+        <div>
+          <p class="eyebrow">configurazione guidata</p>
+          <h3 id="strategy-modal-title">Strategy Lab</h3>
+          <p class="hero-copy strategy-modal-copy">
+            Qui puoi scegliere la logica, leggere bene la strategia e regolare i parametri con piu' spazio.
+          </p>
+        </div>
+        <button class="ghost-button" type="button" data-close-strategy-modal>Chiudi</button>
+      </div>
+
+      <div class="strategy-modal-layout">
+        <aside class="strategy-modal-sidebar">
+          <div class="section-head">
+            <div>
+              <div class="section-label">Catalogo strategie</div>
+              <p class="inline-note">Clicca una strategia per vedere subito dettagli e parametri.</p>
+            </div>
+          </div>
+          <div class="strategy-catalog">
+            {% for strategy_id, strategy in strategies.items() %}
+              <button type="button" class="strategy-choice-card" data-strategy-choice="{{ strategy_id }}">
+                <strong>{{ strategy.label }}</strong>
+                <span class="strategy-choice-meta">
+                  {{ strategy.parameters|length }} parametri
+                  {% if strategy.supports_sweep %} • Sweep disponibile{% else %} • Solo test singolo{% endif %}
+                </span>
+                <p>{{ strategy.description }}</p>
+              </button>
+            {% endfor %}
+          </div>
+        </aside>
+
+        <section class="strategy-modal-main">
+          {% for strategy_id, strategy in strategies.items() %}
+            <section class="strategy-detail-panel" data-modal-strategy="{{ strategy_id }}">
+              <article class="strategy-detail-hero">
+                <div class="strategy-picker-top">
+                  <div>
+                    <p class="eyebrow">strategia selezionata</p>
+                    <h4>{{ strategy.label }}</h4>
+                  </div>
+                  <span class="strategy-chip {% if strategy.supports_sweep %}strategy-chip-accent{% endif %}">
+                    {% if strategy.supports_sweep %}Sweep disponibile{% else %}Solo test singolo{% endif %}
+                  </span>
+                </div>
+                <p class="inline-note">{{ strategy.description }}</p>
+              </article>
+
+              <article class="subsection-card">
+                <div class="section-head">
+                  <div>
+                    <div class="section-label">Parametri operativi</div>
+                    <p class="inline-note">
+                      I campi qui sotto sono collegati direttamente al form principale: quello che modifichi qui viene usato nel backtest.
+                    </p>
+                  </div>
+                </div>
+                <div class="strategy-lab-grid">
+                  {% for parameter in strategy.parameters %}
+                    <article class="subsection-card strategy-lab-card">
+                      <label class="strategy-lab-field">
+                        <span>{{ parameter.label }}</span>
+                        <input
+                          type="number"
+                          value="{{ form_values[parameter.field_name] }}"
+                          data-modal-input="{{ parameter.field_name }}"
+                          {% if parameter.minimum is not none %}min="{{ parameter.minimum }}"{% endif %}
+                          {% if parameter.maximum is not none %}max="{{ parameter.maximum }}"{% endif %}
+                          {% if parameter.step is not none %}step="{{ parameter.step }}"{% endif %}
+                        >
+                      </label>
+                      <p class="parameter-hint">
+                        Default {{ parameter.default }}
+                        {% if parameter.minimum is not none %} • Min {{ parameter.minimum }}{% endif %}
+                        {% if parameter.maximum is not none %} • Max {{ parameter.maximum }}{% endif %}
+                        {% if parameter.step is not none %} • Step {{ parameter.step }}{% endif %}
+                      </p>
+                    </article>
+                  {% endfor %}
+                </div>
+              </article>
+
+              {% if strategy.supports_sweep %}
+                <article class="subsection-card">
+                  <div class="section-head">
+                    <div>
+                      <div class="section-label">Sweep rapido</div>
+                      <p class="inline-note">
+                        Se usi `Sweep parametri`, questi sono i range che il sistema provera' automaticamente.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="strategy-lab-grid strategy-lab-grid-sweep">
+                    <article class="subsection-card strategy-lab-card">
+                      <p class="subsection-title">Range Fast SMA</p>
+                      <div class="triple-grid">
+                        <label>
+                          <span>Iniziale</span>
+                          <input type="number" min="1" value="{{ form_values.fast_start }}" data-modal-input="fast_start">
+                        </label>
+                        <label>
+                          <span>Finale</span>
+                          <input type="number" min="1" value="{{ form_values.fast_end }}" data-modal-input="fast_end">
+                        </label>
+                        <label>
+                          <span>Passo</span>
+                          <input type="number" min="1" value="{{ form_values.fast_step }}" data-modal-input="fast_step">
+                        </label>
+                      </div>
+                    </article>
+
+                    <article class="subsection-card strategy-lab-card">
+                      <p class="subsection-title">Range Slow SMA</p>
+                      <div class="triple-grid">
+                        <label>
+                          <span>Iniziale</span>
+                          <input type="number" min="2" value="{{ form_values.slow_start }}" data-modal-input="slow_start">
+                        </label>
+                        <label>
+                          <span>Finale</span>
+                          <input type="number" min="2" value="{{ form_values.slow_end }}" data-modal-input="slow_end">
+                        </label>
+                        <label>
+                          <span>Passo</span>
+                          <input type="number" min="1" value="{{ form_values.slow_step }}" data-modal-input="slow_step">
+                        </label>
+                      </div>
+                    </article>
+
+                    <article class="subsection-card strategy-lab-card">
+                      <label>
+                        <span>Ordina sweep per</span>
+                        <select data-modal-input="sort_by">
+                          {% for sort_key, sort_label in sweep_sort_options.items() %}
+                            <option value="{{ sort_key }}" {% if form_values.sort_by == sort_key %}selected{% endif %}>{{ sort_label }}</option>
+                          {% endfor %}
+                        </select>
+                      </label>
+                      <p class="parameter-hint">Scegli il criterio con cui vengono ordinati i risultati multipli.</p>
+                    </article>
+                  </div>
+                </article>
+              {% else %}
+                <article class="subsection-card strategy-modal-note">
+                  <p class="subsection-title">Sweep</p>
+                  <p class="inline-note">
+                    Per ora lo sweep multiplo e' disponibile solo su SMA Crossover. Qui puoi comunque preparare bene il test singolo.
+                  </p>
+                </article>
+              {% endif %}
+            </section>
+          {% endfor %}
+        </section>
+      </div>
+
+      <div class="strategy-modal-footer">
+        <p class="inline-note">
+          Suggerimento: cambia pochi parametri per volta. Cosi' capisci davvero cosa sta migliorando il risultato.
+        </p>
+        <div class="button-row">
+          <button class="ghost-button" type="button" data-close-strategy-modal>Chiudi</button>
+          <button class="action-button" type="button" id="apply-strategy-lab">Usa questa strategia</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
+    const strategyCatalog = {{ strategies | tojson }};
     const strategySelect = document.getElementById("strategy-select");
     const runModeSelect = document.getElementById("run-mode-select");
     const submitButton = document.getElementById("submit-button");
     const intervalSelect = document.getElementById("interval-select");
     const presetSelect = document.getElementById("preset-select");
+    const strategyPickerLabel = document.getElementById("strategy-picker-label");
+    const strategyPickerDescription = document.getElementById("strategy-picker-description");
+    const strategyPickerChip = document.getElementById("strategy-picker-chip");
+    const openStrategyLabButton = document.getElementById("open-strategy-lab");
+    const applyStrategyLabButton = document.getElementById("apply-strategy-lab");
+    const strategyModal = document.getElementById("strategy-modal");
+    const strategyChoiceCards = Array.from(document.querySelectorAll("[data-strategy-choice]"));
+    const strategyDetailPanels = Array.from(document.querySelectorAll("[data-modal-strategy]"));
+    const modalInputs = Array.from(document.querySelectorAll("[data-modal-input]"));
+    const modalCloseButtons = Array.from(document.querySelectorAll("[data-close-strategy-modal]"));
     const sections = Array.from(document.querySelectorAll(".strategy-fields[data-strategy]"));
     const sweepOption = runModeSelect.querySelector('option[value="sweep"]');
     const presetData = {{ strategy_presets | tojson }};
@@ -414,6 +608,72 @@
       submitButton.textContent = selectedMode === "sweep" ? "Avvia sweep" : "Avvia backtest";
     }
 
+    function getSourceField(fieldName) {
+      return document.querySelector(`[name="${fieldName}"]`);
+    }
+
+    function syncStrategyPickerCard() {
+      const strategy = strategyCatalog[strategySelect.value];
+      if (!strategy) {
+        return;
+      }
+
+      strategyPickerLabel.textContent = strategy.label;
+      strategyPickerDescription.textContent = strategy.description;
+      strategyPickerChip.textContent = strategy.supports_sweep ? "Sweep disponibile" : "Solo test singolo";
+      strategyPickerChip.classList.toggle("strategy-chip-accent", Boolean(strategy.supports_sweep));
+    }
+
+    function syncStrategyModalPanels() {
+      const selectedStrategy = strategySelect.value;
+      strategyChoiceCards.forEach((card) => {
+        card.classList.toggle("is-active", card.dataset.strategyChoice === selectedStrategy);
+      });
+      strategyDetailPanels.forEach((panel) => {
+        panel.classList.toggle("is-active", panel.dataset.modalStrategy === selectedStrategy);
+      });
+    }
+
+    function syncModalValuesFromForm() {
+      modalInputs.forEach((field) => {
+        const sourceField = getSourceField(field.dataset.modalInput);
+        if (!sourceField) {
+          return;
+        }
+        field.value = sourceField.value;
+      });
+    }
+
+    function syncStrategyWorkspace() {
+      syncStrategyFields();
+      syncStrategyPickerCard();
+      syncStrategyModalPanels();
+    }
+
+    function openStrategyLab() {
+      syncStrategyWorkspace();
+      syncModalValuesFromForm();
+      strategyModal.hidden = false;
+      requestAnimationFrame(() => strategyModal.classList.add("is-open"));
+      document.body.classList.add("strategy-modal-open");
+    }
+
+    function closeStrategyLab() {
+      strategyModal.classList.remove("is-open");
+      strategyModal.hidden = true;
+      document.body.classList.remove("strategy-modal-open");
+    }
+
+    function selectStrategy(strategyId) {
+      if (!strategyCatalog[strategyId]) {
+        return;
+      }
+
+      strategySelect.value = strategyId;
+      syncStrategyWorkspace();
+      syncModalValuesFromForm();
+    }
+
     function applyPreset(presetId) {
       const preset = presetsById[presetId];
       if (!preset) {
@@ -441,7 +701,8 @@
         }
       });
 
-      syncStrategyFields();
+      syncStrategyWorkspace();
+      syncModalValuesFromForm();
     }
 
     function syncIntervalHint() {
@@ -449,11 +710,38 @@
       intervalHint.textContent = intervalHints[selectedInterval] || "";
     }
 
-    strategySelect.addEventListener("change", syncStrategyFields);
-    runModeSelect.addEventListener("change", syncStrategyFields);
+    strategySelect.addEventListener("change", syncStrategyWorkspace);
+    runModeSelect.addEventListener("change", syncStrategyWorkspace);
     intervalSelect.addEventListener("change", syncIntervalHint);
     presetSelect.addEventListener("change", (event) => applyPreset(event.target.value));
-    syncStrategyFields();
+
+    openStrategyLabButton.addEventListener("click", openStrategyLab);
+    applyStrategyLabButton.addEventListener("click", closeStrategyLab);
+    modalCloseButtons.forEach((button) => {
+      button.addEventListener("click", closeStrategyLab);
+    });
+    strategyChoiceCards.forEach((card) => {
+      card.addEventListener("click", () => selectStrategy(card.dataset.strategyChoice));
+    });
+    modalInputs.forEach((field) => {
+      const updateSource = () => {
+        const sourceField = getSourceField(field.dataset.modalInput);
+        if (!sourceField) {
+          return;
+        }
+        sourceField.value = field.value;
+      };
+      field.addEventListener("input", updateSource);
+      field.addEventListener("change", updateSource);
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !strategyModal.hidden) {
+        closeStrategyLab();
+      }
+    });
+
+    syncStrategyWorkspace();
+    syncModalValuesFromForm();
     syncIntervalHint();
   </script>
 {% endblock %}
