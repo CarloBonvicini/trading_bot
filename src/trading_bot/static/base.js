@@ -6,7 +6,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const EXPANDED_PANEL_GAP_COMPACT = 8;
 
   function isInteractiveTarget(target) {
-    return Boolean(target.closest("a, button, input, select, textarea, summary, [data-no-expand]"));
+    return Boolean(
+      target.closest(
+        "a, button, input, label, select, textarea, summary, [data-no-expand], [data-strategy-toggle-card], [data-strategy-choice], [data-chart-strategy-card]",
+      ),
+    );
   }
 
   function applyExpandedLayout(panel) {

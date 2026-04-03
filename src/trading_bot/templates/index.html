@@ -97,7 +97,7 @@
       </section>
 
       <section class="home-workspace-grid">
-        <article class="panel panel-form panel-expandable home-launch-panel" data-expandable-panel id="launch-panel">
+        <article class="panel panel-form home-launch-panel" id="launch-panel">
           <div class="panel-header home-panel-header">
             <div>
               <p class="eyebrow">lancia un test</p>
@@ -285,10 +285,10 @@
 
               <div class="strategy-toggle-grid" id="strategy-toggle-grid">
                 {% for strategy_id, strategy in strategies.items() %}
-                  <label
+                  <article
                     class="strategy-toggle-card {% if strategy_id in form_values.active_strategies %}is-active{% endif %}"
-                    for="toggle-{{ strategy_id }}"
                     data-strategy-toggle-card="{{ strategy_id }}"
+                    title="{{ strategy.description }}"
                   >
                     <input
                       type="checkbox"
@@ -298,20 +298,31 @@
                       data-strategy-toggle="{{ strategy_id }}"
                       {% if strategy_id in form_values.active_strategies %}checked{% endif %}
                     >
-                    <div class="strategy-toggle-card-top">
-                      <div>
-                        <strong>{{ strategy.label }}</strong>
-                        <p>{{ strategy.description }}</p>
-                      </div>
-                      <span class="strategy-toggle-switch" aria-hidden="true">
-                        <span class="strategy-toggle-knob"></span>
-                      </span>
+                    <div class="strategy-toggle-card-main">
+                      <label class="strategy-toggle-card-label" for="toggle-{{ strategy_id }}" data-no-expand="true">
+                        <div class="strategy-toggle-card-copy">
+                          <strong>{{ strategy.label }}</strong>
+                          <div class="strategy-toggle-card-meta">
+                            <span>{{ strategy.parameters|length }} parametri</span>
+                            <span>{% if strategy.supports_sweep %}Sweep disponibile{% else %}Solo test singolo{% endif %}</span>
+                          </div>
+                        </div>
+                        <span class="strategy-toggle-switch" aria-hidden="true">
+                          <span class="strategy-toggle-knob"></span>
+                        </span>
+                      </label>
+                      <button
+                        class="strategy-edit-button"
+                        type="button"
+                        data-strategy-edit="{{ strategy_id }}"
+                        data-no-expand="true"
+                        aria-label="Apri editor parametri per {{ strategy.label }}"
+                        title="Apri editor parametri"
+                      >
+                        &#9998;
+                      </button>
                     </div>
-                    <div class="strategy-toggle-card-meta">
-                      <span>{{ strategy.parameters|length }} parametri</span>
-                      <span>{% if strategy.supports_sweep %}Sweep disponibile{% else %}Solo test singolo{% endif %}</span>
-                    </div>
-                  </label>
+                  </article>
                 {% endfor %}
               </div>
               {% if field_errors.get('active_strategies') %}
@@ -319,7 +330,9 @@
               {% endif %}
             </section>
 
-            {% include "partials/_strategy_sections.html" %}
+            <div class="strategy-hidden-inputs" hidden aria-hidden="true">
+              {% include "partials/_strategy_sections.html" %}
+            </div>
 
             <div class="button-row">
               <button class="action-button" type="submit" id="submit-button">Avvia backtest</button>

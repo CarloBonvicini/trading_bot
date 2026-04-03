@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const strategyToggles = Array.from(document.querySelectorAll("[data-strategy-toggle]"));
   const strategyToggleCards = Array.from(document.querySelectorAll("[data-strategy-toggle-card]"));
+  const strategyEditButtons = Array.from(document.querySelectorAll("[data-strategy-edit]"));
   const runModeSelect = document.getElementById("run-mode-select");
   const ruleLogicSelect = document.getElementById("rule-logic-select");
   const submitButton = document.getElementById("submit-button");
@@ -187,11 +188,38 @@ document.addEventListener("DOMContentLoaded", () => {
     syncStrategyModalPanels();
   }
 
-  function openStrategyLab() {
+  function focusStrategyInModal(strategyId) {
+    if (!strategyId) {
+      return;
+    }
+
+    strategyChoiceCards.forEach((card) => {
+      card.classList.toggle("is-focused", card.dataset.strategyChoice === strategyId);
+    });
+    strategyDetailPanels.forEach((panel) => {
+      panel.classList.toggle("is-focused", panel.dataset.modalStrategy === strategyId);
+    });
+
+    const focusedPanel = strategyDetailPanels.find(
+      (panel) => panel.dataset.modalStrategy === strategyId && panel.classList.contains("is-active"),
+    );
+    if (focusedPanel) {
+      focusedPanel.scrollIntoView({ block: "start", behavior: "smooth" });
+      return;
+    }
+
+    const focusedChoice = strategyChoiceCards.find((card) => card.dataset.strategyChoice === strategyId);
+    focusedChoice?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+
+  function openStrategyLab(strategyId = "") {
     syncStrategyWorkspace();
     syncModalValuesFromForm();
     strategyModal.hidden = false;
-    requestAnimationFrame(() => strategyModal.classList.add("is-open"));
+    requestAnimationFrame(() => {
+      strategyModal.classList.add("is-open");
+      focusStrategyInModal(strategyId);
+    });
     document.body.classList.add("strategy-modal-open");
   }
 
@@ -199,6 +227,8 @@ document.addEventListener("DOMContentLoaded", () => {
     strategyModal.classList.remove("is-open");
     strategyModal.hidden = true;
     document.body.classList.remove("strategy-modal-open");
+    strategyChoiceCards.forEach((card) => card.classList.remove("is-focused"));
+    strategyDetailPanels.forEach((panel) => panel.classList.remove("is-focused"));
   }
 
   function applyPreset(presetId) {
@@ -261,6 +291,9 @@ document.addEventListener("DOMContentLoaded", () => {
   presetSelect.addEventListener("change", (event) => applyPreset(event.target.value));
 
   openStrategyLabButton.addEventListener("click", openStrategyLab);
+  strategyEditButtons.forEach((button) => {
+    button.addEventListener("click", () => openStrategyLab(button.dataset.strategyEdit || ""));
+  });
   applyStrategyLabButton.addEventListener("click", closeStrategyLab);
   modalCloseButtons.forEach((button) => {
     button.addEventListener("click", closeStrategyLab);
