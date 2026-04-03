@@ -2304,34 +2304,7 @@ td {
 
 .home-hero-copy {
   display: grid;
-  gap: 0.7rem;
-}
-
-.home-tab-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.65rem;
-  margin-top: 0.2rem;
-}
-
-.home-tab {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.55rem 0.85rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(163, 177, 204, 0.08);
-  color: var(--muted);
-  font-size: 0.84rem;
-  font-weight: 700;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.home-tab.is-active {
-  border-color: rgba(59, 130, 246, 0.32);
-  background: rgba(59, 130, 246, 0.12);
-  color: #dbeafe;
+  gap: 0.3rem;
 }
 
 .home-step-actions {
