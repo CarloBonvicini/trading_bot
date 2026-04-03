@@ -8,8 +8,8 @@ DEFAULT_REPORTS_DIR = Path("reports")
 INTERVAL_OPTIONS = ("1m", "2m", "5m", "15m", "30m", "1h", "90m", "1d", "1wk", "1mo")
 RUN_MODE_OPTIONS = ("single", "sweep")
 RULE_LOGIC_OPTIONS = {
-    "all": "Tutte le regole (AND)",
-    "any": "Basta una regola (OR)",
+    "all": "Devono valere tutte (AND)",
+    "any": "Ne basta una (OR)",
 }
 SWEEP_SORT_OPTIONS = {
     "total_return_pct": "Best rendimento totale",

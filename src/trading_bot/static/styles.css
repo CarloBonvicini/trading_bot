@@ -443,11 +443,15 @@ select:focus {
 
 .strategy-picker-card {
   display: grid;
+  grid-template-rows: auto auto 1fr;
   gap: 0.75rem;
   padding: 1rem;
+  min-height: 10.75rem;
+  align-content: start;
   border-radius: var(--radius-lg);
   border: 1px solid rgba(27, 27, 24, 0.08);
   background: linear-gradient(135deg, rgba(200, 235, 229, 0.42), rgba(255, 255, 255, 0.85));
+  overflow: hidden;
 }
 
 .strategy-picker-top {
@@ -483,6 +487,23 @@ select:focus {
 
 .strategy-setup-grid {
   grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.2fr);
+  align-items: stretch;
+}
+
+.rule-logic-help,
+#strategy-picker-description,
+#strategy-picker-rules {
+  margin: 0;
+}
+
+#strategy-picker-description {
+  min-height: 3rem;
+}
+
+#strategy-picker-rules {
+  max-height: 3.8rem;
+  overflow: auto;
+  padding-right: 0.15rem;
 }
 
 .strategy-toggle-grid {

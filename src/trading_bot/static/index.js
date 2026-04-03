@@ -27,6 +27,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const intervalSelect = document.getElementById("interval-select");
   const presetSelect = document.getElementById("preset-select");
   const continueToStrategiesButton = document.getElementById("continue-to-strategies");
+  const ruleLogicHelp = document.getElementById("rule-logic-help");
   const strategyPickerLabel = document.getElementById("strategy-picker-label");
   const strategyPickerDescription = document.getElementById("strategy-picker-description");
   const strategyPickerChip = document.getElementById("strategy-picker-chip");
@@ -147,6 +148,27 @@ document.addEventListener("DOMContentLoaded", () => {
       .filter(Boolean);
   }
 
+  function buildActiveRulePreview(labels) {
+    if (labels.length <= 3) {
+      return labels.join(", ");
+    }
+    const previewLabels = labels.slice(0, 3).join(", ");
+    return `${previewLabels} + altre ${labels.length - 3}`;
+  }
+
+  function updateRuleLogicHelp() {
+    if (!ruleLogicHelp) {
+      return;
+    }
+
+    if (ruleLogicSelect.value === "all") {
+      ruleLogicHelp.textContent = "AND: il test entra solo quando tutte le regole attive danno segnale insieme.";
+      return;
+    }
+
+    ruleLogicHelp.textContent = "OR: il test entra quando almeno una delle regole attive da' segnale.";
+  }
+
   function toggleStrategyActivation(strategyId) {
     const toggle = getStrategyToggle(strategyId);
     if (!toggle) {
@@ -223,20 +245,24 @@ document.addEventListener("DOMContentLoaded", () => {
     ensureAtLeastOneActive();
     const selectedIds = activeStrategyIds();
     const labels = activeRuleLabels();
+    const rulePreview = buildActiveRulePreview(labels);
+    const usingAllRules = ruleLogicSelect.value === "all";
 
     if (selectedIds.length === 1) {
       const strategy = strategyCatalog[selectedIds[0]];
       strategyPickerLabel.textContent = strategy?.label || "1 regola attiva";
-      strategyPickerDescription.textContent = strategy?.description || "";
+      strategyPickerDescription.textContent = "Regola singola: il test usa solo questa strategia per costruire il segnale.";
       strategyPickerChip.textContent = strategy?.supports_sweep ? "Sweep disponibile" : "Test singolo";
       strategyPickerChip.classList.toggle("strategy-chip-accent", Boolean(strategy?.supports_sweep));
-      strategyPickerRules.textContent = `Regola attiva: ${labels.join(", ")}.`;
+      strategyPickerRules.textContent = `Attiva: ${rulePreview}.`;
     } else {
       strategyPickerLabel.textContent = `${selectedIds.length} regole attive`;
-      strategyPickerDescription.textContent = "Il segnale verra' costruito combinando tutte le strategie attive che hai acceso con i toggle.";
-      strategyPickerChip.textContent = `Combinazione ${ruleLogicSelect.value.toUpperCase()}`;
+      strategyPickerDescription.textContent = usingAllRules
+        ? "AND attivo: il test entra solo se tutte le regole selezionate sono vere nello stesso momento."
+        : "OR attivo: il test entra se almeno una delle regole selezionate e' vera.";
+      strategyPickerChip.textContent = usingAllRules ? "Tutte richieste" : "Ne basta una";
       strategyPickerChip.classList.add("strategy-chip-accent");
-      strategyPickerRules.textContent = `Attive insieme: ${labels.join(" + ")}.`;
+      strategyPickerRules.textContent = `Regole selezionate: ${rulePreview}.`;
     }
   }
 
@@ -265,6 +291,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function syncStrategyWorkspace() {
+    updateRuleLogicHelp();
     syncStrategyFields();
     syncStrategyPickerCard();
     syncStrategyModalPanels();
