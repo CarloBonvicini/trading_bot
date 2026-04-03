@@ -2336,6 +2336,12 @@ td {
   gap: 1rem;
 }
 
+.home-dashboard-actions {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.2fr);
+  gap: 1rem;
+}
+
 .home-hero-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
@@ -2411,6 +2417,70 @@ td {
 
 .home-banner-panel p {
   margin: 0.25rem 0 0;
+}
+
+.home-start-panel,
+.home-resume-panel {
+  display: grid;
+  gap: 0.9rem;
+  align-content: start;
+}
+
+.home-dashboard-button {
+  text-decoration: none;
+  justify-content: center;
+}
+
+.home-resume-list {
+  display: grid;
+  gap: 0.8rem;
+  max-height: 26rem;
+  overflow: auto;
+}
+
+.home-resume-card {
+  display: grid;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.95rem 1rem;
+  text-align: left;
+  border-radius: 18px;
+  border: 1px solid rgba(163, 177, 204, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.home-resume-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(59, 130, 246, 0.28);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.home-resume-card-top,
+.home-resume-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.home-resume-card-top strong {
+  font-size: 1rem;
+}
+
+.home-resume-card-top span,
+.home-resume-card-meta span,
+.home-resume-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.home-resume-card-meta span {
+  font-size: 0.84rem;
+  font-weight: 700;
 }
 
 .home-action-grid,
@@ -2629,6 +2699,7 @@ td {
   .terminal-metric-grid,
   .terminal-ohlc-grid,
   .home-action-grid,
+  .home-dashboard-actions,
   .home-metrics-grid,
   .home-workspace-grid,
   .home-hero-panel,

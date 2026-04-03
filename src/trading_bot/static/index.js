@@ -7,8 +7,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const pageConfig = JSON.parse(configNode.textContent);
   const strategyCatalog = pageConfig.strategies || {};
   const presetData = pageConfig.strategyPresets || [];
+  const resumeBacktests = pageConfig.resumeBacktests || [];
   const intervalHints = pageConfig.intervalHints || {};
+  const initialHomeTab = pageConfig.initialHomeTab || "dashboard";
   const presetsById = Object.fromEntries(presetData.map((preset) => [preset.id, preset]));
+  const resumeBacktestsByName = Object.fromEntries(
+    resumeBacktests.map((item) => [item.report_name, item]),
+  );
   const homeTabTargetIds = {
     dashboard: "dashboard-home",
     setup: "launch-panel",
@@ -21,6 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const strategyToggles = Array.from(document.querySelectorAll("[data-strategy-toggle]"));
   const strategyToggleCards = Array.from(document.querySelectorAll("[data-strategy-toggle-card]"));
   const strategyEditButtons = Array.from(document.querySelectorAll("[data-strategy-edit]"));
+  const resumeBacktestButtons = Array.from(document.querySelectorAll("[data-resume-backtest]"));
   const homeTabLinks = Array.from(document.querySelectorAll("[data-home-tab-link]"));
   const runModeSelect = document.getElementById("run-mode-select");
   const ruleLogicSelect = document.getElementById("rule-logic-select");
@@ -109,7 +115,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function syncHomeTabFromHash() {
     const matchedTab = Object.entries(homeTabTargetIds).find(([, targetId]) => `#${targetId}` === window.location.hash)?.[0];
-    activateHomeTab(matchedTab || "dashboard");
+    activateHomeTab(matchedTab || initialHomeTab);
   }
 
   function getStrategyToggle(strategyId) {
@@ -378,6 +384,46 @@ document.addEventListener("DOMContentLoaded", () => {
     syncModalValuesFromForm();
   }
 
+  function applyFormSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== "object") {
+      return;
+    }
+
+    presetSelect.value = "";
+
+    Object.entries(snapshot).forEach(([fieldName, fieldValue]) => {
+      if (fieldName === "active_strategies") {
+        return;
+      }
+
+      const field = getSourceField(fieldName);
+      if (!field || Array.isArray(fieldValue) || fieldValue === null || fieldValue === undefined) {
+        return;
+      }
+      field.value = fieldValue;
+    });
+
+    const nextActiveIds = Array.isArray(snapshot.active_strategies) ? snapshot.active_strategies : [];
+    strategyToggles.forEach((toggle) => {
+      toggle.checked = nextActiveIds.includes(toggle.value);
+    });
+    ensureAtLeastOneActive(nextActiveIds[0]);
+
+    syncStrategyWorkspace();
+    syncModalValuesFromForm();
+    syncIntervalHint();
+  }
+
+  function resumeBacktest(reportName) {
+    const resumeItem = resumeBacktestsByName[reportName];
+    if (!resumeItem) {
+      return;
+    }
+
+    applyFormSnapshot(resumeItem.form_values || {});
+    scrollToHomeTab("strategies", { focus: true });
+  }
+
   function syncIntervalHint() {
     const selectedInterval = intervalSelect.value;
     intervalHint.textContent = intervalHints[selectedInterval] || "";
@@ -393,6 +439,9 @@ document.addEventListener("DOMContentLoaded", () => {
   runModeSelect.addEventListener("change", syncStrategyWorkspace);
   intervalSelect.addEventListener("change", syncIntervalHint);
   presetSelect.addEventListener("change", (event) => applyPreset(event.target.value));
+  resumeBacktestButtons.forEach((button) => {
+    button.addEventListener("click", () => resumeBacktest(button.dataset.resumeBacktest || ""));
+  });
   homeTabLinks.forEach((link) => {
     link.addEventListener("click", (event) => {
       const tabId = link.dataset.homeTabLink || "dashboard";

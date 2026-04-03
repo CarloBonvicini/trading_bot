@@ -51,6 +51,56 @@
           </div>
         </section>
 
+        <section class="home-dashboard-actions">
+          <article class="panel home-start-panel">
+            <p class="eyebrow">inizia</p>
+            <h3>Nuovo backtest</h3>
+            <p class="inline-note">
+              Apri un test da zero, imposta simbolo, timeframe e costi, poi passa alle strategie.
+            </p>
+            <div class="button-row">
+              <a class="action-button home-dashboard-button" href="#launch-panel" data-home-tab-link="setup">Nuovo backtest</a>
+            </div>
+          </article>
+
+          <article class="panel home-resume-panel">
+            <div class="panel-header home-panel-header">
+              <div>
+                <p class="eyebrow">riprendi</p>
+                <h3>Backtest attivi</h3>
+              </div>
+              <span class="strategy-chip">{{ dashboard.resume_reports|length }} pronti</span>
+            </div>
+            {% if dashboard.resume_reports %}
+              <div class="home-resume-list">
+                {% for item in dashboard.resume_reports %}
+                  <button
+                    class="home-resume-card"
+                    type="button"
+                    data-resume-backtest="{{ item.report_name }}"
+                    data-no-expand="true"
+                  >
+                    <div class="home-resume-card-top">
+                      <strong>{{ item.symbol }}</strong>
+                      <span>{{ item.strategy_label }}</span>
+                    </div>
+                    <div class="home-resume-card-meta">
+                      <span>{{ item.interval }}</span>
+                      <span>{{ item.active_rule_count }} regole</span>
+                      <span>{{ item.return_display }}</span>
+                    </div>
+                    <p>{{ item.period_label }}</p>
+                  </button>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="empty-state">
+                <p>Nessun backtest riprendibile. Avvia il primo test dalla dashboard.</p>
+              </div>
+            {% endif %}
+          </article>
+        </section>
+
         <section class="panel home-banner-panel">
           <div>
             <strong>Ultima attivita'</strong>
@@ -449,7 +499,7 @@
 
 {% block page_scripts %}
   <script id="index-page-config" type="application/json">
-    {{ {"strategies": strategies, "strategyPresets": strategy_presets, "intervalHints": interval_hints} | tojson }}
+    {{ {"strategies": strategies, "strategyPresets": strategy_presets, "intervalHints": interval_hints, "resumeBacktests": dashboard.resume_reports, "initialHomeTab": initial_home_tab} | tojson }}
   </script>
   <script src="{{ url_for('static', filename='index.js') }}"></script>
 {% endblock %}

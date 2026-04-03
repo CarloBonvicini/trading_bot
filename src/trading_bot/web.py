@@ -261,12 +261,17 @@ def _render_home(
 
     saved_items = list_saved_items(current_app.config["REPORTS_DIR"])
     dashboard = build_dashboard_context(saved_items=saved_items, strategies=STRATEGY_OPTIONS)
+    initial_home_tab = _home_tab_for_render(
+        form_values=form_values,
+        invalid_fields=invalid_fields,
+    )
 
     return render_template(
         "index.html",
         form_values=values,
         field_errors=field_errors or {},
         invalid_fields=set(invalid_fields or ()),
+        initial_home_tab=initial_home_tab,
         saved_items=saved_items,
         dashboard=dashboard,
         strategy_presets=list_strategy_presets(current_app.config["REPORTS_DIR"]),
@@ -283,6 +288,25 @@ def _field_errors(exc: FormValidationError) -> dict[str, str]:
     if not exc.display_field:
         return {}
     return {exc.display_field: str(exc)}
+
+
+def _home_tab_for_render(
+    *,
+    form_values: dict[str, object] | None,
+    invalid_fields: tuple[str, ...] | list[str] | set[str] | None,
+) -> str:
+    if not form_values:
+        return "dashboard"
+
+    fields = {str(field_name) for field_name in (invalid_fields or ())}
+    strategy_related = {"active_strategies", "rule_logic"}
+    if fields & strategy_related:
+        return "strategies"
+
+    if any("__" in field_name for field_name in fields):
+        return "strategies"
+
+    return "setup"
 
 
 def _attach_chart_lab(chart: dict[str, object], *, preview_endpoint: str) -> dict[str, object]:
