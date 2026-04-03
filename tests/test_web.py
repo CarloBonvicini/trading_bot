@@ -225,6 +225,7 @@ def test_index_lists_existing_reports(tmp_path: Path) -> None:
     assert 'name="active_strategies"' in body
     assert 'data-strategy-toggle="ema_cross"' in body
     assert 'data-strategy-edit="ema_cross"' in body
+    assert 'data-strategy-sweep="ema_cross"' in body
     assert 'name="rule_logic"' in body
     assert 'id="strategy-modal-title"' in body
     assert 'id="strategy-modal-state"' in body

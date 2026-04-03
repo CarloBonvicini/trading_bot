@@ -508,28 +508,27 @@ select:focus {
 
 .strategy-toggle-grid {
   display: grid;
-  gap: 0.85rem;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.55rem 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
 .strategy-toggle-card {
   position: relative;
   display: grid;
-  padding: 0.45rem;
-  border-radius: var(--radius-lg);
-  border: 1px solid rgba(27, 27, 24, 0.1);
-  background: rgba(255, 255, 255, 0.84);
-  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+  padding: 0.35rem 0.2rem 0.7rem;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  transition: background 180ms ease;
 }
 
 .strategy-toggle-card:hover,
 .strategy-toggle-card.is-active {
-  border-color: rgba(15, 118, 110, 0.38);
-  box-shadow: 0 10px 22px rgba(15, 118, 110, 0.09);
+  box-shadow: none;
 }
 
 .strategy-toggle-card.is-active {
-  background: linear-gradient(135deg, rgba(200, 235, 229, 0.58), rgba(255, 255, 255, 0.96));
+  background: rgba(15, 118, 110, 0.06);
 }
 
 .strategy-toggle-card input {
@@ -542,19 +541,7 @@ select:focus {
   display: flex;
   justify-content: space-between;
   gap: 0.7rem;
-  align-items: center;
-}
-
-.strategy-toggle-card-label {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  justify-content: space-between;
-  gap: 0.8rem;
-  align-items: center;
-  padding: 0.55rem 0.6rem;
-  border-radius: calc(var(--radius-lg) - 0.25rem);
-  cursor: pointer;
+  align-items: flex-start;
 }
 
 .strategy-toggle-card-copy {
@@ -563,10 +550,25 @@ select:focus {
   gap: 0.28rem;
 }
 
-.strategy-toggle-card-copy strong {
+.strategy-toggle-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  min-width: 0;
+}
+
+.strategy-toggle-title {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.strategy-toggle-title strong {
   display: block;
   margin: 0;
   font-size: 0.98rem;
+  line-height: 1.2;
   font-family: var(--font-serif);
 }
 
@@ -578,10 +580,20 @@ select:focus {
 .strategy-toggle-card-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.55rem;
-  font-size: 0.76rem;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.74rem;
   font-weight: 700;
   line-height: 1.35;
+}
+
+.strategy-toggle-card-label {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 0.08rem;
+  cursor: pointer;
 }
 
 .strategy-toggle-switch {
@@ -618,16 +630,16 @@ select:focus {
 
 .strategy-edit-button {
   flex: 0 0 auto;
-  width: 2.15rem;
-  height: 2.15rem;
+  width: 1.85rem;
+  height: 1.85rem;
   border-radius: 999px;
   border: 1px solid rgba(27, 27, 24, 0.12);
-  background: rgba(255, 255, 255, 0.76);
+  background: rgba(255, 255, 255, 0.54);
   color: var(--muted);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.95rem;
+  font-size: 0.78rem;
   cursor: pointer;
   transition: transform 180ms ease, border-color 180ms ease, color 180ms ease, background 180ms ease;
 }
@@ -636,6 +648,54 @@ select:focus {
   transform: translateY(-1px);
   border-color: rgba(15, 118, 110, 0.32);
   color: var(--accent);
+}
+
+.strategy-sweep-inline {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.strategy-sweep-inline input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.strategy-sweep-inline-label {
+  color: var(--muted);
+}
+
+.strategy-mini-switch {
+  position: relative;
+  width: 2rem;
+  height: 1.15rem;
+  border-radius: 999px;
+  background: rgba(27, 27, 24, 0.12);
+  transition: background 180ms ease;
+}
+
+.strategy-mini-knob {
+  position: absolute;
+  top: 0.14rem;
+  left: 0.14rem;
+  width: 0.87rem;
+  height: 0.87rem;
+  border-radius: 999px;
+  background: white;
+  box-shadow: 0 4px 10px rgba(27, 27, 24, 0.16);
+  transition: transform 180ms ease;
+}
+
+.strategy-sweep-inline input:checked ~ .strategy-mini-switch {
+  background: linear-gradient(135deg, var(--accent), #14532d);
+}
+
+.strategy-sweep-inline input:checked ~ .strategy-mini-switch .strategy-mini-knob {
+  transform: translateX(0.85rem);
 }
 
 .strategy-hidden-inputs {
@@ -2057,10 +2117,9 @@ td {
 .home-dashboard-body .subsection-card,
 .home-dashboard-body .strategy-picker-card,
 .home-dashboard-body .strategy-fields,
-.home-dashboard-body .strategy-toggle-card,
-.home-dashboard-body .strategy-choice-card,
-.home-dashboard-body .strategy-lab-card,
-.home-dashboard-body .empty-state {
+ .home-dashboard-body .strategy-choice-card,
+ .home-dashboard-body .strategy-lab-card,
+ .home-dashboard-body .empty-state {
   border-color: rgba(163, 177, 204, 0.1);
   background: rgba(255, 255, 255, 0.03);
   color: var(--ink);
@@ -2578,13 +2637,21 @@ td {
 .home-dashboard-body .strategy-toggle-card.is-active,
 .home-dashboard-body .strategy-choice-card.is-active {
   border-color: rgba(59, 130, 246, 0.34);
-  box-shadow: 0 10px 22px rgba(37, 99, 235, 0.1);
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(255, 255, 255, 0.04));
+  box-shadow: none;
+  background: rgba(59, 130, 246, 0.08);
 }
 
 .home-dashboard-body .strategy-toggle-card.is-active .strategy-toggle-switch,
 .home-dashboard-body .strategy-choice-card.is-active .strategy-toggle-switch {
   background: linear-gradient(135deg, #2563eb, #1d4ed8);
+}
+
+.home-dashboard-body .strategy-sweep-inline input:checked ~ .strategy-mini-switch {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+}
+
+.home-dashboard-body .strategy-mini-switch {
+  background: rgba(163, 177, 204, 0.2);
 }
 
 .home-dashboard-body .strategy-edit-button {

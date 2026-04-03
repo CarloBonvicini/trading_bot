@@ -292,7 +292,7 @@
                 <div>
                   <div class="section-label">Regole da avviare</div>
                   <p class="inline-note">
-                    Attiva con un toggle le strategie che vuoi usare nel test. Per modificare i parametri di una regola, usa la matita sulla sua card.
+                    Attiva le strategie che vuoi usare nel test. La matita apre i parametri, e dove disponibile trovi anche il mini-toggle `Sweep`.
                   </p>
                 </div>
               </div>
@@ -338,28 +338,44 @@
                       {% if strategy_id in form_values.active_strategies %}checked{% endif %}
                     >
                     <div class="strategy-toggle-card-main">
-                      <label class="strategy-toggle-card-label" for="toggle-{{ strategy_id }}" data-no-expand="true">
-                        <div class="strategy-toggle-card-copy">
-                          <strong>{{ strategy.label }}</strong>
-                          <div class="strategy-toggle-card-meta">
-                            <span>{{ strategy.parameters|length }} parametri</span>
-                            <span>{% if strategy.supports_sweep %}Sweep disponibile{% else %}Solo test singolo{% endif %}</span>
-                          </div>
+                      <div class="strategy-toggle-card-copy">
+                        <div class="strategy-toggle-title-row">
+                          <label class="strategy-toggle-title" for="toggle-{{ strategy_id }}" data-no-expand="true">
+                            <strong>{{ strategy.label }}</strong>
+                          </label>
+                          <button
+                            class="strategy-edit-button"
+                            type="button"
+                            data-strategy-edit="{{ strategy_id }}"
+                            data-no-expand="true"
+                            aria-label="Apri editor parametri per {{ strategy.label }}"
+                            title="Apri editor parametri"
+                          >
+                            &#9998;
+                          </button>
                         </div>
+                        <div class="strategy-toggle-card-meta">
+                          <span>{{ strategy.parameters|length }} parametri</span>
+                          {% if strategy.supports_sweep %}
+                            <label class="strategy-sweep-inline" data-no-expand="true" title="Usa questa strategia in modalita sweep">
+                              <input
+                                type="checkbox"
+                                data-strategy-sweep="{{ strategy_id }}"
+                                {% if form_values.run_mode == "sweep" and form_values.active_strategies|length == 1 and strategy_id in form_values.active_strategies %}checked{% endif %}
+                              >
+                              <span class="strategy-sweep-inline-label">Sweep</span>
+                              <span class="strategy-mini-switch" aria-hidden="true">
+                                <span class="strategy-mini-knob"></span>
+                              </span>
+                            </label>
+                          {% endif %}
+                        </div>
+                      </div>
+                      <label class="strategy-toggle-card-label" for="toggle-{{ strategy_id }}" data-no-expand="true" aria-label="Attiva {{ strategy.label }}">
                         <span class="strategy-toggle-switch" aria-hidden="true">
                           <span class="strategy-toggle-knob"></span>
                         </span>
                       </label>
-                      <button
-                        class="strategy-edit-button"
-                        type="button"
-                        data-strategy-edit="{{ strategy_id }}"
-                        data-no-expand="true"
-                        aria-label="Apri editor parametri per {{ strategy.label }}"
-                        title="Apri editor parametri"
-                      >
-                        &#9998;
-                      </button>
                     </div>
                   </article>
                 {% endfor %}

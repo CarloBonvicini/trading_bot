@@ -24,6 +24,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const homeFormTabs = Array.from(document.querySelectorAll("[data-home-form-tab]"));
 
   const strategyToggles = Array.from(document.querySelectorAll("[data-strategy-toggle]"));
+  const strategySweepToggles = Array.from(document.querySelectorAll("[data-strategy-sweep]"));
   const strategyToggleCards = Array.from(document.querySelectorAll("[data-strategy-toggle-card]"));
   const strategyEditButtons = Array.from(document.querySelectorAll("[data-strategy-edit]"));
   const resumeBacktestButtons = Array.from(document.querySelectorAll("[data-resume-backtest]"));
@@ -215,6 +216,12 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function syncSweepControls(activeStrategyId, sweepActive) {
+    strategySweepToggles.forEach((toggle) => {
+      toggle.checked = sweepActive && toggle.dataset.strategySweep === activeStrategyId;
+    });
+  }
+
   function syncStrategyFields() {
     ensureAtLeastOneActive();
     const selectedIds = activeStrategyIds();
@@ -252,6 +259,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     submitButton.textContent = selectedMode === "sweep" && sweepAvailable ? "Avvia sweep" : "Avvia backtest";
+    syncSweepControls(singleActiveStrategy, selectedMode === "sweep" && sweepAvailable);
     syncToggleCards();
   }
 
@@ -457,6 +465,21 @@ document.addEventListener("DOMContentLoaded", () => {
   strategyToggles.forEach((toggle) => {
     toggle.addEventListener("change", () => {
       ensureAtLeastOneActive(toggle.value);
+      syncStrategyWorkspace();
+    });
+  });
+  strategySweepToggles.forEach((toggle) => {
+    toggle.addEventListener("change", () => {
+      const strategyId = toggle.dataset.strategySweep || "";
+      if (toggle.checked) {
+        strategyToggles.forEach((strategyToggle) => {
+          strategyToggle.checked = strategyToggle.value === strategyId;
+        });
+        runModeSelect.value = "sweep";
+      } else if (runModeSelect.value === "sweep") {
+        runModeSelect.value = "single";
+      }
+      ensureAtLeastOneActive(strategyId);
       syncStrategyWorkspace();
     });
   });
