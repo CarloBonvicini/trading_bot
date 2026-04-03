@@ -10,11 +10,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const intervalHints = pageConfig.intervalHints || {};
   const presetsById = Object.fromEntries(presetData.map((preset) => [preset.id, preset]));
 
-  const strategySelect = document.getElementById("strategy-select");
-  const secondaryStrategySelect = document.getElementById("secondary-strategy-select");
-  const tertiaryStrategySelect = document.getElementById("tertiary-strategy-select");
-  const ruleLogicSelect = document.getElementById("rule-logic-select");
+  const strategyToggles = Array.from(document.querySelectorAll("[data-strategy-toggle]"));
+  const strategyToggleCards = Array.from(document.querySelectorAll("[data-strategy-toggle-card]"));
   const runModeSelect = document.getElementById("run-mode-select");
+  const ruleLogicSelect = document.getElementById("rule-logic-select");
   const submitButton = document.getElementById("submit-button");
   const intervalSelect = document.getElementById("interval-select");
   const presetSelect = document.getElementById("preset-select");
@@ -25,6 +24,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const openStrategyLabButton = document.getElementById("open-strategy-lab");
   const applyStrategyLabButton = document.getElementById("apply-strategy-lab");
   const strategyModal = document.getElementById("strategy-modal");
+  const strategyModalSummary = document.getElementById("strategy-modal-summary");
   const strategyChoiceCards = Array.from(document.querySelectorAll("[data-strategy-choice]"));
   const strategyDetailPanels = Array.from(document.querySelectorAll("[data-modal-strategy]"));
   const modalInputs = Array.from(document.querySelectorAll("[data-modal-input]"));
@@ -33,44 +33,71 @@ document.addEventListener("DOMContentLoaded", () => {
   const sweepOption = runModeSelect.querySelector('option[value="sweep"]');
   const intervalHint = document.getElementById("interval-hint");
 
+  function getStrategyToggle(strategyId) {
+    return strategyToggles.find((toggle) => toggle.value === strategyId) || null;
+  }
+
   function setSectionInputsState(section, isEnabled) {
     section.querySelectorAll("input, select, textarea").forEach((field) => {
       field.disabled = !isEnabled;
     });
   }
 
-  function selectedStrategyIds() {
-    const ids = [strategySelect.value, secondaryStrategySelect.value, tertiaryStrategySelect.value].filter(Boolean);
-    return ids.filter((strategyId, index) => ids.indexOf(strategyId) === index);
+  function activeStrategyIds() {
+    return strategyToggles.filter((toggle) => toggle.checked).map((toggle) => toggle.value);
   }
 
-  function normalizeStrategySelections() {
-    if (secondaryStrategySelect.value && secondaryStrategySelect.value === strategySelect.value) {
-      secondaryStrategySelect.value = "";
+  function ensureAtLeastOneActive(preferredStrategyId = "") {
+    if (activeStrategyIds().length > 0) {
+      return;
     }
-    if (
-      tertiaryStrategySelect.value
-      && (
-        tertiaryStrategySelect.value === strategySelect.value
-        || tertiaryStrategySelect.value === secondaryStrategySelect.value
-      )
-    ) {
-      tertiaryStrategySelect.value = "";
+
+    const fallbackToggle = getStrategyToggle(preferredStrategyId) || strategyToggles[0];
+    if (fallbackToggle) {
+      fallbackToggle.checked = true;
     }
   }
 
   function activeRuleLabels() {
-    return selectedStrategyIds()
+    return activeStrategyIds()
       .map((strategyId) => strategyCatalog[strategyId]?.label)
       .filter(Boolean);
   }
 
+  function toggleStrategyActivation(strategyId) {
+    const toggle = getStrategyToggle(strategyId);
+    if (!toggle) {
+      return;
+    }
+
+    const selectedIds = activeStrategyIds();
+    if (toggle.checked && selectedIds.length === 1) {
+      return;
+    }
+
+    toggle.checked = !toggle.checked;
+    ensureAtLeastOneActive(strategyId);
+    syncStrategyWorkspace();
+    syncModalValuesFromForm();
+  }
+
+  function syncToggleCards() {
+    const selectedIds = activeStrategyIds();
+
+    strategyToggleCards.forEach((card) => {
+      card.classList.toggle("is-active", selectedIds.includes(card.dataset.strategyToggleCard));
+    });
+    strategyChoiceCards.forEach((card) => {
+      card.classList.toggle("is-active", selectedIds.includes(card.dataset.strategyChoice));
+    });
+  }
+
   function syncStrategyFields() {
-    const selectedStrategy = strategySelect.value;
-    const activeSections = selectedStrategyIds();
-    const activeSection = sections.find((section) => section.dataset.strategy === selectedStrategy);
-    const hasCompositeRules = activeSections.length > 1;
-    const sweepAvailable = activeSection?.dataset.supportsSweep === "true" && !hasCompositeRules;
+    ensureAtLeastOneActive();
+    const selectedIds = activeStrategyIds();
+    const singleActiveStrategy = selectedIds.length === 1 ? selectedIds[0] : "";
+    const activeSection = sections.find((section) => section.dataset.strategy === singleActiveStrategy);
+    const sweepAvailable = Boolean(singleActiveStrategy && activeSection?.dataset.supportsSweep === "true");
 
     sweepOption.disabled = !sweepAvailable;
     if (!sweepAvailable && runModeSelect.value === "sweep") {
@@ -80,8 +107,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const selectedMode = runModeSelect.value;
 
     sections.forEach((section) => {
-      const isActive = activeSections.includes(section.dataset.strategy);
-      const isPrimary = section.dataset.strategy === selectedStrategy;
+      const isActive = selectedIds.includes(section.dataset.strategy);
+      const isSweepSection = section.dataset.strategy === singleActiveStrategy;
       section.classList.toggle("is-active", isActive);
 
       const parameterInputs = Array.from(section.querySelectorAll("[data-parameter-input]"));
@@ -91,23 +118,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const sweepBlocks = Array.from(section.querySelectorAll("[data-sweep-block]"));
       sweepBlocks.forEach((block) => {
-        const isSweepActive = isPrimary && selectedMode === "sweep" && sweepAvailable;
+        const isSweepActive = isActive && isSweepSection && selectedMode === "sweep" && sweepAvailable;
         block.classList.toggle("is-active", isSweepActive);
         setSectionInputsState(block, isSweepActive);
       });
-
-      const slotBadge = section.querySelector("[data-strategy-slot-badge]");
-      if (slotBadge) {
-        if (section.dataset.strategy === strategySelect.value) {
-          slotBadge.textContent = "Regola primaria";
-        } else if (section.dataset.strategy === secondaryStrategySelect.value) {
-          slotBadge.textContent = "Regola aggiuntiva 2";
-        } else if (section.dataset.strategy === tertiaryStrategySelect.value) {
-          slotBadge.textContent = "Regola aggiuntiva 3";
-        } else {
-          slotBadge.textContent = "Regola attiva";
-        }
-      }
     });
 
     document.querySelectorAll("[id^='strategy-mode-badge-']").forEach((badge) => {
@@ -115,6 +129,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     submitButton.textContent = selectedMode === "sweep" && sweepAvailable ? "Avvia sweep" : "Avvia backtest";
+    syncToggleCards();
   }
 
   function getSourceField(fieldName) {
@@ -122,34 +137,38 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function syncStrategyPickerCard() {
-    const strategy = strategyCatalog[strategySelect.value];
-    if (!strategy) {
-      return;
-    }
+    ensureAtLeastOneActive();
+    const selectedIds = activeStrategyIds();
     const labels = activeRuleLabels();
-    const hasCompositeRules = labels.length > 1;
 
-    strategyPickerLabel.textContent = strategy.label;
-    strategyPickerDescription.textContent = strategy.description;
-    strategyPickerChip.textContent = hasCompositeRules
-      ? `Regole combinate ${ruleLogicSelect.value.toUpperCase()}`
-      : strategy.supports_sweep
-        ? "Sweep disponibile"
-        : "Solo test singolo";
-    strategyPickerChip.classList.toggle("strategy-chip-accent", Boolean(strategy.supports_sweep || hasCompositeRules));
-    strategyPickerRules.textContent = hasCompositeRules
-      ? `Attive insieme: ${labels.join(" + ")}.`
-      : "Usi una sola regola. Aggiungi conferme qui sotto se vuoi filtrare meglio gli ingressi.";
+    if (selectedIds.length === 1) {
+      const strategy = strategyCatalog[selectedIds[0]];
+      strategyPickerLabel.textContent = strategy?.label || "1 regola attiva";
+      strategyPickerDescription.textContent = strategy?.description || "";
+      strategyPickerChip.textContent = strategy?.supports_sweep ? "Sweep disponibile" : "Test singolo";
+      strategyPickerChip.classList.toggle("strategy-chip-accent", Boolean(strategy?.supports_sweep));
+      strategyPickerRules.textContent = `Regola attiva: ${labels.join(", ")}.`;
+    } else {
+      strategyPickerLabel.textContent = `${selectedIds.length} regole attive`;
+      strategyPickerDescription.textContent = "Il segnale verra' costruito combinando tutte le strategie attive che hai acceso con i toggle.";
+      strategyPickerChip.textContent = `Combinazione ${ruleLogicSelect.value.toUpperCase()}`;
+      strategyPickerChip.classList.add("strategy-chip-accent");
+      strategyPickerRules.textContent = `Attive insieme: ${labels.join(" + ")}.`;
+    }
   }
 
   function syncStrategyModalPanels() {
-    const selectedStrategies = selectedStrategyIds();
-    strategyChoiceCards.forEach((card) => {
-      card.classList.toggle("is-active", selectedStrategies.includes(card.dataset.strategyChoice));
-    });
+    const selectedIds = activeStrategyIds();
     strategyDetailPanels.forEach((panel) => {
-      panel.classList.toggle("is-active", selectedStrategies.includes(panel.dataset.modalStrategy));
+      panel.classList.toggle("is-active", selectedIds.includes(panel.dataset.modalStrategy));
     });
+
+    if (strategyModalSummary) {
+      const labels = activeRuleLabels();
+      strategyModalSummary.textContent = labels.length > 1
+        ? `Regole attive: ${labels.join(" + ")}. La combinazione attuale e' ${ruleLogicSelect.value.toUpperCase()}.`
+        : `Regola attiva: ${labels[0] || "nessuna"}.`;
+    }
   }
 
   function syncModalValuesFromForm() {
@@ -163,7 +182,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function syncStrategyWorkspace() {
-    normalizeStrategySelections();
     syncStrategyFields();
     syncStrategyPickerCard();
     syncStrategyModalPanels();
@@ -183,25 +201,21 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.classList.remove("strategy-modal-open");
   }
 
-  function selectStrategy(strategyId) {
-    if (!strategyCatalog[strategyId]) {
-      return;
-    }
-
-    strategySelect.value = strategyId;
-    syncStrategyWorkspace();
-    syncModalValuesFromForm();
-  }
-
   function applyPreset(presetId) {
     const preset = presetsById[presetId];
     if (!preset) {
       return;
     }
 
-    strategySelect.value = preset.strategy;
-    secondaryStrategySelect.value = preset.secondary_strategy || "";
-    tertiaryStrategySelect.value = preset.tertiary_strategy || "";
+    const presetStrategyIds = preset.active_strategy_ids
+      || (preset.active_rules || []).map((rule) => rule.strategy)
+      || [preset.strategy, preset.secondary_strategy, preset.tertiary_strategy].filter(Boolean);
+
+    strategyToggles.forEach((toggle) => {
+      toggle.checked = presetStrategyIds.includes(toggle.value);
+    });
+    ensureAtLeastOneActive(presetStrategyIds[0]);
+
     ruleLogicSelect.value = preset.rule_logic || "all";
     runModeSelect.value = preset.run_mode || "single";
     intervalSelect.value = preset.interval || intervalSelect.value;
@@ -235,10 +249,13 @@ document.addEventListener("DOMContentLoaded", () => {
     intervalHint.textContent = intervalHints[selectedInterval] || "";
   }
 
-  strategySelect.addEventListener("change", syncStrategyWorkspace);
-  secondaryStrategySelect.addEventListener("change", syncStrategyWorkspace);
-  tertiaryStrategySelect.addEventListener("change", syncStrategyWorkspace);
-  ruleLogicSelect.addEventListener("change", syncStrategyPickerCard);
+  strategyToggles.forEach((toggle) => {
+    toggle.addEventListener("change", () => {
+      ensureAtLeastOneActive(toggle.value);
+      syncStrategyWorkspace();
+    });
+  });
+  ruleLogicSelect.addEventListener("change", syncStrategyWorkspace);
   runModeSelect.addEventListener("change", syncStrategyWorkspace);
   intervalSelect.addEventListener("change", syncIntervalHint);
   presetSelect.addEventListener("change", (event) => applyPreset(event.target.value));
@@ -249,7 +266,7 @@ document.addEventListener("DOMContentLoaded", () => {
     button.addEventListener("click", closeStrategyLab);
   });
   strategyChoiceCards.forEach((card) => {
-    card.addEventListener("click", () => selectStrategy(card.dataset.strategyChoice));
+    card.addEventListener("click", () => toggleStrategyActivation(card.dataset.strategyChoice));
   });
   modalInputs.forEach((field) => {
     const updateSource = () => {
@@ -258,10 +275,8 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
       sourceField.value = field.value;
-      if (["strategy", "secondary_strategy", "tertiary_strategy", "rule_logic", "run_mode"].includes(field.dataset.modalInput)) {
-        syncStrategyWorkspace();
-        syncModalValuesFromForm();
-      }
+      syncStrategyWorkspace();
+      syncModalValuesFromForm();
     };
     field.addEventListener("input", updateSource);
     field.addEventListener("change", updateSource);
@@ -272,6 +287,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  ensureAtLeastOneActive();
   syncStrategyWorkspace();
   syncModalValuesFromForm();
   syncIntervalHint();

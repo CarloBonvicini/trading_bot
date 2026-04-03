@@ -148,51 +148,37 @@
         <div class="input-grid">
           <div class="field-block">
             <label>
-              <span>Regola primaria</span>
-              <select name="strategy" id="strategy-select" {% if 'strategy' in invalid_fields %}class="input-error"{% endif %}>
-                {% for strategy_id, strategy in strategies.items() %}
-                  <option value="{{ strategy_id }}" {% if form_values.strategy == strategy_id %}selected{% endif %}>{{ strategy.label }}</option>
-                {% endfor %}
-              </select>
+              <span>Capitale iniziale</span>
+              <input type="number" step="100" min="100" name="initial_capital" value="{{ form_values.initial_capital }}">
             </label>
-            {% if field_errors.get('strategy') %}
-              <p class="field-error">{{ field_errors['strategy'] }}</p>
-            {% endif %}
-            <article class="strategy-picker-card" id="strategy-picker-card">
-              <div class="strategy-picker-top">
-                <strong id="strategy-picker-label"></strong>
-                <span class="strategy-chip" id="strategy-picker-chip"></span>
-              </div>
-              <p class="inline-note" id="strategy-picker-description"></p>
-              <p class="inline-note" id="strategy-picker-rules"></p>
-              <div class="button-row">
-                <button class="ghost-button" type="button" id="open-strategy-lab" data-no-expand="true">
-                  Apri finestra strategia
-                </button>
-              </div>
-            </article>
           </div>
-            <div class="field-block">
-              <label>
-                <span>Capitale iniziale</span>
-                <input type="number" step="100" min="100" name="initial_capital" value="{{ form_values.initial_capital }}">
-              </label>
-            </div>
+          <div class="field-block">
+            <label>
+              <span>Fee (bps)</span>
+              <input type="number" step="0.1" min="0" name="fee_bps" value="{{ form_values.fee_bps }}">
+            </label>
+          </div>
         </div>
 
-        <section class="strategy-fields is-active strategy-composer-box">
+        <section class="strategy-fields is-active strategy-toggle-shell">
           <div class="section-head">
             <div>
-              <div class="section-label">Compositore regole</div>
+              <div class="section-label">Regole da avviare</div>
               <p class="inline-note">
-                Puoi sommare fino a tre regole nello stesso test. In `AND` devono essere tutte attive, in `OR` basta che lo sia una.
+                Attiva con un toggle le strategie che vuoi usare nel test. Se ne attivi piu' di una, verranno combinate con la logica scelta qui sotto.
               </p>
             </div>
+            <div class="button-row">
+              <button class="ghost-button" type="button" id="open-strategy-lab" data-no-expand="true">
+                Apri finestra strategia
+              </button>
+            </div>
           </div>
-          <div class="parameter-grid strategy-composer-grid">
+
+          <div class="input-grid strategy-setup-grid">
             <div class="field-block">
               <label>
-                <span>Combina le regole</span>
+                <span>Combina le regole attive</span>
                 <select name="rule_logic" id="rule-logic-select" {% if 'rule_logic' in invalid_fields %}class="input-error"{% endif %}>
                   {% for logic_key, logic_label in rule_logic_options.items() %}
                     <option value="{{ logic_key }}" {% if form_values.rule_logic == logic_key %}selected{% endif %}>{{ logic_label }}</option>
@@ -203,43 +189,51 @@
                 <p class="field-error">{{ field_errors['rule_logic'] }}</p>
               {% endif %}
             </div>
-            <div class="field-block">
-              <label>
-                <span>Regola aggiuntiva 2</span>
-                <select name="secondary_strategy" id="secondary-strategy-select" {% if 'secondary_strategy' in invalid_fields %}class="input-error"{% endif %}>
-                  <option value="">Nessuna regola aggiuntiva</option>
-                  {% for strategy_id, strategy in strategies.items() %}
-                    <option value="{{ strategy_id }}" {% if form_values.secondary_strategy == strategy_id %}selected{% endif %}>{{ strategy.label }}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              {% if field_errors.get('secondary_strategy') %}
-                <p class="field-error">{{ field_errors['secondary_strategy'] }}</p>
-              {% endif %}
-            </div>
-            <div class="field-block">
-              <label>
-                <span>Regola aggiuntiva 3</span>
-                <select name="tertiary_strategy" id="tertiary-strategy-select" {% if 'tertiary_strategy' in invalid_fields %}class="input-error"{% endif %}>
-                  <option value="">Nessuna regola aggiuntiva</option>
-                  {% for strategy_id, strategy in strategies.items() %}
-                    <option value="{{ strategy_id }}" {% if form_values.tertiary_strategy == strategy_id %}selected{% endif %}>{{ strategy.label }}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              {% if field_errors.get('tertiary_strategy') %}
-                <p class="field-error">{{ field_errors['tertiary_strategy'] }}</p>
-              {% endif %}
-            </div>
+            <article class="strategy-picker-card" id="strategy-picker-card">
+              <div class="strategy-picker-top">
+                <strong id="strategy-picker-label"></strong>
+                <span class="strategy-chip" id="strategy-picker-chip"></span>
+              </div>
+              <p class="inline-note" id="strategy-picker-description"></p>
+              <p class="inline-note" id="strategy-picker-rules"></p>
+            </article>
           </div>
-        </section>
 
-        <div class="input-grid">
-          <label>
-            <span>Fee (bps)</span>
-            <input type="number" step="0.1" min="0" name="fee_bps" value="{{ form_values.fee_bps }}">
-          </label>
-        </div>
+          <div class="strategy-toggle-grid" id="strategy-toggle-grid">
+            {% for strategy_id, strategy in strategies.items() %}
+              <label
+                class="strategy-toggle-card {% if strategy_id in form_values.active_strategies %}is-active{% endif %}"
+                for="toggle-{{ strategy_id }}"
+                data-strategy-toggle-card="{{ strategy_id }}"
+              >
+                <input
+                  type="checkbox"
+                  id="toggle-{{ strategy_id }}"
+                  name="active_strategies"
+                  value="{{ strategy_id }}"
+                  data-strategy-toggle="{{ strategy_id }}"
+                  {% if strategy_id in form_values.active_strategies %}checked{% endif %}
+                >
+                <div class="strategy-toggle-card-top">
+                  <div>
+                    <strong>{{ strategy.label }}</strong>
+                    <p>{{ strategy.description }}</p>
+                  </div>
+                  <span class="strategy-toggle-switch" aria-hidden="true">
+                    <span class="strategy-toggle-knob"></span>
+                  </span>
+                </div>
+                <div class="strategy-toggle-card-meta">
+                  <span>{{ strategy.parameters|length }} parametri</span>
+                  <span>{% if strategy.supports_sweep %}Sweep disponibile{% else %}Solo test singolo{% endif %}</span>
+                </div>
+              </label>
+            {% endfor %}
+          </div>
+          {% if field_errors.get('active_strategies') %}
+            <p class="field-error">{{ field_errors['active_strategies'] }}</p>
+          {% endif %}
+        </section>
 
         {% include "partials/_strategy_sections.html" %}
 

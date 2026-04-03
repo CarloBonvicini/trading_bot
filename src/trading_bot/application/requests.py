@@ -13,6 +13,30 @@ def _text_value(raw: Mapping[str, object], name: str, default: str = "") -> str:
     return str(value).strip() if value is not None else default
 
 
+def _list_values(raw: Mapping[str, object], name: str) -> list[str]:
+    if hasattr(raw, "getlist"):
+        values = raw.getlist(name)
+    else:
+        value = raw.get(name, [])
+        if isinstance(value, (list, tuple, set)):
+            values = list(value)
+        elif value in ("", None):
+            values = []
+        else:
+            values = [value]
+
+    normalized: list[str] = []
+    for value in values:
+        text = str(value).strip()
+        if not text:
+            continue
+        if "," in text:
+            normalized.extend(part.strip() for part in text.split(",") if part.strip())
+        else:
+            normalized.append(text)
+    return normalized
+
+
 @dataclass(frozen=True)
 class StrategyRuleSelection:
     slot: str
@@ -39,6 +63,7 @@ class BacktestRequest:
     end: str
     interval: str = "1d"
     strategy: str = "sma_cross"
+    active_strategy_ids: tuple[str, ...] = ("sma_cross",)
     secondary_strategy: str = ""
     tertiary_strategy: str = ""
     rule_logic: str = "all"
@@ -53,10 +78,11 @@ class BacktestRequest:
         start = _text_value(raw, "start")
         end = _text_value(raw, "end")
         interval = _text_value(raw, "interval", "1d")
-        strategy = _text_value(raw, "strategy", "sma_cross")
-        secondary_strategy = _text_value(raw, "secondary_strategy")
-        tertiary_strategy = _text_value(raw, "tertiary_strategy")
         rule_logic = _text_value(raw, "rule_logic", "all")
+        active_strategy_ids = _parse_active_strategy_ids(raw)
+        strategy = active_strategy_ids[0]
+        secondary_strategy = active_strategy_ids[1] if len(active_strategy_ids) > 1 else ""
+        tertiary_strategy = active_strategy_ids[2] if len(active_strategy_ids) > 2 else ""
 
         if not symbol:
             raise FormValidationError(
@@ -70,16 +96,23 @@ class BacktestRequest:
                 fields=missing_fields or ("start", "end"),
                 display_field=missing_fields[0] if missing_fields else "start",
             )
+        if not active_strategy_ids:
+            raise FormValidationError(
+                "Attiva almeno una regola strategica prima di lanciare il test.",
+                fields=("active_strategies",),
+                display_field="active_strategies",
+            )
         if strategy not in STRATEGY_OPTIONS:
             raise FormValidationError(
                 f"Strategia non supportata: {strategy}.",
-                fields=("strategy",),
+                fields=("active_strategies",),
             )
-        for field_name, strategy_id in (("secondary_strategy", secondary_strategy), ("tertiary_strategy", tertiary_strategy)):
-            if strategy_id and strategy_id not in STRATEGY_OPTIONS:
+        for strategy_id in active_strategy_ids:
+            if strategy_id not in STRATEGY_OPTIONS:
                 raise FormValidationError(
                     f"Strategia non supportata: {strategy_id}.",
-                    fields=(field_name,),
+                    fields=("active_strategies",),
+                    display_field="active_strategies",
                 )
         if interval not in INTERVAL_OPTIONS:
             raise FormValidationError(
@@ -94,9 +127,7 @@ class BacktestRequest:
 
         rules = _parse_rule_selections(
             raw=raw,
-            primary_strategy=strategy,
-            secondary_strategy=secondary_strategy,
-            tertiary_strategy=tertiary_strategy,
+            active_strategy_ids=active_strategy_ids,
         )
 
         return cls(
@@ -105,6 +136,7 @@ class BacktestRequest:
             end=end,
             interval=interval,
             strategy=strategy,
+            active_strategy_ids=tuple(active_strategy_ids),
             secondary_strategy=secondary_strategy,
             tertiary_strategy=tertiary_strategy,
             rule_logic=rule_logic,
@@ -151,6 +183,7 @@ class BacktestRequest:
             "strategy_label": self.strategy_label,
             "primary_strategy": self.strategy,
             "primary_strategy_label": STRATEGY_OPTIONS[self.strategy]["label"],
+            "active_strategy_ids": list(self.active_strategy_ids),
             "secondary_strategy": self.secondary_strategy,
             "tertiary_strategy": self.tertiary_strategy,
             "rule_logic": self.rule_logic,
@@ -166,38 +199,40 @@ class BacktestRequest:
 def _parse_rule_selections(
     *,
     raw: Mapping[str, object],
-    primary_strategy: str,
-    secondary_strategy: str,
-    tertiary_strategy: str,
+    active_strategy_ids: list[str],
 ) -> list[StrategyRuleSelection]:
-    raw_selections = [
-        ("primary", "strategy", primary_strategy),
-        ("secondary", "secondary_strategy", secondary_strategy),
-        ("tertiary", "tertiary_strategy", tertiary_strategy),
-    ]
-    seen_fields_by_strategy: dict[str, str] = {}
     rules: list[StrategyRuleSelection] = []
-
-    for slot, field_name, strategy_id in raw_selections:
-        if not strategy_id:
-            continue
-        if strategy_id in seen_fields_by_strategy:
-            raise FormValidationError(
-                "Ogni regola deve essere diversa: non selezionare la stessa strategia piu' volte.",
-                fields=(seen_fields_by_strategy[strategy_id], field_name),
-                display_field=field_name,
-            )
-
+    for index, strategy_id in enumerate(active_strategy_ids):
         rules.append(
             StrategyRuleSelection(
-                slot=slot,
+                slot=f"rule_{index + 1}",
                 strategy_id=strategy_id,
                 parameters=parse_strategy_parameters(strategy_id, raw),
             )
         )
-        seen_fields_by_strategy[strategy_id] = field_name
 
     return rules
+
+
+def _parse_active_strategy_ids(raw: Mapping[str, object]) -> list[str]:
+    toggle_ids = _list_values(raw, "active_strategies")
+    if toggle_ids:
+        unique_toggle_ids: list[str] = []
+        for strategy_id in toggle_ids:
+            if strategy_id not in unique_toggle_ids:
+                unique_toggle_ids.append(strategy_id)
+        return unique_toggle_ids
+
+    legacy_ids = [
+        _text_value(raw, "strategy", "sma_cross"),
+        _text_value(raw, "secondary_strategy"),
+        _text_value(raw, "tertiary_strategy"),
+    ]
+    unique_legacy_ids: list[str] = []
+    for strategy_id in legacy_ids:
+        if strategy_id and strategy_id not in unique_legacy_ids:
+            unique_legacy_ids.append(strategy_id)
+    return unique_legacy_ids
 
 
 @dataclass(frozen=True)

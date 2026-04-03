@@ -98,7 +98,8 @@ Dalla UI locale puoi:
 
 - salvare un preset strategia con nome
 - ricaricare un preset dalla select
-- combinare fino a 3 regole nello stesso backtest con logica `AND` o `OR`
+- attivare e disattivare le regole da browser con toggle dedicati
+- combinare le regole attive con logica `AND` o `OR`
 - usare i punti di intervento specifici per ogni regola attiva
 - lanciare sweep multipli sulle strategie che espongono coppie `fast/slow`
 

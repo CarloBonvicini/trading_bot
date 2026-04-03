@@ -188,8 +188,8 @@ def test_index_lists_existing_reports(tmp_path: Path) -> None:
     assert "ultimi 730 giorni" in body
     assert "data-expandable-panel" in body
     assert "Apri finestra strategia" in body
-    assert 'name="secondary_strategy"' in body
-    assert 'name="tertiary_strategy"' in body
+    assert 'name="active_strategies"' in body
+    assert 'data-strategy-toggle="ema_cross"' in body
     assert 'name="rule_logic"' in body
     assert 'id="strategy-modal-title"' in body
     assert 'data-strategy-choice="ema_cross"' in body
@@ -260,8 +260,7 @@ def test_create_backtest_supports_combined_rules(monkeypatch, tmp_path: Path) ->
             "end": "2024-12-31",
             "run_mode": "single",
             "interval": "1d",
-            "strategy": "ema_cross",
-            "secondary_strategy": "rsi_mean_reversion",
+            "active_strategies": ["ema_cross", "rsi_mean_reversion"],
             "rule_logic": "all",
             "initial_capital": "10000",
             "fee_bps": "5",
@@ -407,8 +406,7 @@ def test_create_sweep_rejects_combined_rules(tmp_path: Path) -> None:
           "end": "2024-12-31",
           "run_mode": "sweep",
           "interval": "1d",
-          "strategy": "ema_cross",
-          "secondary_strategy": "rsi_mean_reversion",
+          "active_strategies": ["ema_cross", "rsi_mean_reversion"],
           "rule_logic": "all",
           "initial_capital": "10000",
           "fee_bps": "5",

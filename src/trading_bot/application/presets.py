@@ -47,6 +47,7 @@ def save_strategy_preset(raw: Mapping[str, object], output_dir: str | Path = DEF
         "name": preset_name,
         "strategy": request.strategy,
         "strategy_label": request.strategy_label,
+        "active_strategy_ids": list(request.active_strategy_ids),
         "secondary_strategy": request.secondary_strategy,
         "tertiary_strategy": request.tertiary_strategy,
         "rule_logic": request.rule_logic,

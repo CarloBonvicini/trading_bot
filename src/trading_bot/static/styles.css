@@ -329,7 +329,7 @@ body.strategy-modal-open {
   align-items: start;
 }
 
-.strategy-fields .input-grid {
+.strategy-fields[data-strategy] .input-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
@@ -481,8 +481,104 @@ select:focus {
   color: var(--accent);
 }
 
-.strategy-composer-grid {
+.strategy-setup-grid {
+  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.2fr);
+}
+
+.strategy-toggle-grid {
+  display: grid;
+  gap: 0.85rem;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.strategy-toggle-card {
+  position: relative;
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(27, 27, 24, 0.1);
+  background: rgba(255, 255, 255, 0.84);
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.strategy-toggle-card:hover,
+.strategy-toggle-card.is-active {
+  transform: translateY(-1px);
+  border-color: rgba(15, 118, 110, 0.38);
+  box-shadow: 0 14px 28px rgba(15, 118, 110, 0.12);
+}
+
+.strategy-toggle-card.is-active {
+  background: linear-gradient(135deg, rgba(200, 235, 229, 0.58), rgba(255, 255, 255, 0.96));
+}
+
+.strategy-toggle-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.strategy-toggle-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.strategy-toggle-card-top strong {
+  display: block;
+  margin: 0;
+  font-size: 1rem;
+  font-family: var(--font-serif);
+}
+
+.strategy-toggle-card-top p,
+.strategy-toggle-card-meta {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.strategy-toggle-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.strategy-toggle-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 3.25rem;
+  height: 1.95rem;
+  border-radius: 999px;
+  background: rgba(27, 27, 24, 0.12);
+  transition: background 180ms ease;
+}
+
+.strategy-toggle-knob {
+  position: absolute;
+  top: 0.2rem;
+  left: 0.2rem;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  background: white;
+  box-shadow: 0 6px 14px rgba(27, 27, 24, 0.16);
+  transition: transform 180ms ease;
+}
+
+.strategy-toggle-card.is-active .strategy-toggle-switch,
+.strategy-choice-card.is-active .strategy-toggle-switch {
+  background: linear-gradient(135deg, var(--accent), #14532d);
+}
+
+.strategy-toggle-card.is-active .strategy-toggle-knob,
+.strategy-choice-card.is-active .strategy-toggle-knob {
+  transform: translateX(1.3rem);
 }
 
 .range-grid {
@@ -934,6 +1030,13 @@ td {
   font-family: var(--font-serif);
 }
 
+.strategy-choice-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
 .strategy-choice-card p,
 .strategy-choice-meta,
 .parameter-hint {
@@ -1028,6 +1131,7 @@ td {
 
   .input-grid,
   .strategy-fields .input-grid,
+  .strategy-toggle-grid,
   .range-grid,
   .triple-grid,
   .parameter-grid,

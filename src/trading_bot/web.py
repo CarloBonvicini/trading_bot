@@ -82,14 +82,14 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             )
         except FormValidationError as exc:
             return _render_home(
-                form_values=dict(request.form),
+                form_values=request.form,
                 field_errors=_field_errors(exc),
                 invalid_fields=exc.field_names,
                 status=400,
             )
         except Exception as exc:
             flash(str(exc), "error")
-            return _render_home(form_values=dict(request.form), status=400)
+            return _render_home(form_values=request.form, status=400)
 
         flash(f"Backtest completato: {completed.report_dir.name}", "success")
         return redirect(url_for("report_detail", report_name=completed.report_dir.name))
@@ -103,17 +103,17 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             )
         except FormValidationError as exc:
             return _render_home(
-                form_values=dict(request.form),
+                form_values=request.form,
                 field_errors=_field_errors(exc),
                 invalid_fields=exc.field_names,
                 status=400,
             )
         except Exception as exc:
             flash(str(exc), "error")
-            return _render_home(form_values=dict(request.form), status=400)
+            return _render_home(form_values=request.form, status=400)
 
         flash(f"Preset salvato: {preset['name']}", "success")
-        return _render_home(form_values=dict(request.form), status=201)
+        return _render_home(form_values=request.form, status=201)
 
     @app.get("/reports/<report_name>")
     def report_detail(report_name: str) -> str:
@@ -221,6 +221,10 @@ def _render_home(
     values = as_form_values()
     if form_values:
         values.update(form_values)
+        if hasattr(form_values, "getlist"):
+            values["active_strategies"] = form_values.getlist("active_strategies")
+        elif isinstance(values.get("active_strategies"), str):
+            values["active_strategies"] = [values["active_strategies"]]
 
     return render_template(
         "index.html",

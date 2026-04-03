@@ -6,7 +6,7 @@
         <p class="eyebrow">configurazione guidata</p>
         <h3 id="strategy-modal-title">Strategy Lab</h3>
         <p class="hero-copy strategy-modal-copy">
-          Qui puoi comporre fino a tre regole, leggere bene ogni strategia e regolare i parametri con piu' spazio.
+          Qui puoi vedere e regolare meglio i parametri delle regole attive. L'attivazione delle strategie avviene con i toggle nella schermata principale.
         </p>
       </div>
       <button class="ghost-button" type="button" data-close-strategy-modal>Chiudi</button>
@@ -17,13 +17,18 @@
         <div class="section-head">
           <div>
             <div class="section-label">Catalogo strategie</div>
-            <p class="inline-note">Clicca una strategia per portarla come regola primaria e vedere i dettagli.</p>
+            <p class="inline-note">Le card evidenziate sono le regole attive. Clicca una card per attivarla o disattivarla.</p>
           </div>
         </div>
         <div class="strategy-catalog">
           {% for strategy_id, strategy in strategies.items() %}
             <button type="button" class="strategy-choice-card" data-strategy-choice="{{ strategy_id }}">
-              <strong>{{ strategy.label }}</strong>
+              <div class="strategy-choice-card-head">
+                <strong>{{ strategy.label }}</strong>
+                <span class="strategy-toggle-switch" aria-hidden="true">
+                  <span class="strategy-toggle-knob"></span>
+                </span>
+              </div>
               <span class="strategy-choice-meta">
                 {{ strategy.parameters|length }} parametri
                 {% if strategy.supports_sweep %} • Sweep disponibile{% else %} • Solo test singolo{% endif %}
@@ -38,44 +43,18 @@
         <article class="subsection-card strategy-modal-note">
           <div class="section-head">
             <div>
-              <div class="section-label">Compositore regole</div>
+              <div class="section-label">Regole attive</div>
               <p class="inline-note">
-                Usa una regola primaria e, se vuoi, aggiungi due conferme. In `AND` devono essere tutte attive, in `OR` basta una regola.
+                <span id="strategy-modal-summary">Attiva i toggle nella schermata principale e qui vedrai tutte le regole selezionate con i rispettivi parametri.</span>
               </p>
             </div>
           </div>
           <div class="strategy-lab-grid strategy-lab-grid-composer">
             <label class="strategy-lab-field">
-              <span>Regola primaria</span>
-              <select data-modal-input="strategy">
-                {% for strategy_id, strategy in strategies.items() %}
-                  <option value="{{ strategy_id }}" {% if form_values.strategy == strategy_id %}selected{% endif %}>{{ strategy.label }}</option>
-                {% endfor %}
-              </select>
-            </label>
-            <label class="strategy-lab-field">
-              <span>Combina le regole</span>
+              <span>Combina le regole attive</span>
               <select data-modal-input="rule_logic">
                 {% for logic_key, logic_label in rule_logic_options.items() %}
                   <option value="{{ logic_key }}" {% if form_values.rule_logic == logic_key %}selected{% endif %}>{{ logic_label }}</option>
-                {% endfor %}
-              </select>
-            </label>
-            <label class="strategy-lab-field">
-              <span>Regola aggiuntiva 2</span>
-              <select data-modal-input="secondary_strategy">
-                <option value="">Nessuna regola aggiuntiva</option>
-                {% for strategy_id, strategy in strategies.items() %}
-                  <option value="{{ strategy_id }}" {% if form_values.secondary_strategy == strategy_id %}selected{% endif %}>{{ strategy.label }}</option>
-                {% endfor %}
-              </select>
-            </label>
-            <label class="strategy-lab-field">
-              <span>Regola aggiuntiva 3</span>
-              <select data-modal-input="tertiary_strategy">
-                <option value="">Nessuna regola aggiuntiva</option>
-                {% for strategy_id, strategy in strategies.items() %}
-                  <option value="{{ strategy_id }}" {% if form_values.tertiary_strategy == strategy_id %}selected{% endif %}>{{ strategy.label }}</option>
                 {% endfor %}
               </select>
             </label>
