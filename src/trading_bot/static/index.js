@@ -16,6 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
     results: "saved-results-panel",
   };
   const homeTabPanels = Array.from(document.querySelectorAll("[data-home-tab-panel]"));
+  const homeFormTabs = Array.from(document.querySelectorAll("[data-home-form-tab]"));
 
   const strategyToggles = Array.from(document.querySelectorAll("[data-strategy-toggle]"));
   const strategyToggleCards = Array.from(document.querySelectorAll("[data-strategy-toggle-card]"));
@@ -45,6 +46,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const intervalHint = document.getElementById("interval-hint");
   const symbolInput = document.querySelector('[name="symbol"]');
 
+  function syncHomeFormTabs(tabId = "setup") {
+    const activeFormTab = tabId === "strategies" ? "strategies" : "setup";
+    const showFormTabs = tabId === "setup" || tabId === "strategies";
+
+    homeFormTabs.forEach((panel) => {
+      const isVisible = showFormTabs && panel.dataset.homeFormTab === activeFormTab;
+      panel.hidden = !isVisible;
+      panel.classList.toggle("is-active", isVisible);
+    });
+  }
+
   function activateHomeTab(tabId = "dashboard") {
     homeTabLinks.forEach((link) => {
       link.classList.toggle("is-active", link.dataset.homeTabLink === tabId);
@@ -61,18 +73,8 @@ document.addEventListener("DOMContentLoaded", () => {
       panel.hidden = !isVisible;
       panel.classList.toggle("is-active", isVisible);
     });
-  }
 
-  function highlightHomeTabTarget(targetNode) {
-    if (!targetNode || !targetNode.classList?.contains("panel") && !targetNode.classList?.contains("strategy-fields")) {
-      return;
-    }
-
-    targetNode.classList.remove("home-tab-target-flash");
-    window.requestAnimationFrame(() => {
-      targetNode.classList.add("home-tab-target-flash");
-      window.setTimeout(() => targetNode.classList.remove("home-tab-target-flash"), 1400);
-    });
+    syncHomeFormTabs(tabId);
   }
 
   function focusHomeTabTarget(tabId) {
@@ -92,15 +94,8 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function scrollToHomeTab(tabId, { focus = false } = {}) {
-    const targetId = homeTabTargetIds[tabId];
-    const targetNode = targetId ? document.getElementById(targetId) : null;
     activateHomeTab(tabId);
-    if (!targetNode) {
-      return;
-    }
-
-    targetNode.scrollIntoView({ behavior: "smooth", block: "start" });
-    highlightHomeTabTarget(targetNode);
+    const targetId = homeTabTargetIds[tabId];
     if (window.history?.replaceState) {
       window.history.replaceState(null, "", `#${targetId}`);
     } else {

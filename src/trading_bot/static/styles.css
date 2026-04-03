@@ -2315,6 +2315,11 @@ td {
   gap: 1rem;
 }
 
+.home-dashboard-overview {
+  display: grid;
+  gap: 1rem;
+}
+
 .home-hero-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
@@ -2431,6 +2436,16 @@ td {
   display: grid;
   grid-template-columns: minmax(0, 1.55fr) minmax(340px, 0.8fr);
   gap: 1rem;
+}
+
+.home-form-tab {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.home-form-tab.is-active {
+  animation: rise-in 220ms ease both;
 }
 
 .home-results-shell {
