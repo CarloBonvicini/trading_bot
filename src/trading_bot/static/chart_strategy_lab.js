@@ -1,10 +1,12 @@
 document.addEventListener("DOMContentLoaded", () => {
   const configNode = document.getElementById("chart-strategy-lab-config");
+  const chartPayloadNode = document.getElementById("chart-window-data");
   if (!configNode) {
     return;
   }
 
   const config = JSON.parse(configNode.textContent || "{}");
+  const initialChartPayload = chartPayloadNode ? JSON.parse(chartPayloadNode.textContent || "{}") : {};
   if (!config.preview_endpoint) {
     return;
   }
@@ -18,15 +20,26 @@ document.addEventListener("DOMContentLoaded", () => {
   const badgeNode = document.querySelector("[data-live-preview-badge]");
   const ruleSummaryNode = document.querySelector("[data-live-rule-summary]");
   const comparisonGrid = document.querySelector("[data-live-comparison-grid]");
+  const validationGrid = document.querySelector("[data-live-validation-grid]");
+  const validationChecksNode = document.querySelector("[data-live-validation-checks]");
   const tradePreviewNode = document.querySelector("[data-live-trade-preview]");
   const resetButton = document.querySelector("[data-chart-preview-reset]");
+  const indicatorSectionNode = document.querySelector("[data-preview-indicator-section]");
+  const indicatorPanelsNode = document.querySelector("[data-preview-indicator-panels]");
+  const indicatorTitleNode = document.querySelector("[data-preview-indicator-title]");
 
   let debounceTimer = null;
   let requestCounter = 0;
+  let currentIndicatorPayload = Array.isArray(config.indicator_payload) ? config.indicator_payload : [];
+  let currentIndicatorLabel = config.baseline_label || "Setup iniziale del report";
+  let currentChartPayload = initialChartPayload;
 
   const initialState = captureState();
   renderComparisonCards(config.comparison_cards || []);
+  renderValidationCards(config.validation_cards || []);
+  renderValidationChecks(config.validation_checks || []);
   renderTradePreview(config.trade_preview || []);
+  renderIndicatorPanels(currentIndicatorPayload, currentIndicatorLabel, currentChartPayload);
   syncSections();
   syncRuleSummary();
 
@@ -68,6 +81,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function syncSections() {
     const activeIds = activeStrategyIds();
+    window.tradingBotChartTerminal?.setPreviewIndicatorFilter(activeIds);
+    renderIndicatorPanels(filterIndicatorsByActiveStrategies(currentIndicatorPayload, activeIds), currentIndicatorLabel, currentChartPayload);
     strategyCards.forEach((card) => {
       card.classList.toggle("is-active", activeIds.includes(card.dataset.chartStrategyCard));
     });
@@ -81,7 +96,7 @@ document.addEventListener("DOMContentLoaded", () => {
     syncRuleSummary();
   }
 
-  function syncRuleSummary(previewLabel = config.baseline_label || "Sistema salvato") {
+  function syncRuleSummary(previewLabel = config.baseline_label || "Setup iniziale del report") {
     const labels = activeStrategyIds()
       .map((strategyId) => config.strategies?.[strategyId]?.label)
       .filter(Boolean);
@@ -91,10 +106,10 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     if (labels.length > 1) {
-      ruleSummaryNode.textContent = `Preview attuale: ${previewLabel}. Regole attive: ${labels.join(" + ")} con logica ${descriptor}.`;
+      ruleSummaryNode.textContent = `Configurazione attuale: ${previewLabel}. Strategie attive: ${labels.join(" + ")} con logica ${descriptor}.`;
       return;
     }
-    ruleSummaryNode.textContent = `Preview attuale: ${previewLabel}. Regola attiva: ${labels[0] || "nessuna"}.`;
+    ruleSummaryNode.textContent = `Configurazione attuale: ${previewLabel}. Strategia attiva: ${labels[0] || "nessuna"}.`;
   }
 
   function schedulePreview() {
@@ -147,16 +162,26 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function applyPreviewResponse(data) {
+    currentIndicatorPayload = data.indicator_payload || data.chart_payload?.indicators || [];
+    currentIndicatorLabel = data.preview_label || "Configurazione attuale";
+    currentChartPayload = data.chart_payload || initialChartPayload;
     renderComparisonCards(data.comparison_cards || []);
+    renderValidationCards(data.validation_cards || []);
+    renderValidationChecks(data.validation_checks || []);
     renderTradePreview(data.trade_preview || []);
+    renderIndicatorPanels(
+      filterIndicatorsByActiveStrategies(currentIndicatorPayload, activeStrategyIds()),
+      currentIndicatorLabel,
+      currentChartPayload,
+    );
     if (badgeNode) {
-      badgeNode.textContent = data.preview_label || "Preview live";
+      badgeNode.textContent = data.preview_label || "Configurazione attuale";
     }
     if (statusNode) {
-      statusNode.textContent = `Grafico aggiornato su ${data.preview_label || "preview live"}.`;
+      statusNode.textContent = `Grafico aggiornato sulla configurazione attuale: ${data.preview_label || "configurazione attuale"}.`;
     }
-    syncRuleSummary(data.preview_label || "Preview live");
-    window.tradingBotChartTerminal?.applyPreview(data.chart_payload || {}, data.preview_label || "Preview live");
+    syncRuleSummary(data.preview_label || "Configurazione attuale");
+    window.tradingBotChartTerminal?.applyPreview(data.chart_payload || {}, data.preview_label || "Configurazione attuale");
   }
 
   function restoreInitialState() {
@@ -171,16 +196,26 @@ document.addEventListener("DOMContentLoaded", () => {
         input.value = initialState.parameters[input.name];
       }
     });
+    currentIndicatorPayload = Array.isArray(config.indicator_payload) ? config.indicator_payload : [];
+    currentIndicatorLabel = config.baseline_label || "Setup iniziale del report";
+    currentChartPayload = initialChartPayload;
     syncSections();
     renderComparisonCards(config.comparison_cards || []);
+    renderValidationCards(config.validation_cards || []);
+    renderValidationChecks(config.validation_checks || []);
     renderTradePreview(config.trade_preview || []);
+    renderIndicatorPanels(
+      filterIndicatorsByActiveStrategies(currentIndicatorPayload, activeStrategyIds()),
+      currentIndicatorLabel,
+      currentChartPayload,
+    );
     if (badgeNode) {
-      badgeNode.textContent = config.baseline_label || "Sistema salvato";
+      badgeNode.textContent = config.baseline_label || "Setup iniziale del report";
     }
     if (statusNode) {
-      statusNode.textContent = "Baseline ripristinato. Il grafico mostra di nuovo solo il sistema salvato.";
+      statusNode.textContent = "Setup iniziale ripristinato. Il confronto resta sempre contro il buy & hold.";
     }
-    syncRuleSummary(config.baseline_label || "Sistema salvato");
+    syncRuleSummary(config.baseline_label || "Setup iniziale del report");
     window.tradingBotChartTerminal?.clearPreview();
   }
 
@@ -262,6 +297,177 @@ document.addEventListener("DOMContentLoaded", () => {
         </table>
       </div>
     `;
+  }
+
+  function renderValidationCards(cards) {
+    if (!validationGrid) {
+      return;
+    }
+
+    validationGrid.innerHTML = (Array.isArray(cards) ? cards : []).map((card) => `
+      <article class="terminal-metric-card report-tone-${escapeHtml(card.tone || "neutral")}">
+        <p>${escapeHtml(card.label ?? "")}</p>
+        <strong>${escapeHtml(card.value ?? "")}</strong>
+        <span>${escapeHtml(card.hint ?? "")}</span>
+      </article>
+    `).join("");
+  }
+
+  function renderValidationChecks(checks) {
+    if (!validationChecksNode) {
+      return;
+    }
+
+    validationChecksNode.innerHTML = (Array.isArray(checks) ? checks : []).map((check) => `
+      <article class="chart-validation-check chart-validation-check-${escapeHtml(check.status_class || "neutral")}">
+        <div class="chart-validation-check-head">
+          <strong>${escapeHtml(check.label ?? "")}</strong>
+          <span class="chart-validation-check-badge chart-validation-check-badge-${escapeHtml(check.status_class || "neutral")}">
+            ${escapeHtml(check.status_label ?? "")}
+          </span>
+        </div>
+        <p>${escapeHtml(check.value ?? "")}</p>
+        <span>${escapeHtml(check.hint ?? "")}</span>
+      </article>
+    `).join("");
+  }
+
+  function renderIndicatorPanels(panels, previewLabel, chartPayload) {
+    if (!indicatorSectionNode || !indicatorPanelsNode) {
+      return;
+    }
+
+    const normalizedPanels = Array.isArray(panels)
+      ? panels.filter((panel) => panel && panel.placement === "panel")
+      : [];
+    if (indicatorTitleNode) {
+      indicatorTitleNode.textContent = normalizedPanels.length
+        ? `Indicatori della configurazione attuale: ${previewLabel || "preview"}`
+        : "Indicatori della preview";
+    }
+
+    if (normalizedPanels.length === 0) {
+      indicatorSectionNode.hidden = true;
+      indicatorPanelsNode.innerHTML = "";
+      return;
+    }
+
+    indicatorSectionNode.hidden = false;
+    indicatorPanelsNode.innerHTML = normalizedPanels.map((panel) => `
+      <article class="chart-preview-indicator-card">
+        <div class="chart-preview-indicator-copy">
+          <h4>${escapeHtml(panel.label || "Indicatore")}</h4>
+          <p>${escapeHtml(panel.description || "Indicatore calcolato sulla configurazione attuale.")}</p>
+        </div>
+        <div class="chart-preview-indicator-plot" data-preview-indicator-chart="${escapeHtml(panel.key || "")}"></div>
+      </article>
+    `).join("");
+
+    if (typeof Plotly === "undefined") {
+      return;
+    }
+
+    const dates = Array.isArray(chartPayload?.dates) ? chartPayload.dates : [];
+    normalizedPanels.forEach((panel) => {
+      const chartNode = indicatorPanelsNode.querySelector(`[data-preview-indicator-chart="${cssEscape(panel.key || "")}"]`);
+      if (!chartNode) {
+        return;
+      }
+      Plotly.newPlot(
+        chartNode,
+        buildIndicatorPanelTraces(panel, dates),
+        buildIndicatorPanelLayout(panel),
+        {
+          responsive: true,
+          displaylogo: false,
+          displayModeBar: false,
+          staticPlot: false,
+        },
+      );
+    });
+  }
+
+  function filterIndicatorsByActiveStrategies(panels, activeIds) {
+    if (!Array.isArray(panels)) {
+      return [];
+    }
+    const allowed = new Set((Array.isArray(activeIds) ? activeIds : []).map((value) => String(value || "").trim()).filter(Boolean));
+    if (allowed.size === 0) {
+      return [];
+    }
+    return panels.filter((panel) => allowed.has(String(panel?.key || "").trim()));
+  }
+
+  function buildIndicatorPanelTraces(panel, dates) {
+    return (Array.isArray(panel?.series) ? panel.series : []).map((series) => ({
+      type: "scattergl",
+      mode: "lines",
+      name: series.label || "Serie",
+      x: dates,
+      y: Array.isArray(series.values) ? series.values : [],
+      line: {
+        color: series.color || "#60a5fa",
+        width: 2,
+        dash: series.dash || "solid",
+      },
+      hovertemplate: `${escapeHtml(series.label || "Serie")} %{y:.4f}<br>%{x}<extra></extra>`,
+    }));
+  }
+
+  function buildIndicatorPanelLayout(panel) {
+    const thresholdShapes = (Array.isArray(panel?.thresholds) ? panel.thresholds : []).map((threshold) => ({
+      type: "line",
+      xref: "paper",
+      x0: 0,
+      x1: 1,
+      yref: "y",
+      y0: Number(threshold.value),
+      y1: Number(threshold.value),
+      line: {
+        color: threshold.color || "#94a3b8",
+        width: 1,
+        dash: threshold.dash || "dot",
+      },
+    }));
+
+    return {
+      paper_bgcolor: "#07111b",
+      plot_bgcolor: "#07111b",
+      font: { family: "Aptos, Segoe UI Variable, sans-serif", color: "#d6ddf5" },
+      margin: { l: 44, r: 18, t: 10, b: 28 },
+      hovermode: "x unified",
+      showlegend: true,
+      legend: {
+        orientation: "h",
+        x: 0,
+        y: 1.12,
+        xanchor: "left",
+        yanchor: "bottom",
+        font: { size: 10, color: "#9ba7c2" },
+      },
+      xaxis: {
+        type: "date",
+        showgrid: true,
+        gridcolor: "rgba(171, 184, 214, 0.05)",
+        zeroline: false,
+        tickfont: { color: "#8d98b2", size: 10 },
+      },
+      yaxis: {
+        showgrid: true,
+        gridcolor: "rgba(171, 184, 214, 0.05)",
+        zeroline: false,
+        tickfont: { color: "#8d98b2", size: 10 },
+      },
+      shapes: thresholdShapes,
+      height: 180,
+    };
+  }
+
+  function cssEscape(value) {
+    if (window.CSS && typeof window.CSS.escape === "function") {
+      return window.CSS.escape(String(value));
+    }
+    return String(value).replace(/"/g, '\\"');
   }
 
   function escapeHtml(value) {

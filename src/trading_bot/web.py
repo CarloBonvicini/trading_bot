@@ -3,18 +3,27 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from flask import Flask, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Flask, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 
-from trading_bot.application.chart_lab import build_chart_lab_state, build_preview_request, load_market_data_from_saved_equity
-from trading_bot.application.dashboard import build_dashboard_context
+from trading_bot.application.chart_lab import (
+    build_chart_lab_state,
+    build_preview_indicator_payload,
+    build_preview_request,
+    load_market_data_from_saved_equity,
+)
+from trading_bot.application.dashboard import build_dashboard_context, build_session_catalog
 from trading_bot.application.execution import build_backtest_result
+from trading_bot.application.forms import as_form_values_from_saved_metadata
+from trading_bot.data import INTRADAY_LOOKBACK_DAYS, coerce_interval_date_window
 from trading_bot.errors import FormValidationError
 from trading_bot.reporting import (
     SUMMARY_LABELS,
     build_chart_payload,
     build_live_comparison_cards,
+    build_result_validation_snapshot,
     build_summary_cards,
     build_trade_preview,
+    enrich_summary_with_equity_curve,
     list_saved_items,
     load_report,
     load_report_chart_window,
@@ -47,6 +56,11 @@ ALLOWED_SWEEP_FILES = {
     "best_equity_curve.csv",
     "best_trades.csv",
 }
+HOME_DRAFT_SESSION_KEY = "home_backtest_draft"
+HOME_VIEW_DASHBOARD = "dashboard"
+HOME_VIEW_SETUP = "setup"
+HOME_VIEW_STRATEGIES = "strategies"
+HOME_VIEW_RESULTS = "results"
 
 
 def create_app(config: dict[str, object] | None = None) -> Flask:
@@ -61,14 +75,38 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
 
     @app.get("/")
     def index() -> str:
-        return _render_home()
+        return _render_home(view=HOME_VIEW_DASHBOARD)
+
+    @app.get("/backtests/new")
+    def new_backtest_home() -> str:
+        return _render_home(view=HOME_VIEW_SETUP)
+
+    @app.route("/strategies", methods=["GET", "POST"])
+    def strategies_home():
+        if request.method == "POST":
+            _store_home_draft(_resolve_home_form_values(request.form))
+            return redirect(url_for("strategies_home"))
+        return _render_home(view=HOME_VIEW_STRATEGIES)
+
+    @app.get("/history")
+    def history_home() -> str:
+        return _render_home(view=HOME_VIEW_RESULTS)
+
+    @app.get("/drafts/resume/<report_name>")
+    def resume_backtest(report_name: str):
+        saved_item = _find_saved_report(report_name)
+        metadata = saved_item.get("metadata", {}) if isinstance(saved_item.get("metadata"), dict) else {}
+        _store_home_draft(as_form_values_from_saved_metadata(metadata))
+        return redirect(url_for("strategies_home"))
 
     @app.post("/backtests")
     def create_backtest():
-        run_mode = str(request.form.get("run_mode", "single")).strip().lower()
+        normalized_form = _normalize_intraday_form_window(request.form)
+        _store_home_draft(_resolve_home_form_values(normalized_form))
+        run_mode = str(normalized_form.get("run_mode", "single")).strip().lower()
         try:
             if run_mode == "sweep":
-                sweep_request = SweepRequest.from_mapping(request.form)
+                sweep_request = SweepRequest.from_mapping(normalized_form)
                 completed_sweep = run_sma_sweep_request(
                     sweep_request=sweep_request,
                     output_dir=current_app.config["REPORTS_DIR"],
@@ -82,49 +120,60 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
                 )
                 return redirect(url_for("sweep_detail", sweep_name=completed_sweep.sweep_dir.name))
 
-            backtest_request = BacktestRequest.from_mapping(request.form)
+            backtest_request = BacktestRequest.from_mapping(normalized_form)
             completed = run_backtest_request(
                 backtest_request=backtest_request,
                 output_dir=current_app.config["REPORTS_DIR"],
             )
         except FormValidationError as exc:
             return _render_home(
-                form_values=request.form,
+                form_values=normalized_form,
                 field_errors=_field_errors(exc),
                 invalid_fields=exc.field_names,
+                view=_home_view_for_render(
+                    form_values=normalized_form,
+                    invalid_fields=exc.field_names,
+                ),
                 status=400,
             )
         except Exception as exc:
             flash(str(exc), "error")
-            return _render_home(form_values=request.form, status=400)
+            return _render_home(
+                form_values=normalized_form,
+                view=_home_view_for_render(form_values=normalized_form, invalid_fields=()),
+                status=400,
+            )
 
         flash(f"Backtest completato: {completed.report_dir.name}", "success")
         return redirect(url_for("report_detail", report_name=completed.report_dir.name))
 
     @app.post("/presets")
     def create_preset():
+        normalized_form = _normalize_intraday_form_window(request.form)
+        _store_home_draft(_resolve_home_form_values(normalized_form))
         try:
             preset = save_strategy_preset(
-                raw=request.form,
+                raw=normalized_form,
                 output_dir=current_app.config["REPORTS_DIR"],
             )
         except FormValidationError as exc:
             return _render_home(
-                form_values=request.form,
+                form_values=normalized_form,
                 field_errors=_field_errors(exc),
                 invalid_fields=exc.field_names,
+                view=HOME_VIEW_SETUP,
                 status=400,
             )
         except Exception as exc:
             flash(str(exc), "error")
-            return _render_home(form_values=request.form, status=400)
+            return _render_home(form_values=normalized_form, view=HOME_VIEW_SETUP, status=400)
 
         flash(f"Preset salvato: {preset['name']}", "success")
-        return _render_home(form_values=request.form, status=201)
+        return _render_home(form_values=normalized_form, view=HOME_VIEW_SETUP, status=201)
 
     @app.get("/reports/<report_name>")
     def report_detail(report_name: str) -> str:
-        return redirect(url_for("report_chart_window", report_name=report_name, focus="equity"))
+        return redirect(url_for("report_chart_window", report_name=report_name, focus="price"))
 
     @app.get("/reports/<report_name>/overview")
     def report_overview(report_name: str) -> str:
@@ -142,7 +191,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
 
     @app.get("/reports/<report_name>/chart")
     def report_chart_window(report_name: str) -> str:
-        focus = str(request.args.get("focus", "equity")).strip().lower()
+        focus = str(request.args.get("focus", "price")).strip().lower()
         try:
             chart = load_report_chart_window(
                 output_dir=current_app.config["REPORTS_DIR"],
@@ -181,7 +230,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
 
     @app.get("/sweeps/<sweep_name>/chart")
     def sweep_chart_window(sweep_name: str) -> str:
-        focus = str(request.args.get("focus", "equity")).strip().lower()
+        focus = str(request.args.get("focus", "price")).strip().lower()
         try:
             chart = load_sweep_chart_window(
                 output_dir=current_app.config["REPORTS_DIR"],
@@ -249,36 +298,34 @@ def _render_home(
     *,
     field_errors: dict[str, str] | None = None,
     invalid_fields: tuple[str, ...] | list[str] | set[str] | None = None,
+    view: str = HOME_VIEW_DASHBOARD,
     status: int = 200,
 ) -> str:
-    values = as_form_values()
-    if form_values:
-        values.update(form_values)
-        if hasattr(form_values, "getlist"):
-            values["active_strategies"] = form_values.getlist("active_strategies")
-        elif isinstance(values.get("active_strategies"), str):
-            values["active_strategies"] = [values["active_strategies"]]
+    values = _resolve_home_form_values(form_values)
+    _store_home_draft(values)
 
     saved_items = list_saved_items(current_app.config["REPORTS_DIR"])
     dashboard = build_dashboard_context(saved_items=saved_items, strategies=STRATEGY_OPTIONS)
-    initial_home_tab = _home_tab_for_render(
-        form_values=form_values,
-        invalid_fields=invalid_fields,
-    )
+    session_items = _build_home_session_items(saved_items)
+    selected_session = _select_home_session(session_items)
+    dashboard["latest_session"] = session_items[0] if session_items else None
 
     return render_template(
         "index.html",
         form_values=values,
         field_errors=field_errors or {},
         invalid_fields=set(invalid_fields or ()),
-        initial_home_tab=initial_home_tab,
+        current_home_view=view,
         saved_items=saved_items,
         dashboard=dashboard,
+        session_items=session_items,
+        selected_session=selected_session,
         strategy_presets=list_strategy_presets(current_app.config["REPORTS_DIR"]),
         strategies=STRATEGY_OPTIONS,
         rule_logic_options=RULE_LOGIC_OPTIONS,
         intervals=INTERVAL_OPTIONS,
         interval_hints=interval_helper_texts(),
+        interval_lookback_days=INTRADAY_LOOKBACK_DAYS,
         run_modes=RUN_MODE_OPTIONS,
         sweep_sort_options=SWEEP_SORT_OPTIONS,
     ), status
@@ -296,17 +343,112 @@ def _home_tab_for_render(
     invalid_fields: tuple[str, ...] | list[str] | set[str] | None,
 ) -> str:
     if not form_values:
-        return "dashboard"
+        return HOME_VIEW_SETUP
 
     fields = {str(field_name) for field_name in (invalid_fields or ())}
     strategy_related = {"active_strategies", "rule_logic"}
     if fields & strategy_related:
-        return "strategies"
+        return HOME_VIEW_STRATEGIES
 
     if any("__" in field_name for field_name in fields):
-        return "strategies"
+        return HOME_VIEW_STRATEGIES
 
-    return "setup"
+    return HOME_VIEW_SETUP
+
+
+def _home_view_for_render(
+    *,
+    form_values: dict[str, object] | None,
+    invalid_fields: tuple[str, ...] | list[str] | set[str] | None,
+) -> str:
+    return _home_tab_for_render(form_values=form_values, invalid_fields=invalid_fields)
+
+
+def _resolve_home_form_values(form_values: dict[str, object] | None = None) -> dict[str, object]:
+    values = as_form_values()
+    draft_values = session.get(HOME_DRAFT_SESSION_KEY)
+    if isinstance(draft_values, dict):
+        values.update(draft_values)
+
+    if not form_values:
+        if isinstance(values.get("active_strategies"), str):
+            values["active_strategies"] = [values["active_strategies"]]
+        return values
+
+    values.update(form_values)
+    if hasattr(form_values, "getlist"):
+        values["active_strategies"] = form_values.getlist("active_strategies")
+    elif isinstance(values.get("active_strategies"), str):
+        values["active_strategies"] = [values["active_strategies"]]
+    return values
+
+
+def _normalize_intraday_form_window(form_values):
+    normalized_form = form_values.copy() if hasattr(form_values, "copy") else form_values
+    if normalized_form is None:
+        return form_values
+
+    adjusted_start, adjusted_end, adjusted = coerce_interval_date_window(
+        start=str(normalized_form.get("start", "")).strip(),
+        end=str(normalized_form.get("end", "")).strip(),
+        interval=str(normalized_form.get("interval", "")).strip(),
+    )
+    if adjusted:
+        normalized_form["start"] = adjusted_start
+        normalized_form["end"] = adjusted_end
+    return normalized_form
+
+
+def _store_home_draft(values: dict[str, object]) -> None:
+    active_strategies = values.get("active_strategies", [])
+    if isinstance(active_strategies, str):
+        normalized_active = [active_strategies]
+    elif isinstance(active_strategies, (list, tuple, set)):
+        normalized_active = [str(item) for item in active_strategies if str(item).strip()]
+    else:
+        normalized_active = []
+
+    session[HOME_DRAFT_SESSION_KEY] = {
+        key: list(value) if isinstance(value, tuple) else value
+        for key, value in values.items()
+        if not callable(value)
+    }
+    session[HOME_DRAFT_SESSION_KEY]["active_strategies"] = normalized_active
+
+
+def _find_saved_report(report_name: str) -> dict[str, object]:
+    for item in list_saved_items(current_app.config["REPORTS_DIR"]):
+        if item.get("artifact_type") != "report":
+            continue
+        if str(item.get("name")) == report_name:
+            return item
+    abort(404)
+
+
+def _build_home_session_items(saved_items: list[dict[str, object]]) -> list[dict[str, object]]:
+    session_items = build_session_catalog(saved_items)
+    for item in session_items:
+        if item["artifact_type"] == "sweep":
+            item["open_url"] = url_for("sweep_chart_window", sweep_name=item["name"], focus="price")
+            item["open_label"] = "Go to chart"
+            item["resume_url"] = ""
+        else:
+            item["open_url"] = url_for("report_chart_window", report_name=item["name"], focus="price")
+            item["open_label"] = "Go to chart"
+            item["resume_url"] = url_for("resume_backtest", report_name=item["name"])
+    return session_items
+
+
+def _select_home_session(session_items: list[dict[str, object]]) -> dict[str, object] | None:
+    if not session_items:
+        return None
+
+    requested_name = str(request.args.get("session", "")).strip()
+    if requested_name:
+        for item in session_items:
+            if item["name"] == requested_name:
+                return item
+    return session_items[0]
 
 
 def _attach_chart_lab(chart: dict[str, object], *, preview_endpoint: str) -> dict[str, object]:
@@ -329,6 +471,9 @@ def _attach_chart_lab(chart: dict[str, object], *, preview_endpoint: str) -> dic
             ),
             "summary_cards": build_summary_cards(chart["summary"]),
             "trade_preview": chart["trade_preview"][:10],
+            "indicator_payload": chart["chart_payload"].get("indicators", []),
+            "validation_cards": chart["validation"]["cards"],
+            "validation_checks": chart["validation"]["checks"],
         },
     }
 
@@ -346,6 +491,19 @@ def _build_chart_preview_response(*, artifact_type: str, artifact_name: str):
             raw,
         )
         result = build_backtest_result(backtest_request=preview_request, data=market_data)
+        preview_summary = enrich_summary_with_equity_curve(
+            summary=result.summary,
+            equity_curve=result.equity_curve,
+        )
+        indicator_payload = build_preview_indicator_payload(
+            backtest_request=preview_request,
+            market_data=market_data,
+        )
+        validation = build_result_validation_snapshot(
+            summary=preview_summary,
+            equity_curve=result.equity_curve,
+            trades=result.trades,
+        )
     except FileNotFoundError:
         abort(404)
     except FormValidationError as exc:
@@ -366,7 +524,7 @@ def _build_chart_preview_response(*, artifact_type: str, artifact_name: str):
         chart["metadata"].get("strategy_label")
         or chart["metadata"].get("primary_strategy_label")
         or chart["metadata"].get("strategy")
-        or "Sistema salvato"
+        or "Setup iniziale del report"
     )
 
     return jsonify(
@@ -377,15 +535,21 @@ def _build_chart_preview_response(*, artifact_type: str, artifact_name: str):
                 equity_curve=result.equity_curve,
                 trades=result.trades,
                 focus="equity",
+                interval=str(chart["metadata"].get("interval", "")),
+                indicators=indicator_payload,
+                signal_context=preview_request.metadata(),
             ),
-            "summary_cards": build_summary_cards(result.summary),
+            "summary_cards": build_summary_cards(preview_summary),
             "comparison_cards": build_live_comparison_cards(
-                preview_summary=result.summary,
+                preview_summary=preview_summary,
                 baseline_summary=chart["summary"],
                 baseline_label=baseline_label,
                 preview_label=preview_request.strategy_label,
             ),
             "trade_preview": build_trade_preview(result.trades, limit=10),
+            "indicator_payload": indicator_payload,
+            "validation_cards": validation["cards"],
+            "validation_checks": validation["checks"],
         }
     )
 

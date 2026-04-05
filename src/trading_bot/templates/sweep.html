@@ -17,6 +17,7 @@
       </p>
     </div>
     <div class="hero-actions">
+      <a class="ghost-link" href="{{ url_for('history_home', session=sweep.name) }}">Sessioni</a>
       <a class="ghost-link" href="{{ url_for('download_sweep_file', sweep_name=sweep.name, filename='summary.json') }}">summary.json</a>
       <a class="ghost-link" href="{{ url_for('download_sweep_file', sweep_name=sweep.name, filename='results.csv') }}">results.csv</a>
       <a class="ghost-link" href="{{ url_for('download_sweep_file', sweep_name=sweep.name, filename='best_summary.json') }}">best_summary.json</a>
@@ -89,8 +90,17 @@
       data-detached-url="{{ url_for('sweep_chart_window', sweep_name=sweep.name, focus='equity') }}"
     >
       <div class="panel-header">
-        <p class="eyebrow">best equity curve</p>
-        <h3>Best {{ sweep.metadata.strategy_label or sweep.metadata.strategy }} vs buy &amp; hold</h3>
+        <div>
+          <p class="eyebrow">best equity curve</p>
+          <h3>Best {{ sweep.metadata.strategy_label or sweep.metadata.strategy }} vs buy &amp; hold</h3>
+        </div>
+        <a
+          class="ghost-link"
+          href="{{ url_for('sweep_chart_window', sweep_name=sweep.name, focus='equity') }}"
+          data-no-expand="true"
+        >
+          Apri chart
+        </a>
       </div>
       <div class="chart-shell">
         <div class="chart-meta">
@@ -120,8 +130,17 @@
       data-detached-url="{{ url_for('sweep_chart_window', sweep_name=sweep.name, focus='drawdown') }}"
     >
       <div class="panel-header">
-        <p class="eyebrow">rischio</p>
-        <h3>Drawdown del best run</h3>
+        <div>
+          <p class="eyebrow">rischio</p>
+          <h3>Drawdown del best run</h3>
+        </div>
+        <a
+          class="ghost-link"
+          href="{{ url_for('sweep_chart_window', sweep_name=sweep.name, focus='drawdown') }}"
+          data-no-expand="true"
+        >
+          Apri drawdown
+        </a>
       </div>
       <div class="chart-shell">
         <div class="chart-meta">
@@ -145,8 +164,17 @@
       data-detached-url="{{ url_for('sweep_chart_window', sweep_name=sweep.name, focus='ranking') }}"
     >
       <div class="panel-header">
-        <p class="eyebrow">classifica</p>
-        <h3>Top risultati ordinati</h3>
+        <div>
+          <p class="eyebrow">classifica</p>
+          <h3>Top risultati ordinati</h3>
+        </div>
+        <a
+          class="ghost-link"
+          href="{{ url_for('sweep_chart_window', sweep_name=sweep.name, focus='ranking') }}"
+          data-no-expand="true"
+        >
+          Apri ranking
+        </a>
       </div>
       <div class="chart-shell">
         <div class="chart-meta">

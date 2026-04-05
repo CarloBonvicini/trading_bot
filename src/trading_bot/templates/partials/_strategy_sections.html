@@ -1,3 +1,4 @@
+{% set strategy_badge_prefix = strategy_badge_prefix | default('strategy') %}
 {% for strategy_id, strategy in strategies.items() %}
   <section
     class="strategy-fields"
@@ -12,7 +13,13 @@
       <div class="strategy-section-chips">
         <span class="strategy-chip">Regola attiva</span>
         {% if strategy.supports_sweep %}
-          <span class="mode-badge" id="strategy-mode-badge-{{ strategy_id }}">Test singolo</span>
+          <span
+            class="mode-badge"
+            id="{{ strategy_badge_prefix }}-strategy-mode-badge-{{ strategy_id }}"
+            data-strategy-mode-badge="{{ strategy_id }}"
+          >
+            Test singolo
+          </span>
         {% endif %}
       </div>
     </div>

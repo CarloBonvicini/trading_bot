@@ -7,11 +7,22 @@
 {% block content %}
   <script id="chart-window-data" type="application/json">{{ chart.chart_payload | tojson }}</script>
   <script id="chart-strategy-lab-config" type="application/json">{{ chart.chart_lab | tojson }}</script>
+  <script id="chart-trade-table-data" type="application/json">{{ chart.trade_preview | tojson }}</script>
+  {% set layer_descriptions = {
+    "price": "Prezzo del mercato mostrato come candele.",
+    "volume": "Volumi scambiati nella stessa finestra del prezzo.",
+    "entry": "Punti di ingresso delle operazioni.",
+    "exit": "Punti di uscita delle operazioni.",
+    "strategy": "Curva equity della strategia.",
+    "benchmark": "Confronto buy and hold sullo stesso periodo.",
+    "gross": "Curva equity senza l'impatto delle fee.",
+    "drawdown": "Perdita percentuale dal massimo raggiunto."
+  } %}
 
   <section class="chart-terminal-shell">
     <section class="panel chart-terminal-topbar">
       <div class="chart-terminal-overview">
-        <p class="eyebrow">FXReplay-inspired terminal</p>
+        <p class="eyebrow">Chart sessione</p>
         <h2>{{ chart.title }}</h2>
         {% if chart.market_snapshot.has_market %}
           <div class="chart-terminal-headline">
@@ -30,133 +41,37 @@
         {% endif %}
         <div class="chart-terminal-meta-strip">
           <span>{{ chart.subtitle }}</span>
-          {% if chart.market_snapshot.timestamp_display %}
-            <span>Ultima barra <strong data-market-timestamp>{{ chart.market_snapshot.timestamp_display }}</strong></span>
-          {% endif %}
-          {% if chart.market_snapshot.volume_display %}
-            <span>Volume <strong data-market-volume>{{ chart.market_snapshot.volume_display }}</strong></span>
-          {% endif %}
         </div>
       </div>
 
       <div class="chart-terminal-actions">
         {% if chart.artifact_type == "report" %}
-          <a class="ghost-link chart-action-link" href="{{ url_for('report_overview', report_name=chart.artifact_name) }}">Overview dati</a>
-          <a class="ghost-link chart-action-link" href="{{ url_for('download_report_file', report_name=chart.artifact_name, filename='equity_curve.csv') }}">equity_curve.csv</a>
-          <a class="ghost-link chart-action-link" href="{{ url_for('download_report_file', report_name=chart.artifact_name, filename='trades.csv') }}">trades.csv</a>
+          <a class="ghost-link chart-action-link" href="{{ url_for('report_overview', report_name=chart.artifact_name) }}">Overview</a>
+          <a class="ghost-link chart-action-link" href="{{ url_for('history_home', session=chart.artifact_name) }}">Sessioni</a>
+          <a class="ghost-link chart-action-link" href="{{ url_for('download_report_file', report_name=chart.artifact_name, filename='equity_curve.csv') }}">Scarica equity</a>
+          <a class="ghost-link chart-action-link" href="{{ url_for('download_report_file', report_name=chart.artifact_name, filename='trades.csv') }}">Scarica trade</a>
         {% else %}
           <a class="ghost-link chart-action-link" href="{{ url_for('sweep_detail', sweep_name=chart.artifact_name) }}">Torna allo sweep</a>
-          <a class="ghost-link chart-action-link" href="{{ url_for('download_sweep_file', sweep_name=chart.artifact_name, filename='best_equity_curve.csv') }}">best_equity_curve.csv</a>
-          <a class="ghost-link chart-action-link" href="{{ url_for('download_sweep_file', sweep_name=chart.artifact_name, filename='best_trades.csv') }}">best_trades.csv</a>
+          <a class="ghost-link chart-action-link" href="{{ url_for('history_home', session=chart.artifact_name) }}">Sessioni</a>
+          <a class="ghost-link chart-action-link" href="{{ url_for('download_sweep_file', sweep_name=chart.artifact_name, filename='best_equity_curve.csv') }}">Scarica equity</a>
+          <a class="ghost-link chart-action-link" href="{{ url_for('download_sweep_file', sweep_name=chart.artifact_name, filename='best_trades.csv') }}">Scarica trade</a>
         {% endif %}
       </div>
     </section>
 
     <section class="chart-terminal-grid">
-      <aside class="panel chart-terminal-rail" aria-label="Chart controls">
-        <button type="button" class="terminal-rail-button is-active" data-chart-action="pan" aria-label="Pan">
-          <span>P</span>
-        </button>
-        <button type="button" class="terminal-rail-button" data-chart-action="zoom" aria-label="Zoom">
-          <span>Z</span>
-        </button>
-        <button type="button" class="terminal-rail-button" data-chart-action="reset" aria-label="Reset zoom">
-          <span>R</span>
-        </button>
-        <button type="button" class="terminal-rail-button" data-chart-action="export" aria-label="Export chart">
-          <span>PNG</span>
-        </button>
-        <button type="button" class="terminal-rail-button" data-chart-action="fullscreen" aria-label="Fullscreen">
-          <span>FS</span>
-        </button>
-      </aside>
-
-      <article class="panel chart-terminal-main">
-        <div class="chart-terminal-playerbar">
-          <div class="terminal-player-cluster">
-            <span class="terminal-toolbar-label">Replay</span>
-            <div class="terminal-chip-row">
-              <button type="button" class="terminal-chip is-active" data-playback-mode="all">Tutto subito</button>
-              <button type="button" class="terminal-chip" data-playback-mode="replay">Replay</button>
-              <button type="button" class="terminal-chip terminal-chip-icon" data-playback-action="restart" aria-label="Riavvia replay">|&lt;</button>
-              <button type="button" class="terminal-chip terminal-chip-icon" data-playback-action="step-back" aria-label="Indietro di uno step">&lt;</button>
-              <button type="button" class="terminal-chip terminal-chip-icon" data-playback-action="toggle-play" aria-label="Play o pausa">
-                <span data-playback-toggle-label>Play</span>
-              </button>
-              <button type="button" class="terminal-chip terminal-chip-icon" data-playback-action="step-forward" aria-label="Avanti di uno step">&gt;</button>
-            </div>
-          </div>
-
-          <div class="terminal-player-cluster terminal-player-cluster-grow">
-            <span class="terminal-toolbar-label">Serie dati</span>
-            <div class="terminal-player-field">
-              <input type="range" min="1" max="1" value="1" data-series-start aria-label="Inizio serie dati">
-              <div class="terminal-player-readout">
-                <strong data-series-start-label>Da 1</strong>
-                <span data-series-start-date>-</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="terminal-player-cluster">
-            <span class="terminal-toolbar-label">Candele</span>
-            <div class="terminal-player-selects">
-              <label class="terminal-select-field">
-                <span>Seq.</span>
-                <select data-segment-length aria-label="Numero di candele nella sequenza">
-                  <option value="25">25 c.</option>
-                  <option value="50">50 c.</option>
-                  <option value="100" selected>100 c.</option>
-                  <option value="200">200 c.</option>
-                  <option value="500">500 c.</option>
-                  <option value="all">Tutte</option>
-                </select>
-              </label>
-              <label class="terminal-select-field">
-                <span>Win.</span>
-                <select data-visible-window aria-label="Numero di candele visibili">
-                  <option value="25">25</option>
-                  <option value="50">50</option>
-                  <option value="100" selected>100</option>
-                  <option value="200">200</option>
-                  <option value="all">Tutte</option>
-                </select>
-              </label>
-              <label class="terminal-select-field">
-                <span>Step</span>
-                <select data-playback-step aria-label="Candele per step">
-                  <option value="1" selected>1 c.</option>
-                  <option value="2">2 c.</option>
-                  <option value="5">5 c.</option>
-                  <option value="10">10 c.</option>
-                  <option value="25">25 c.</option>
-                </select>
-              </label>
-            </div>
-          </div>
-
-          <div class="terminal-player-cluster">
-            <span class="terminal-toolbar-label">Velocita'</span>
-            <div class="terminal-speed-panel">
-              <span class="terminal-speed-badge" data-playback-speed-badge>6x/sec</span>
-              <input type="range" min="1" max="20" value="6" data-playback-speed aria-label="Velocita replay in candele per secondo">
-            </div>
-          </div>
-        </div>
-
-        <div class="terminal-player-progressbar">
-          <div class="terminal-player-progress-meta">
-            <strong data-playback-progress-label>Ultima candle</strong>
-            <span data-playback-progress-date>-</span>
-          </div>
-          <input type="range" min="1" max="1" value="1" data-playback-progress aria-label="Posizione replay">
-        </div>
-
+      <article class="panel chart-terminal-main chart-terminal-main-wide">
         <div class="chart-terminal-toolbar">
+          <div class="terminal-toolbar-group">
+            <span class="terminal-toolbar-label">Candela</span>
+            <div class="terminal-chip-row" data-candle-controls>
+            </div>
+          </div>
+
           <div class="terminal-toolbar-group">
             <span class="terminal-toolbar-label">Vista</span>
             <div class="terminal-chip-row">
-              <button type="button" class="terminal-chip is-active" data-focus-view="all">Multi panel</button>
+              <button type="button" class="terminal-chip" data-focus-view="all">Multi panel</button>
               <button type="button" class="terminal-chip" data-focus-view="price">Prezzo</button>
               <button type="button" class="terminal-chip" data-focus-view="equity">Equity</button>
               <button type="button" class="terminal-chip" data-focus-view="drawdown">Drawdown</button>
@@ -164,124 +79,235 @@
           </div>
 
           <div class="terminal-toolbar-group">
-            <span class="terminal-toolbar-label">Range</span>
+            <span class="terminal-toolbar-label">Confronti</span>
             <div class="terminal-chip-row">
-              <button type="button" class="terminal-chip" data-range-view="1d">1g</button>
-              <button type="button" class="terminal-chip" data-range-view="1w">1w</button>
-              <button type="button" class="terminal-chip" data-range-view="1m">1m</button>
-              <button type="button" class="terminal-chip" data-range-view="3m">3m</button>
-              <button type="button" class="terminal-chip" data-range-view="ytd">YTD</button>
-              <button type="button" class="terminal-chip is-active" data-range-view="all">All</button>
+              <button type="button" class="terminal-chip" data-trace-toggle="benchmark">Buy &amp; hold</button>
+              <button type="button" class="terminal-chip" data-trace-toggle="gross">Senza fee</button>
+              <button type="button" class="terminal-chip" data-trace-toggle="drawdown">Drawdown</button>
             </div>
           </div>
 
           <div class="terminal-toolbar-group">
-            <span class="terminal-toolbar-label">Layer rapidi</span>
+            <span class="terminal-toolbar-label">Indicatori</span>
             <div class="terminal-chip-row">
-              <button type="button" class="terminal-chip is-on" data-trace-toggle="benchmark">Hold</button>
-              <button type="button" class="terminal-chip is-on" data-trace-toggle="gross">Senza fee</button>
-              <button type="button" class="terminal-chip is-on" data-trace-toggle="drawdown">Risk</button>
+              <button type="button" class="terminal-chip terminal-chip-launch" data-chart-indicator-open aria-haspopup="dialog" aria-controls="chart-indicator-modal">
+                Apri pannello
+                <span class="terminal-chip-count" data-chart-indicator-count>0</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="terminal-toolbar-group">
+            <span class="terminal-toolbar-label">Azioni</span>
+            <div class="terminal-chip-row">
+              <button type="button" class="terminal-chip is-active" data-chart-action="pan">Pan</button>
+              <button type="button" class="terminal-chip" data-chart-action="zoom">Zoom</button>
+              <button type="button" class="terminal-chip" data-chart-action="reset">Reset</button>
+              <button type="button" class="terminal-chip" data-chart-action="export">Esporta</button>
+              <button type="button" class="terminal-chip" data-chart-action="fullscreen">Schermo</button>
             </div>
           </div>
         </div>
 
-        <div id="interactive-chart-root" class="interactive-chart-root interactive-chart-root-terminal" aria-label="Interactive chart"></div>
+        <div class="chart-terminal-guide" role="note" hidden>
+          <strong>Layout standard del chart.</strong>
+          <span>All'apertura mostriamo il grafico in modo più pulito. Attiva solo le linee di confronto che ti servono davvero.</span>
+        </div>
+
+        <div class="chart-signal-overlay-host" data-signal-popup-host>
+          <div id="interactive-chart-root" class="interactive-chart-root interactive-chart-root-terminal" aria-label="Interactive chart"></div>
+          <aside class="chart-signal-popup" data-signal-popup hidden>
+            <div class="chart-signal-popup-head">
+              <div class="chart-signal-popup-copy">
+                <p class="eyebrow">Segnale</p>
+                <strong data-signal-popup-title>ENTRY</strong>
+              </div>
+              <button type="button" class="ghost-link chart-action-link chart-signal-popup-copy-button" data-signal-popup-copy>Copia</button>
+            </div>
+            <pre class="chart-signal-popup-body" data-signal-popup-body></pre>
+            <p class="inline-note chart-signal-popup-status" data-signal-popup-status>Passa il mouse su un marker entry/exit per leggere il motivo del segnale.</p>
+          </aside>
+        </div>
 
         <div class="chart-terminal-statusbar">
           <span>Modo <strong data-chart-status="mode">Pan</strong></span>
-          <span>Vista <strong data-chart-status="focus">Multi panel</strong></span>
-          <span>Range <strong data-chart-status="range">All</strong></span>
-          <span>Replay <strong data-chart-status="playback">Tutto subito</strong></span>
-          <span>Velocita' <strong data-chart-status="speed">6x/sec</strong></span>
-          <span>Preview <strong data-chart-status="preview">{{ chart.chart_lab.baseline_label }}</strong></span>
-          <span>Mouse wheel per zoom, drag per navigare</span>
+          <span>Vista <strong data-chart-status="focus">Prezzo</strong></span>
+          <span>Candela <strong data-chart-status="candle">{{ chart.metadata.interval or "1d" }}</strong></span>
+          <span>Config <strong data-chart-status="preview">{{ chart.chart_lab.baseline_label }}</strong></span>
         </div>
-      </article>
 
-      <aside class="chart-terminal-sidebar">
-        <section class="panel chart-terminal-sidepanel">
-          <div class="panel-header chart-terminal-panel-header">
-            <p class="eyebrow">snapshot</p>
-            <h3>Dati chiave</h3>
+        <div class="chart-standard-strip chart-standard-strip-market chart-standard-strip-inline">
+          <div class="chart-standard-strip-head chart-standard-strip-head-inline">
+            <p class="eyebrow">mercato</p>
+            <h3>Ultima candela</h3>
           </div>
-          <div class="terminal-metric-grid">
+          <div class="chart-standard-strip-cards">
+            <article class="chart-standard-card chart-standard-card-ohlc">
+              <span>Open</span>
+              <strong data-market-open>{{ chart.market_snapshot.open_display }}</strong>
+            </article>
+            <article class="chart-standard-card chart-standard-card-ohlc">
+              <span>High</span>
+              <strong data-market-high>{{ chart.market_snapshot.high_display }}</strong>
+            </article>
+            <article class="chart-standard-card chart-standard-card-ohlc">
+              <span>Low</span>
+              <strong data-market-low>{{ chart.market_snapshot.low_display }}</strong>
+            </article>
+            <article class="chart-standard-card chart-standard-card-ohlc">
+              <span>Close</span>
+              <strong data-market-close-panel>{{ chart.market_snapshot.close_display }}</strong>
+            </article>
+            <article class="chart-standard-card chart-standard-card-ohlc">
+              <span>Volume</span>
+              <strong data-market-volume>{{ chart.market_snapshot.volume_display or "n/a" }}</strong>
+            </article>
+            <article class="chart-standard-card chart-standard-card-ohlc">
+              <span>Timestamp</span>
+              <strong data-market-timestamp>{{ chart.market_snapshot.timestamp_display or "-" }}</strong>
+            </article>
+          </div>
+        </div>
+
+        <div class="chart-standard-strip chart-standard-strip-summary">
+          <div class="chart-standard-strip-head">
+            <p class="eyebrow">snapshot</p>
+            <h3>Panoramica sessione</h3>
+          </div>
+          <div class="chart-standard-strip-cards">
             {% for card in chart.snapshot_cards %}
-              <article class="terminal-metric-card">
-                <p>{{ card.label }}</p>
+              <article class="chart-standard-card chart-standard-card-summary">
+                <span>{{ card.label }}</span>
                 <strong>{{ card.value }}</strong>
               </article>
             {% endfor %}
           </div>
-        </section>
+        </div>
+      </article>
+    </section>
 
-        <section class="panel chart-terminal-sidepanel">
-          <div class="panel-header chart-terminal-panel-header">
-            <p class="eyebrow">object tree</p>
-            <h3>Layer attivi</h3>
+    <section class="chart-indicator-modal" id="chart-indicator-modal" data-chart-indicator-modal hidden>
+      <button type="button" class="chart-indicator-modal-backdrop" data-chart-indicator-close aria-label="Chiudi indicatori"></button>
+      <div class="chart-indicator-dialog panel" role="dialog" aria-modal="true" aria-labelledby="chart-indicator-title">
+        <div class="chart-indicator-header">
+          <div class="chart-indicator-header-copy">
+            <p class="eyebrow">chart tools</p>
+            <h3 id="chart-indicator-title">Indicatori e linee del grafico</h3>
+            <p class="inline-note">Qui gestisci tutto quello che compare sul chart. Gli indicatori live vengono disegnati direttamente dentro il grafico come pannelli dedicati.</p>
           </div>
-          <div class="terminal-layer-list">
-            {% for layer in chart.layers %}
+          <button type="button" class="ghost-link chart-action-link" data-chart-indicator-close>Chiudi</button>
+        </div>
+
+        <div class="chart-indicator-search">
+          <input type="search" placeholder="Cerca linea o indicatore" data-chart-indicator-search aria-label="Cerca linea o indicatore">
+        </div>
+
+        <div class="chart-indicator-catalog">
+          <section class="chart-indicator-section">
+            <div class="chart-indicator-section-head">
+              <div>
+                <h4>Linee disponibili</h4>
+                <p class="inline-note">Attiva o disattiva prezzo, volumi, equity, confronti e segnali del test.</p>
+              </div>
+            </div>
+            <div class="terminal-layer-list chart-indicator-layer-list">
+              {% for layer in chart.layers %}
+                <button
+                  type="button"
+                  class="terminal-layer-item {% if layer.enabled %}is-on{% endif %}"
+                  data-trace-toggle="{{ layer.key }}"
+                  data-chart-indicator-item
+                  data-chart-indicator-search="{{ layer.label | lower }} {{ layer_descriptions.get(layer.key, '') | lower }}"
+                  {% if layer.locked %}data-locked="true"{% endif %}
+                >
+                  <span class="terminal-layer-swatch terminal-layer-swatch-{{ layer.key }}"></span>
+                  <span class="terminal-layer-copy">
+                    <strong>{{ layer.label }}</strong>
+                    <small>{{ layer_descriptions.get(layer.key, "Linea del grafico.") }}</small>
+                  </span>
+                  {% if layer.locked %}
+                    <small class="terminal-layer-state">base</small>
+                  {% endif %}
+                </button>
+              {% endfor %}
               <button
                 type="button"
-                class="terminal-layer-item {% if layer.enabled %}is-on{% endif %}"
-                data-trace-toggle="{{ layer.key }}"
-                {% if layer.locked %}data-locked="true"{% endif %}
+                class="terminal-layer-item"
+                data-trace-toggle="preview_entry"
+                data-preview-layer
+                data-chart-indicator-item
+                data-chart-indicator-search="preview entry ingresso preview configurazione attuale"
+                hidden
               >
-                <span class="terminal-layer-swatch terminal-layer-swatch-{{ layer.key }}"></span>
-                <span>{{ layer.label }}</span>
-                {% if layer.locked %}
-                  <small>base</small>
-                {% endif %}
+                <span class="terminal-layer-swatch terminal-layer-swatch-preview-entry"></span>
+                <span class="terminal-layer-copy">
+                  <strong>Entry preview</strong>
+                  <small>Ingresso simulato della configurazione attuale.</small>
+                </span>
+                <small class="terminal-layer-state">preview</small>
               </button>
-            {% endfor %}
-            <button type="button" class="terminal-layer-item" data-trace-toggle="preview_entry" data-preview-layer hidden>
-              <span class="terminal-layer-swatch terminal-layer-swatch-preview-entry"></span>
-              <span>Preview entry</span>
-              <small>live</small>
-            </button>
-            <button type="button" class="terminal-layer-item" data-trace-toggle="preview_exit" data-preview-layer hidden>
-              <span class="terminal-layer-swatch terminal-layer-swatch-preview-exit"></span>
-              <span>Preview exit</span>
-              <small>live</small>
-            </button>
-            <button type="button" class="terminal-layer-item" data-trace-toggle="preview_strategy" data-preview-layer hidden>
-              <span class="terminal-layer-swatch terminal-layer-swatch-preview-strategy"></span>
-              <span>Preview equity</span>
-              <small>live</small>
-            </button>
-            <button type="button" class="terminal-layer-item" data-trace-toggle="preview_drawdown" data-preview-layer hidden>
-              <span class="terminal-layer-swatch terminal-layer-swatch-preview-drawdown"></span>
-              <span>Preview drawdown</span>
-              <small>live</small>
-            </button>
-          </div>
-        </section>
+              <button
+                type="button"
+                class="terminal-layer-item"
+                data-trace-toggle="preview_exit"
+                data-preview-layer
+                data-chart-indicator-item
+                data-chart-indicator-search="preview exit uscita preview configurazione attuale"
+                hidden
+              >
+                <span class="terminal-layer-swatch terminal-layer-swatch-preview-exit"></span>
+                <span class="terminal-layer-copy">
+                  <strong>Exit preview</strong>
+                  <small>Uscita simulata della configurazione attuale.</small>
+                </span>
+                <small class="terminal-layer-state">preview</small>
+              </button>
+              <button
+                type="button"
+                class="terminal-layer-item"
+                data-trace-toggle="preview_strategy"
+                data-preview-layer
+                data-chart-indicator-item
+                data-chart-indicator-search="preview equity curva preview configurazione attuale"
+                hidden
+              >
+                <span class="terminal-layer-swatch terminal-layer-swatch-preview-strategy"></span>
+                <span class="terminal-layer-copy">
+                  <strong>Preview equity</strong>
+                  <small>Curva equity della configurazione attuale in preview.</small>
+                </span>
+                <small class="terminal-layer-state">preview</small>
+              </button>
+              <button
+                type="button"
+                class="terminal-layer-item"
+                data-trace-toggle="preview_drawdown"
+                data-preview-layer
+                data-chart-indicator-item
+                data-chart-indicator-search="preview drawdown rischio preview configurazione attuale"
+                hidden
+              >
+                <span class="terminal-layer-swatch terminal-layer-swatch-preview-drawdown"></span>
+                <span class="terminal-layer-copy">
+                  <strong>Preview drawdown</strong>
+                  <small>Drawdown della configurazione attuale in preview.</small>
+                </span>
+                <small class="terminal-layer-state">preview</small>
+              </button>
+            </div>
+          </section>
 
-        <section class="panel chart-terminal-sidepanel">
-          <div class="panel-header chart-terminal-panel-header">
-            <p class="eyebrow">ohlc</p>
-            <h3>Ultima barra</h3>
-          </div>
-          <div class="terminal-ohlc-grid">
-            <article class="terminal-ohlc-card">
-              <span>Open</span>
-              <strong data-market-open>{{ chart.market_snapshot.open_display }}</strong>
-            </article>
-            <article class="terminal-ohlc-card">
-              <span>High</span>
-              <strong data-market-high>{{ chart.market_snapshot.high_display }}</strong>
-            </article>
-            <article class="terminal-ohlc-card">
-              <span>Low</span>
-              <strong data-market-low>{{ chart.market_snapshot.low_display }}</strong>
-            </article>
-            <article class="terminal-ohlc-card">
-              <span>Close</span>
-              <strong data-market-close-panel>{{ chart.market_snapshot.close_display }}</strong>
-            </article>
-          </div>
-        </section>
-      </aside>
+          <section class="chart-indicator-section chart-indicator-section-note">
+            <div class="chart-indicator-note-card">
+              <h4>Indicatori tecnici</h4>
+              <p>Questo e' il punto in cui aggiungeremo SMA, EMA, RSI, MACD, Bollinger e gli altri indicatori del grafico.</p>
+              <p class="inline-note">Per ora da qui controlli con chiarezza tutte le linee gia' supportate dal chart.</p>
+            </div>
+          </section>
+        </div>
+
+        <p class="chart-indicator-empty inline-note" data-chart-indicator-empty hidden>Nessun risultato per questa ricerca.</p>
+      </div>
     </section>
 
     <section class="chart-terminal-live-grid">
@@ -291,11 +317,12 @@
             <p class="eyebrow">chart lab</p>
             <h3>Attiva strategie live sul grafico</h3>
           </div>
-          <button type="button" class="ghost-link chart-action-link" data-chart-preview-reset>Ripristina sistema salvato</button>
+          <button type="button" class="ghost-link chart-action-link" data-chart-preview-reset>Ripristina setup iniziale</button>
         </div>
         <p class="inline-note">
-          Qui il report resta il baseline. Le regole che attivi sotto generano una preview live sullo stesso dataset del grafico,
-          con overlay immediato e confronto diretto contro {{ chart.chart_lab.baseline_label }}.
+          Qui imposti la configurazione live da provare sul grafico.
+          Il setup iniziale e' <strong>{{ chart.chart_lab.baseline_label }}</strong>, ma tutti i confronti e tutti i delta della schermata
+          sono sempre misurati contro il benchmark buy &amp; hold sullo stesso simbolo e nello stesso periodo.
         </p>
 
         <div class="chart-live-toolbar">
@@ -309,7 +336,7 @@
           </label>
           <div class="chart-live-status">
             <span class="terminal-toolbar-label">stato preview</span>
-            <strong data-live-preview-status>Baseline caricato. Modifica i toggle per vedere il delta live.</strong>
+            <strong data-live-preview-status>Setup iniziale caricato. Modifica i toggle per confrontarti col buy &amp; hold.</strong>
           </div>
         </div>
 
@@ -376,13 +403,17 @@
       <article class="panel chart-terminal-live-preview">
         <div class="panel-header chart-terminal-panel-header">
           <div>
-            <p class="eyebrow">delta live</p>
-            <h3>Preview vs sistema salvato</h3>
+            <p class="eyebrow">confronto live</p>
+            <h3>Confronto con il buy &amp; hold</h3>
           </div>
           <span class="strategy-chip strategy-chip-accent" data-live-preview-badge>{{ chart.chart_lab.baseline_label }}</span>
         </div>
         <p class="inline-note" data-live-rule-summary>
-          Sistema attuale: {{ chart.chart_lab.baseline_label }}.
+          Configurazione attuale: {{ chart.chart_lab.baseline_label }}.
+        </p>
+        <p class="inline-note">
+          Tutti i valori differenziali qui sotto sono calcolati contro il benchmark buy &amp; hold
+          sullo stesso simbolo e nello stesso periodo.
         </p>
         <div class="terminal-metric-grid chart-live-comparison-grid" data-live-comparison-grid>
           {% for card in chart.chart_lab.comparison_cards %}
@@ -393,42 +424,118 @@
             </article>
           {% endfor %}
         </div>
-
-        <div class="panel-header chart-terminal-panel-header chart-live-preview-subheader">
-          <div>
-            <p class="eyebrow">preview trade tape</p>
-            <h3>Prime 10 operazioni live</h3>
-          </div>
-        </div>
-        <div data-live-trade-preview>
-          {% if chart.chart_lab.trade_preview %}
-            {% set trades = chart.chart_lab.trade_preview %}
-            {% include "partials/_trade_preview_table.html" %}
-          {% else %}
-            <div class="empty-state">
-              <p>Nessun trade disponibile nella preview iniziale.</p>
-            </div>
-          {% endif %}
-        </div>
       </article>
+    </section>
+
+    <section class="panel chart-terminal-validation">
+      <div class="panel-header chart-terminal-panel-header">
+        <div>
+          <p class="eyebrow">verifica risultati</p>
+          <h3>Lettura e coerenza del risultato</h3>
+        </div>
+        <p class="inline-note">
+          Qui capisci se il risultato e' leggibile e se summary, equity curve e trade file sono coerenti tra loro.
+        </p>
+      </div>
+
+      <div class="chart-validation-layout">
+        <section class="chart-validation-block">
+          <div class="panel-header chart-terminal-panel-header chart-live-preview-subheader">
+            <div>
+              <p class="eyebrow">lettura rapida</p>
+              <h3>Metriche operative</h3>
+            </div>
+            <p class="inline-note">Per leggere al volo attivita', win rate, pnl medio e durata media.</p>
+          </div>
+          <div class="terminal-metric-grid chart-validation-grid" data-live-validation-grid>
+            {% for card in chart.chart_lab.validation_cards %}
+              <article class="terminal-metric-card report-tone-{{ card.tone or 'neutral' }}">
+                <p>{{ card.label }}</p>
+                <strong>{{ card.value }}</strong>
+                <span>{{ card.hint }}</span>
+              </article>
+            {% endfor %}
+          </div>
+        </section>
+
+        <section class="chart-validation-block">
+          <div class="panel-header chart-terminal-panel-header chart-live-preview-subheader">
+            <div>
+              <p class="eyebrow">check interni</p>
+              <h3>Controlli di coerenza</h3>
+            </div>
+            <p class="inline-note">Se trade count, equity finale e benchmark finale tornano, il report e' internamente coerente.</p>
+          </div>
+          <div class="chart-validation-check-list" data-live-validation-checks>
+            {% for check in chart.chart_lab.validation_checks %}
+              <article class="chart-validation-check chart-validation-check-{{ check.status_class }}">
+                <div class="chart-validation-check-head">
+                  <strong>{{ check.label }}</strong>
+                  <span class="chart-validation-check-badge chart-validation-check-badge-{{ check.status_class }}">{{ check.status_label }}</span>
+                </div>
+                <p>{{ check.value }}</p>
+                <span>{{ check.hint }}</span>
+              </article>
+            {% endfor %}
+          </div>
+        </section>
+      </div>
     </section>
 
     <section class="panel chart-terminal-trades">
       <div class="panel-header chart-terminal-panel-header">
         <div>
           <p class="eyebrow">trade tape</p>
-          <h3>Prime 30 operazioni</h3>
+          <h3>Operazioni del report</h3>
         </div>
-        <p class="inline-note">Tabella pensata per leggere win, loss e durata intraday al volo.</p>
+        <p class="inline-note">Ordine cronologico, massimo 50 righe per pagina, con navigazione tra le finestre.</p>
       </div>
-      {% if chart.trade_preview %}
-        {% set trades = chart.trade_preview %}
-        {% include "partials/_trade_preview_table.html" %}
-      {% else %}
-        <div class="empty-state">
-          <p>Nessun trade disponibile per questo chart.</p>
+      <div class="chart-trade-tape-controls" data-chart-trade-controls hidden>
+        <div class="chart-trade-tape-summary" data-chart-trade-summary></div>
+        <div class="chart-trade-tape-pagination">
+          <button type="button" class="terminal-chip" data-chart-trade-prev>Precedenti 50</button>
+          <span class="inline-note" data-chart-trade-page-label>Pagina 1 / 1</span>
+          <button type="button" class="terminal-chip" data-chart-trade-next>Successive 50</button>
         </div>
-      {% endif %}
+      </div>
+      <div data-chart-trade-table></div>
+    </section>
+
+    <section class="chart-trade-detail-modal" data-chart-trade-detail-modal hidden>
+      <button type="button" class="chart-trade-detail-backdrop" data-chart-trade-detail-close aria-label="Chiudi dettaglio operazione"></button>
+      <div class="chart-trade-detail-dialog panel" role="dialog" aria-modal="true" aria-labelledby="chart-trade-detail-title">
+        <div class="chart-trade-detail-head">
+          <div>
+            <p class="eyebrow">dettaglio operazione</p>
+            <h3 id="chart-trade-detail-title" data-chart-trade-detail-title>Operazione</h3>
+          </div>
+          <button type="button" class="ghost-link chart-action-link" data-chart-trade-detail-close>Chiudi</button>
+        </div>
+
+        <div class="terminal-metric-grid chart-trade-detail-summary" data-chart-trade-detail-summary></div>
+
+        <div class="chart-trade-detail-grid">
+          <section class="chart-trade-detail-block">
+            <div class="panel-header chart-terminal-panel-header chart-live-preview-subheader">
+              <div>
+                <p class="eyebrow">attivazione</p>
+                <h3>Perché è entrata</h3>
+              </div>
+            </div>
+            <pre class="chart-trade-detail-body" data-chart-trade-detail-entry></pre>
+          </section>
+
+          <section class="chart-trade-detail-block">
+            <div class="panel-header chart-terminal-panel-header chart-live-preview-subheader">
+              <div>
+                <p class="eyebrow">chiusura</p>
+                <h3>Perché è uscita</h3>
+              </div>
+            </div>
+            <pre class="chart-trade-detail-body" data-chart-trade-detail-exit></pre>
+          </section>
+        </div>
+      </div>
     </section>
   </section>
 {% endblock %}

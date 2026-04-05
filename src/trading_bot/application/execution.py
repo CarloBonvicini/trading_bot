@@ -55,7 +55,7 @@ def run_backtest_request(
     download_data: Callable[..., pd.DataFrame] = download_price_data,
 ) -> CompletedBacktest:
     data = download_data(
-        symbol=backtest_request.symbol,
+        symbol=backtest_request.data_symbol,
         start=backtest_request.start,
         end=backtest_request.end,
         interval=backtest_request.interval,
@@ -82,7 +82,7 @@ def run_sma_sweep_request(
         raise ValueError(f"Ordinamento sweep non supportato: {sweep_request.sort_by}.")
 
     data = download_data(
-        symbol=sweep_request.symbol,
+        symbol=sweep_request.data_symbol,
         start=sweep_request.start,
         end=sweep_request.end,
         interval=sweep_request.interval,

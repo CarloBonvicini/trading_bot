@@ -5,9 +5,20 @@ document.addEventListener("DOMContentLoaded", () => {
   const EXPANDED_PANEL_GAP = 16;
   const EXPANDED_PANEL_GAP_COMPACT = 8;
 
+  function normalizeTarget(target) {
+    if (target instanceof Element) {
+      return target;
+    }
+    return target?.parentElement || null;
+  }
+
   function isInteractiveTarget(target) {
+    const element = normalizeTarget(target);
+    if (!element) {
+      return false;
+    }
     return Boolean(
-      target.closest(
+      element.closest(
         "a, button, input, label, select, textarea, summary, [data-no-expand], [data-strategy-toggle-card], [data-chart-strategy-card]",
       ),
     );
@@ -60,15 +71,10 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function openDetachedInTab(detachedUrl) {
-    const link = document.createElement("a");
-    link.href = detachedUrl;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.dataset.noExpand = "true";
-    link.style.display = "none";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    const newWindow = window.open(detachedUrl, "_blank", "noopener,noreferrer");
+    if (!newWindow) {
+      window.location.assign(detachedUrl);
+    }
   }
 
   function openPanel(panel) {

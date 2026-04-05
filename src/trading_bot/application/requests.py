@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Mapping
 
 from trading_bot.application.constants import INTERVAL_OPTIONS, RULE_LOGIC_OPTIONS, STRATEGY_OPTIONS
+from trading_bot.data import resolve_market_data_symbol
 from trading_bot.errors import FormValidationError
 from trading_bot.strategies import STRATEGY_SPECS, parse_strategy_parameters
 
@@ -59,6 +60,7 @@ class StrategyRuleSelection:
 @dataclass(frozen=True)
 class BacktestRequest:
     symbol: str
+    data_symbol: str
     start: str
     end: str
     interval: str = "1d"
@@ -73,6 +75,7 @@ class BacktestRequest:
     @classmethod
     def from_mapping(cls, raw: Mapping[str, object]) -> "BacktestRequest":
         symbol = _text_value(raw, "symbol").upper()
+        data_symbol = resolve_market_data_symbol(symbol)
         start = _text_value(raw, "start")
         end = _text_value(raw, "end")
         interval = _text_value(raw, "interval", "1d")
@@ -128,6 +131,7 @@ class BacktestRequest:
 
         return cls(
             symbol=symbol,
+            data_symbol=data_symbol,
             start=start,
             end=end,
             interval=interval,
@@ -169,6 +173,7 @@ class BacktestRequest:
     def metadata(self) -> dict[str, object]:
         return {
             "symbol": self.symbol,
+            "data_symbol": self.data_symbol,
             "start": self.start,
             "end": self.end,
             "interval": self.interval,
@@ -247,6 +252,7 @@ class IntegerRange:
 @dataclass(frozen=True)
 class SweepRequest:
     symbol: str
+    data_symbol: str
     start: str
     end: str
     interval: str = "1d"
@@ -276,6 +282,7 @@ class SweepRequest:
 
         return cls(
             symbol=base_request.symbol,
+            data_symbol=base_request.data_symbol,
             start=base_request.start,
             end=base_request.end,
             interval=base_request.interval,
@@ -302,6 +309,7 @@ class SweepRequest:
     def metadata(self) -> dict[str, object]:
         return {
             "symbol": self.symbol,
+            "data_symbol": self.data_symbol,
             "start": self.start,
             "end": self.end,
             "interval": self.interval,

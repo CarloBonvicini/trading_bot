@@ -19,6 +19,7 @@
               Apri il Chart Lab
             </a>
             <div class="report-file-links">
+              <a class="ghost-link" href="{{ url_for('history_home', session=report.name) }}">Sessioni</a>
               <a class="ghost-link" href="{{ url_for('download_report_file', report_name=report.name, filename='summary.json') }}">summary.json</a>
               <a class="ghost-link" href="{{ url_for('download_report_file', report_name=report.name, filename='equity_curve.csv') }}">equity_curve.csv</a>
               <a class="ghost-link" href="{{ url_for('download_report_file', report_name=report.name, filename='trades.csv') }}">trades.csv</a>
