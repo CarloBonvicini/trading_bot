@@ -106,15 +106,15 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     if (labels.length > 1) {
-      ruleSummaryNode.textContent = `Configurazione attuale: ${previewLabel}. Strategie attive: ${labels.join(" + ")} con logica ${descriptor}.`;
+      ruleSummaryNode.textContent = `Config: ${previewLabel} · ${labels.join(" + ")} (${descriptor})`;
       return;
     }
-    ruleSummaryNode.textContent = `Configurazione attuale: ${previewLabel}. Strategia attiva: ${labels[0] || "nessuna"}.`;
+    ruleSummaryNode.textContent = `Config: ${previewLabel} · ${labels[0] || "nessuna"}`;
   }
 
   function schedulePreview() {
     if (statusNode) {
-      statusNode.textContent = "Aggiorno la preview sul grafico...";
+      statusNode.textContent = "Aggiornamento preview...";
     }
     window.clearTimeout(debounceTimer);
     debounceTimer = window.setTimeout(runPreview, 260);
@@ -178,7 +178,7 @@ document.addEventListener("DOMContentLoaded", () => {
       badgeNode.textContent = data.preview_label || "Configurazione attuale";
     }
     if (statusNode) {
-      statusNode.textContent = `Grafico aggiornato sulla configurazione attuale: ${data.preview_label || "configurazione attuale"}.`;
+      statusNode.textContent = `Preview: ${data.preview_label || "configurazione attuale"}`;
     }
     syncRuleSummary(data.preview_label || "Configurazione attuale");
     window.tradingBotChartTerminal?.applyPreview(data.chart_payload || {}, data.preview_label || "Configurazione attuale");
@@ -213,7 +213,7 @@ document.addEventListener("DOMContentLoaded", () => {
       badgeNode.textContent = config.baseline_label || "Setup iniziale del report";
     }
     if (statusNode) {
-      statusNode.textContent = "Setup iniziale ripristinato. Il confronto resta sempre contro il buy & hold.";
+      statusNode.textContent = "Setup iniziale ripristinato.";
     }
     syncRuleSummary(config.baseline_label || "Setup iniziale del report");
     window.tradingBotChartTerminal?.clearPreview();
@@ -240,7 +240,6 @@ document.addEventListener("DOMContentLoaded", () => {
       <article class="terminal-metric-card">
         <p>${escapeHtml(card.label ?? "")}</p>
         <strong>${escapeHtml(card.value ?? "")}</strong>
-        <span>${escapeHtml(card.hint ?? "")}</span>
       </article>
     `).join("");
   }

@@ -102,12 +102,14 @@ function routeForHomeTab(tabName, pageConfig) {
 
 function renderSessionPreview(previewChart) {
   const chartNode = document.getElementById("session-preview-chart");
+  const legendNode = document.getElementById("session-preview-legend");
   if (!chartNode || !previewChart) {
     return;
   }
 
   chartNode.setAttribute("viewBox", `0 0 ${previewChart.width} ${previewChart.height}`);
   chartNode.replaceChildren();
+  legendNode?.replaceChildren();
 
   (previewChart.series || []).forEach((series) => {
     const polyline = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
@@ -118,6 +120,18 @@ function renderSessionPreview(previewChart) {
     polyline.setAttribute("stroke-linecap", "round");
     polyline.setAttribute("stroke-linejoin", "round");
     chartNode.appendChild(polyline);
+
+    if (legendNode) {
+      const item = document.createElement("span");
+      item.className = "mini-chart-legend-item";
+
+      const swatch = document.createElement("span");
+      swatch.className = "mini-chart-legend-swatch";
+      swatch.style.setProperty("--legend-color", series.color || "#3b82f6");
+
+      item.append(swatch, series.label || "Serie");
+      legendNode.appendChild(item);
+    }
   });
 }
 

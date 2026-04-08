@@ -120,12 +120,17 @@
             <div class="chart-signal-popup-head">
               <div class="chart-signal-popup-copy">
                 <p class="eyebrow">Segnale</p>
-                <strong data-signal-popup-title>ENTRY</strong>
+                <strong data-signal-popup-title>Entry + Exit</strong>
               </div>
               <button type="button" class="ghost-link chart-action-link chart-signal-popup-copy-button" data-signal-popup-copy>Copia</button>
             </div>
-            <pre class="chart-signal-popup-body" data-signal-popup-body></pre>
-            <p class="inline-note chart-signal-popup-status" data-signal-popup-status>Passa il mouse su un marker entry/exit per leggere il motivo del segnale.</p>
+            <div class="terminal-chip-row chart-signal-popup-tabs" role="tablist" aria-label="Dettaglio segnale">
+              <button type="button" class="terminal-chip chart-signal-popup-tab is-active" data-signal-popup-tab="entry" aria-selected="true">Entry</button>
+              <button type="button" class="terminal-chip chart-signal-popup-tab" data-signal-popup-tab="exit" aria-selected="false">Exit</button>
+            </div>
+            <pre class="chart-signal-popup-body" data-signal-popup-entry></pre>
+            <pre class="chart-signal-popup-body" data-signal-popup-exit hidden></pre>
+            <p class="inline-note chart-signal-popup-status" data-signal-popup-status>Clicca un marker entry/exit per aprire il dettaglio della coppia trade.</p>
           </aside>
         </div>
 
@@ -317,13 +322,8 @@
             <p class="eyebrow">chart lab</p>
             <h3>Attiva strategie live sul grafico</h3>
           </div>
-          <button type="button" class="ghost-link chart-action-link" data-chart-preview-reset>Ripristina setup iniziale</button>
+          <button type="button" class="ghost-link chart-action-link" data-chart-preview-reset>Ripristina</button>
         </div>
-        <p class="inline-note">
-          Qui imposti la configurazione live da provare sul grafico.
-          Il setup iniziale e' <strong>{{ chart.chart_lab.baseline_label }}</strong>, ma tutti i confronti e tutti i delta della schermata
-          sono sempre misurati contro il benchmark buy &amp; hold sullo stesso simbolo e nello stesso periodo.
-        </p>
 
         <div class="chart-live-toolbar">
           <label class="terminal-select-field">
@@ -335,8 +335,7 @@
             </select>
           </label>
           <div class="chart-live-status">
-            <span class="terminal-toolbar-label">stato preview</span>
-            <strong data-live-preview-status>Setup iniziale caricato. Modifica i toggle per confrontarti col buy &amp; hold.</strong>
+            <strong data-live-preview-status>Pronto</strong>
           </div>
         </div>
 
@@ -371,7 +370,6 @@
               <div class="section-head">
                 <div>
                   <div class="section-label">{{ strategy.label }}</div>
-                  <p class="inline-note">{{ strategy.description }}</p>
                 </div>
               </div>
               <div class="input-grid">
@@ -409,18 +407,13 @@
           <span class="strategy-chip strategy-chip-accent" data-live-preview-badge>{{ chart.chart_lab.baseline_label }}</span>
         </div>
         <p class="inline-note" data-live-rule-summary>
-          Configurazione attuale: {{ chart.chart_lab.baseline_label }}.
-        </p>
-        <p class="inline-note">
-          Tutti i valori differenziali qui sotto sono calcolati contro il benchmark buy &amp; hold
-          sullo stesso simbolo e nello stesso periodo.
+          Config: {{ chart.chart_lab.baseline_label }}.
         </p>
         <div class="terminal-metric-grid chart-live-comparison-grid" data-live-comparison-grid>
           {% for card in chart.chart_lab.comparison_cards %}
             <article class="terminal-metric-card">
               <p>{{ card.label }}</p>
               <strong>{{ card.value }}</strong>
-              <span>{{ card.hint }}</span>
             </article>
           {% endfor %}
         </div>

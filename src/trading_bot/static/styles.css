@@ -888,6 +888,34 @@ select:focus {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(243, 239, 229, 0.85));
 }
 
+.mini-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem 0.7rem;
+  margin-top: 0.55rem;
+}
+
+.mini-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.24rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid rgba(163, 177, 204, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.mini-chart-legend-swatch {
+  --legend-color: #3b82f6;
+  width: 0.72rem;
+  height: 0.36rem;
+  border-radius: 999px;
+  background: var(--legend-color);
+  box-shadow: 0 0 0 1px rgba(5, 10, 18, 0.28);
+}
+
 .chart-meta,
 .chart-legend {
   display: flex;
@@ -1291,6 +1319,39 @@ td {
   min-height: 760px;
 }
 
+.chart-error {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 300px;
+  padding: 1.4rem;
+  background: rgba(15, 21, 32, 0.95);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  text-align: center;
+}
+.chart-error strong {
+  display: block;
+  margin-bottom: 0.75rem;
+  font-size: 1.1rem;
+}
+.chart-error pre {
+  margin-top: 0.75rem;
+  width: 100%;
+  max-width: 560px;
+  overflow-x: auto;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .chart-trades-panel {
   margin-top: 1.2rem;
 }
@@ -1478,6 +1539,29 @@ td {
 .chart-terminal-body .ghost-link {
   background: rgba(255, 255, 255, 0.03);
   border-color: rgba(171, 184, 214, 0.16);
+}
+
+.chart-terminal-body input,
+.chart-terminal-body select,
+.chart-terminal-body textarea {
+  background: rgba(11, 16, 28, 0.92);
+  border-color: rgba(171, 184, 214, 0.2);
+  color: var(--ink);
+}
+
+.chart-terminal-body input:focus,
+.chart-terminal-body select:focus,
+.chart-terminal-body textarea:focus {
+  outline: 2px solid rgba(38, 208, 168, 0.24);
+  border-color: rgba(38, 208, 168, 0.62);
+}
+
+.chart-terminal-body input:disabled,
+.chart-terminal-body select:disabled,
+.chart-terminal-body textarea:disabled {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(171, 184, 214, 0.14);
+  color: #7f8ba6;
 }
 
 .chart-terminal-shell {
@@ -1754,12 +1838,25 @@ td {
   transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
 }
 
+.terminal-chip:disabled,
+.terminal-chip.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .terminal-chip:hover,
 .terminal-chip.is-active,
 .terminal-chip.is-on {
   border-color: rgba(96, 165, 250, 0.36);
   background: rgba(96, 165, 250, 0.12);
   color: #dceafe;
+}
+
+.terminal-chip:disabled:hover,
+.terminal-chip.is-disabled:hover {
+  border-color: rgba(171, 184, 214, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink);
 }
 
 .terminal-chip-launch {
@@ -1862,6 +1959,14 @@ td {
 
 .chart-signal-popup-copy-button {
   flex-shrink: 0;
+}
+
+.chart-signal-popup-tabs {
+  gap: 0.45rem;
+}
+
+.chart-signal-popup-tab {
+  padding: 0.32rem 0.68rem;
 }
 
 .chart-signal-popup-body {
@@ -2395,8 +2500,8 @@ td {
   gap: 0.65rem;
   padding: 0.72rem;
   border-radius: 16px;
-  border: 1px solid rgba(171, 184, 214, 0.1);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(171, 184, 214, 0.14);
+  background: linear-gradient(180deg, rgba(11, 17, 28, 0.98), rgba(7, 10, 17, 0.98));
 }
 
 .chart-live-parameters.is-active {
@@ -2405,6 +2510,10 @@ td {
 
 .chart-live-parameters .input-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.chart-live-parameters label span {
+  color: #9aa8c7;
 }
 
 .chart-live-comparison-grid {
@@ -2727,6 +2836,25 @@ td {
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(163, 177, 204, 0.12);
   color: var(--ink);
+}
+
+.home-dashboard-body select {
+  color-scheme: dark;
+}
+
+.home-dashboard-body select option,
+.home-dashboard-body select optgroup {
+  background: #0a1220;
+  color: #e8efff;
+}
+
+.home-dashboard-body select option:checked {
+  background: #2563eb;
+  color: #f8fbff;
+}
+
+.home-dashboard-body select option:disabled {
+  color: #7f8ba6;
 }
 
 .home-dashboard-body input:focus,

@@ -668,37 +668,34 @@ def build_live_comparison_cards(
 
     return [
         {
-            "label": "Rendimento configurazione attuale",
+            "label": "Rendimento attuale",
             "value": f"{preview_return:.2f}%",
-            "hint": f"Strategie attive: {preview_label}",
+            "hint": preview_label,
         },
         {
             "label": "Rendimento buy & hold",
             "value": f"{benchmark_return:.2f}%",
-            "hint": "Benchmark passivo sullo stesso simbolo e nello stesso periodo.",
+            "hint": "",
         },
         {
-            "label": "Differenza di rendimento vs buy & hold",
+            "label": "Delta rendimento",
             "value": f"{(preview_return - benchmark_return):+.2f}%",
-            "hint": "Positivo = la configurazione attuale rende di piu' del buy & hold.",
+            "hint": "",
         },
         {
-            "label": "Differenza drawdown vs buy & hold",
+            "label": "Delta drawdown",
             "value": f"{(preview_drawdown - benchmark_drawdown):+.2f}%",
-            "hint": "Positivo = la configurazione attuale ha un drawdown meno pesante del buy & hold.",
+            "hint": "",
         },
         {
-            "label": "Differenza equity finale vs buy & hold",
+            "label": "Delta equity finale",
             "value": _format_signed_number(preview_final_equity - benchmark_final_equity, decimals=2),
-            "hint": (
-                f"Equity finale strategia {_format_number_metric(preview_final_equity)} "
-                f"vs buy & hold {_format_number_metric(benchmark_final_equity)}."
-            ),
+            "hint": "",
         },
         {
-            "label": "Fee pagate dalla configurazione attuale",
+            "label": "Fee",
             "value": _format_number_metric(preview_fees),
-            "hint": "Il benchmark buy & hold non usa l'operativita' della strategia per questo confronto.",
+            "hint": "",
         },
     ]
 

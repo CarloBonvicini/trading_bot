@@ -2,7 +2,25 @@
   const dataNode = document.getElementById("chart-window-data");
   const tradeTableDataNode = document.getElementById("chart-trade-table-data");
   const root = document.getElementById("interactive-chart-root");
-  if (!dataNode || !root || typeof Plotly === "undefined") return;
+  if (!dataNode || !root || typeof Plotly === "undefined") {
+    const diagnostics = {
+      dataNode: Boolean(dataNode),
+      root: Boolean(root),
+      plotlyLoaded: typeof Plotly !== "undefined",
+      plotlyVersion: typeof Plotly !== "undefined" ? Plotly.version : null,
+    };
+    console.error("Chart initialization failed", diagnostics);
+    if (root) {
+      root.innerHTML = `
+        <div class="chart-error">
+          <strong>Impossibile caricare il grafico</strong>
+          <p>Controlla la console per gli errori JS.</p>
+          <pre>${Object.entries(diagnostics).map(([k, v]) => `${k}: ${v}`).join("\n")}</pre>
+        </div>
+      `;
+    }
+    return;
+  }
 
   const intervalDefinitions = {
     "1m": { key: "1m", label: "1m", unit: "minute", minutes: 1 },
@@ -11,15 +29,37 @@
     "15m": { key: "15m", label: "15m", unit: "minute", minutes: 15 },
     "30m": { key: "30m", label: "30m", unit: "minute", minutes: 30 },
     "1h": { key: "1h", label: "1h", unit: "minute", minutes: 60 },
+    "4h": { key: "4h", label: "4h", unit: "minute", minutes: 240 },
     "90m": { key: "90m", label: "90m", unit: "minute", minutes: 90 },
     "1d": { key: "1d", label: "1g", unit: "day", minutes: 24 * 60 },
     "1wk": { key: "1wk", label: "1w", unit: "week", minutes: 7 * 24 * 60 },
     "1mo": { key: "1mo", label: "1mo", unit: "month", minutes: 30 * 24 * 60 },
   };
+  const candleControlOrder = ["1m", "2m", "5m", "30m", "1h", "4h", "1d", "1wk"];
   const rawPayload = normalizePayload(JSON.parse(dataNode.textContent || "{}"));
   const rawTradeRows = JSON.parse(tradeTableDataNode?.textContent || "[]");
   const tradeRows = Array.isArray(rawTradeRows) ? rawTradeRows : [];
-  if (!rawPayload.dates.length) return;
+  const tradeIndexByEntryRaw = new Map();
+  const tradeIndexByExitRaw = new Map();
+  tradeRows.forEach((trade, index) => {
+    const entryKey = normalizeSignalTimestamp(trade?.entry_raw);
+    const exitKey = normalizeSignalTimestamp(trade?.exit_raw);
+    if (entryKey) tradeIndexByEntryRaw.set(entryKey, index);
+    if (exitKey) tradeIndexByExitRaw.set(exitKey, index);
+  });
+  if (!rawPayload.dates.length) {
+    console.warn("Chart payload has no dates", rawPayload);
+    return;
+  }
+  console.debug("Chart payload summary", {
+    interval: rawPayload.interval,
+    dates: rawPayload.dates.length,
+    hasCandles: rawPayload.market?.has_candles,
+    markers: {
+      entries: rawPayload.entry_markers?.x?.length,
+      exits: rawPayload.exit_markers?.x?.length,
+    },
+  });
 
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -53,7 +93,9 @@
     signalPopupHost: $("[data-signal-popup-host]"),
     signalPopup: $("[data-signal-popup]"),
     signalPopupTitle: $("[data-signal-popup-title]"),
-    signalPopupBody: $("[data-signal-popup-body]"),
+    signalPopupEntry: $("[data-signal-popup-entry]"),
+    signalPopupExit: $("[data-signal-popup-exit]"),
+    signalPopupTabs: $$("[data-signal-popup-tab]"),
     signalPopupStatus: $("[data-signal-popup-status]"),
     signalPopupCopy: $("[data-signal-popup-copy]"),
     tradeTable: $("[data-chart-trade-table]"),
@@ -68,9 +110,16 @@
     tradeDetailEntry: $("[data-chart-trade-detail-entry]"),
     tradeDetailExit: $("[data-chart-trade-detail-exit]"),
   };
-  const chartPanel = root.closest(".chart-terminal-main");
+  const hasWindowControl = Boolean(dom.win);
   const baselinePreviewLabel = document.querySelector('[data-chart-status="preview"]')?.textContent || "Setup iniziale del report";
   const tradePageSize = 50;
+
+  window.addEventListener("error", (event) => {
+    console.error("Chart window JS error", event.error || event.message, event);
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    console.error("Chart window unhandled rejection", event.reason, event);
+  });
 
   const focusProfiles = {
     all: { price: 5.2, indicator: 1.55, equity: 2.05, drawdown: 1.25 },
@@ -78,16 +127,19 @@
     equity: { price: 4.4, indicator: 1.45, equity: 3.1, drawdown: 0.75 },
     drawdown: { price: 3.9, indicator: 1.35, equity: 2.35, drawdown: 1.9 },
   };
-  const supportedCandleOptions = buildSupportedCandleOptions(rawPayload.interval);
+  const candleControlOptions = buildSupportedCandleOptions(rawPayload.interval);
+  const supportedCandleOptions = candleControlOptions.filter((option) => option.enabled);
+  const fallbackCandleOption = intervalDefinitions[canonicalIntervalKey(rawPayload.interval)] || intervalDefinitions["1d"];
+  const datasetOptions = supportedCandleOptions.length ? supportedCandleOptions : [{ ...fallbackCandleOption, enabled: true }];
   const datasetCatalog = new Map(
-    supportedCandleOptions.map((option) => [
+    datasetOptions.map((option) => [
       option.key,
       option.key === rawPayload.interval ? rawPayload : aggregatePayload(rawPayload, option.key),
     ]),
   );
   const defaultCandle = datasetCatalog.has(rawPayload.interval)
     ? rawPayload.interval
-    : supportedCandleOptions[0]?.key || rawPayload.interval;
+    : datasetOptions[0]?.key || rawPayload.interval;
   const initialDataset = datasetCatalog.get(defaultCandle) || rawPayload;
   const initialTotal = initialDataset.dates.length;
   const traceIndexes = {
@@ -103,6 +155,8 @@
     preview_exit: 9,
     preview_strategy: 10,
     preview_drawdown: 11,
+    selected_entry: 12,
+    selected_exit: 13,
   };
   const state = {
     focus: focusProfiles[rawPayload.focus] ? rawPayload.focus : "price",
@@ -112,7 +166,7 @@
     mode: "all",
     start: 0,
     seg: "all",
-    win: "all",
+    win: hasWindowControl ? coerceVisibleWindowForInterval(defaultCandle, parseLen(dom.win.value)) : "all",
     step: 1,
     speed: 6,
     progress: Math.max(initialTotal - 1, 0),
@@ -121,7 +175,7 @@
       volume: false,
       entry: hasValues(rawPayload.entry_markers?.x),
       exit: hasValues(rawPayload.exit_markers?.x),
-      strategy: hasValues(rawPayload.equity?.strategy),
+      strategy: false,
       benchmark: false,
       gross: false,
       drawdown: false,
@@ -147,20 +201,74 @@
       y2Range: null,
       y3Range: null,
     },
+    selectedTradeIndex: -1,
   };
-  let signalPopupHideTimer = null;
   let signalPopupText = "";
+  let signalPopupTab = "entry";
+  let signalPopupPanels = { entry: "", exit: "" };
   let tradePage = 0;
 
   renderCandleControls();
   syncInputs();
   renderTradeTape();
 
-  Plotly.newPlot(root, buildTraces(), buildLayout(), buildConfig()).then(() => {
-    bind();
-    applyFocus();
-    applyReplay();
-  });
+  function initializeChart() {
+    const rootRect = root.getBoundingClientRect();
+    console.info("Chart window starting", {
+      plotly: { version: Plotly?.version },
+      payload: {
+        interval: rawPayload.interval,
+        dates: rawPayload.dates.length,
+        hasCandles: rawPayload.market?.has_candles,
+        markers: {
+          entries: rawPayload.entry_markers?.x?.length || 0,
+          exits: rawPayload.exit_markers?.x?.length || 0,
+        },
+      },
+      rootRect,
+    });
+
+    if (rootRect.width === 0 || rootRect.height === 0) {
+      window.setTimeout(initializeChart, 50);
+      return;
+    }
+
+    Plotly.newPlot(root, buildTraces(), buildLayout(), buildConfig())
+      .then(() => {
+        console.info("Plotly rendered chart", {
+          xaxis: rootRect.width,
+          yaxis: rootRect.height,
+        });
+        bind();
+        applyFocus();
+        applyReplay();
+        syncUi();
+        window.requestAnimationFrame(() => Plotly.Plots.resize(root));
+        window.setTimeout(() => {
+          if (root && root._fullLayout) {
+            Plotly.Plots.resize(root);
+          }
+        }, 120);
+      })
+      .catch((error) => {
+        console.error("Plotly failed to render chart", error);
+        if (root) {
+          root.innerHTML = `
+            <div class="chart-error">
+              <strong>Errore durante il rendering del grafico</strong>
+              <p>Controlla la console per i dettagli.</p>
+              <pre>${String(error)}</pre>
+            </div>
+          `;
+        }
+      });
+  }
+
+  if (root.getBoundingClientRect().width > 0 && root.getBoundingClientRect().height > 0) {
+    initializeChart();
+  } else {
+    window.requestAnimationFrame(initializeChart);
+  }
 
   function bind() {
     $$("[data-focus-view]").forEach((b) => b.addEventListener("click", () => {
@@ -169,6 +277,7 @@
         syncUi();
         return;
       }
+      resetViewportLock();
       state.focus = nextFocus;
       rerenderChart();
     }));
@@ -181,6 +290,12 @@
         const key = b.dataset.traceToggle;
         if (!key) return;
         state.visible[key] = !state.visible[key];
+        const requiresLayoutRefresh = ["strategy", "benchmark", "gross", "drawdown", "preview_strategy", "preview_drawdown"].includes(key);
+        if (requiresLayoutRefresh) {
+          resetViewportLock();
+          rerenderChart();
+          return;
+        }
         Plotly.restyle(root, { visible: state.visible[key] ? true : "legendonly" }, [traceIndexes[key]]);
         syncUi();
       });
@@ -195,50 +310,75 @@
     dom.progress?.addEventListener("input", () => { stopTimer(); setMode("replay"); state.progress = Math.max(Number(dom.progress.value) - 1, 0); clamp(); applyReplay(); });
     dom.indicatorSearch?.addEventListener("input", filterIndicatorCatalog);
     dom.signalPopupCopy?.addEventListener("click", copySignalPopupText);
-    dom.signalPopup?.addEventListener("mouseenter", clearSignalPopupHideTimer);
-    dom.signalPopup?.addEventListener("mouseleave", scheduleSignalPopupHide);
-    chartPanel?.addEventListener("mouseleave", scheduleSignalPopupHide);
+    dom.signalPopupTabs.forEach((button) => {
+      button.addEventListener("click", () => {
+        setSignalPopupTab(button.dataset.signalPopupTab || "entry");
+      });
+    });
     dom.tradePrev?.addEventListener("click", () => moveTradePage(-1));
     dom.tradeNext?.addEventListener("click", () => moveTradePage(1));
     dom.tradeTable?.addEventListener("click", onTradeTableClick);
     dom.tradeTable?.addEventListener("keydown", onTradeTableKeydown);
     $$("[data-chart-trade-detail-close]").forEach((button) => button.addEventListener("click", closeTradeDetailModal));
     document.addEventListener("keydown", onKeydown);
-    root.addEventListener("mousedown", onAxisDragStart, true);
-    root.addEventListener("mousemove", onAxisHover);
-    window.addEventListener("mousemove", onAxisDragMove);
-    window.addEventListener("mouseup", onAxisDragEnd);
-    root.addEventListener("mouseleave", () => {
-      if (!state.axisDrag) root.classList.remove("is-axis-draggable");
-    });
     window.addEventListener("resize", () => Plotly.Plots.resize(root));
     root.on?.("plotly_relayout", onPlotlyRelayout);
-    root.on?.("plotly_hover", onPlotlyHover);
-    root.on?.("plotly_unhover", onPlotlyUnhover);
+    root.on?.("plotly_click", onPlotlyClick);
   }
 
   function buildTraces() {
     const data = activePayload();
     const previewData = activePreviewPayload();
+    const bounds = resolveVisibleBounds(data);
+    const viewData = slicePayloadWindow(data, bounds.left, bounds.right);
+    const viewPreview = previewData ? slicePayloadWindow(previewData, bounds.left, bounds.right) : null;
+    const viewStartLabel = viewData.dates[0];
+    const viewEndLabel = viewData.dates[viewData.dates.length - 1];
+    const entryMarkers = sliceMarkersByWindow(data.entry_markers, viewStartLabel, viewEndLabel);
+    const exitMarkers = sliceMarkersByWindow(data.exit_markers, viewStartLabel, viewEndLabel);
+    const previewEntryMarkers = sliceMarkersByWindow(viewPreview?.entry_markers, viewStartLabel, viewEndLabel);
+    const previewExitMarkers = sliceMarkersByWindow(viewPreview?.exit_markers, viewStartLabel, viewEndLabel);
     const chartStructure = buildChartStructure(previewData);
-    const candles = data.market?.has_candles && hasValues(data.market?.open) && hasValues(data.market?.high) && hasValues(data.market?.low);
+    const selectedOverlay = buildSelectedTradeOverlay(data);
+    const showPreviewIndicatorsOnChart = false;
+    const minuteInterval = intervalToMinutes(viewData.interval);
+    const denseIntraday = Number.isFinite(minuteInterval) && minuteInterval <= 5;
+    const candleLineWidth = denseIntraday ? 3.2 : 1.2;
+    const candleWhiskerWidth = denseIntraday ? 0.95 : 0.35;
+    const candles = viewData.market?.has_candles && hasValues(viewData.market?.open) && hasValues(viewData.market?.high) && hasValues(viewData.market?.low);
+    const denseGuideTrace = denseIntraday
+      ? {
+        type: "scatter",
+        mode: "lines",
+        name: "Prezzo guida",
+        x: viewData.dates,
+        y: viewData.market?.close || [],
+        hoverinfo: "skip",
+        line: { color: "rgba(125,211,252,0.58)", width: 1.35 },
+        xaxis: "x",
+        yaxis: "y",
+      }
+      : null;
     return [
       candles
-        ? { type: "candlestick", name: "Prezzo", x: data.dates, open: data.market.open, high: data.market.high, low: data.market.low, close: data.market.close, increasing: { line: { color: "#26d0a8", width: 1.2 }, fillcolor: "#26d0a8" }, decreasing: { line: { color: "#ff5f73", width: 1.2 }, fillcolor: "#ff5f73" }, whiskerwidth: 0.35, hovertemplate: "O %{open:.4f}<br>H %{high:.4f}<br>L %{low:.4f}<br>C %{close:.4f}<br>%{x}<extra></extra>", xaxis: "x", yaxis: "y" }
-        : { type: "scatter", mode: "lines", name: "Prezzo", x: data.dates, y: data.market?.close || [], line: { color: "#7dd3fc", width: 2.3 }, hovertemplate: "Close %{y:.4f}<br>%{x}<extra></extra>", xaxis: "x", yaxis: "y" },
-      { type: "bar", name: "Volume", x: data.dates, y: data.market?.volume || [], marker: { color: volumeColors(data) }, opacity: 0.45, visible: state.visible.volume, hovertemplate: "Volume %{y:,.0f}<br>%{x}<extra></extra>", xaxis: "x", yaxis: "y4" },
-      { type: "scatter", mode: "markers+text", name: "Entry", x: data.entry_markers?.x || [], y: data.entry_markers?.y || [], text: (data.entry_markers?.x || []).map(() => "ENTRY"), hovertext: data.entry_markers?.text || [], visible: state.visible.entry, hovertemplate: "Entry<br>%{x}<br>Dettaglio nel popup accanto<extra></extra>", textposition: "top center", textfont: { color: "#bdf9de", size: 10, family: "Aptos, Segoe UI Variable, sans-serif" }, cliponaxis: false, marker: { color: "#21c98b", size: 14, symbol: "triangle-up", line: { width: 2, color: "#f8fffc" } }, xaxis: "x", yaxis: "y" },
-      { type: "scatter", mode: "markers+text", name: "Exit", x: data.exit_markers?.x || [], y: data.exit_markers?.y || [], text: (data.exit_markers?.x || []).map(() => "EXIT"), hovertext: data.exit_markers?.text || [], visible: state.visible.exit, hovertemplate: "Exit<br>%{x}<br>Dettaglio nel popup accanto<extra></extra>", textposition: "bottom center", textfont: { color: "#ffd2d9", size: 10, family: "Aptos, Segoe UI Variable, sans-serif" }, cliponaxis: false, marker: { color: "#ff5f73", size: 14, symbol: "triangle-down", line: { width: 2, color: "#fff6f7" } }, xaxis: "x", yaxis: "y" },
-      { type: "scatter", mode: "lines", name: "Strategia", x: data.dates, y: data.equity?.strategy || [], visible: state.visible.strategy, line: { color: "#4ade80", width: 2.5 }, hovertemplate: "Strategia %{y:,.2f}<br>%{x}<extra></extra>", xaxis: "x2", yaxis: "y2" },
-      { type: "scatter", mode: "lines", name: "Buy & hold", x: data.dates, y: data.equity?.benchmark || [], visible: state.visible.benchmark, line: { color: "#60a5fa", width: 2.1 }, hovertemplate: "Buy & hold %{y:,.2f}<br>%{x}<extra></extra>", xaxis: "x2", yaxis: "y2" },
-      { type: "scatter", mode: "lines", name: "Senza fee", x: data.dates, y: data.equity?.gross || [], visible: state.visible.gross, line: { color: "#fbbf24", width: 1.6, dash: "dot" }, hovertemplate: "Senza fee %{y:,.2f}<br>%{x}<extra></extra>", xaxis: "x2", yaxis: "y2" },
-      { type: "scatter", mode: "lines", name: "Drawdown", x: data.dates, y: data.drawdown_pct || [], visible: state.visible.drawdown, line: { color: "#ff6b7b", width: 2.2 }, fill: "tozeroy", fillcolor: "rgba(255,95,115,0.18)", hovertemplate: "Drawdown %{y:.2f}%<br>%{x}<extra></extra>", xaxis: "x3", yaxis: "y3" },
-      { type: "scatter", mode: "markers+text", name: "Entry preview", x: previewData?.entry_markers?.x || [], y: previewData?.entry_markers?.y || [], text: (previewData?.entry_markers?.x || []).map(() => "P-ENTRY"), hovertext: previewData?.entry_markers?.text || [], visible: state.visible.preview_entry, hovertemplate: "Entry preview<br>%{x}<br>Dettaglio nel popup accanto<extra></extra>", textposition: "top center", textfont: { color: "#ffe1ad", size: 9, family: "Aptos, Segoe UI Variable, sans-serif" }, cliponaxis: false, marker: { color: "#f59e0b", size: 12, symbol: "diamond", line: { width: 2, color: "#fff8ef" } }, xaxis: "x", yaxis: "y" },
-      { type: "scatter", mode: "markers+text", name: "Exit preview", x: previewData?.exit_markers?.x || [], y: previewData?.exit_markers?.y || [], text: (previewData?.exit_markers?.x || []).map(() => "P-EXIT"), hovertext: previewData?.exit_markers?.text || [], visible: state.visible.preview_exit, hovertemplate: "Exit preview<br>%{x}<br>Dettaglio nel popup accanto<extra></extra>", textposition: "bottom center", textfont: { color: "#ffd7df", size: 9, family: "Aptos, Segoe UI Variable, sans-serif" }, cliponaxis: false, marker: { color: "#fb7185", size: 12, symbol: "diamond-open", line: { width: 2, color: "#fff5f7" } }, xaxis: "x", yaxis: "y" },
-      { type: "scatter", mode: "lines", name: "Preview live", x: previewData?.dates || data.dates, y: previewData?.equity?.strategy || [], visible: state.visible.preview_strategy, line: { color: "#f59e0b", width: 2.6 }, hovertemplate: "Preview %{y:,.2f}<br>%{x}<extra></extra>", xaxis: "x2", yaxis: "y2" },
-      { type: "scatter", mode: "lines", name: "Preview DD", x: previewData?.dates || data.dates, y: previewData?.drawdown_pct || [], visible: state.visible.preview_drawdown, line: { color: "#f97316", width: 2.2, dash: "dot" }, hovertemplate: "Preview DD %{y:.2f}%<br>%{x}<extra></extra>", xaxis: "x3", yaxis: "y3" },
-      ...buildIndicatorOverlayTraces(previewData),
-      ...buildIndicatorPanelTraces(previewData, chartStructure),
+        ? { type: "candlestick", name: "Prezzo", visible: true, x: viewData.dates, open: viewData.market.open, high: viewData.market.high, low: viewData.market.low, close: viewData.market.close, increasing: { line: { color: "#26d0a8", width: candleLineWidth }, fillcolor: "rgba(38,208,168,0.55)" }, decreasing: { line: { color: "#ff5f73", width: candleLineWidth }, fillcolor: "rgba(255,95,115,0.55)" }, whiskerwidth: candleWhiskerWidth, hovertemplate: "O %{open:.4f}<br>H %{high:.4f}<br>L %{low:.4f}<br>C %{close:.4f}<br>%{x}<extra></extra>", xaxis: "x", yaxis: "y" }
+        : { type: "scatter", mode: "lines", name: "Prezzo", visible: true, x: viewData.dates, y: viewData.market?.close || [], line: { color: "#7dd3fc", width: 2.3 }, hovertemplate: "Close %{y:.4f}<br>%{x}<extra></extra>", xaxis: "x", yaxis: "y" },
+      { type: "bar", name: "Volume", x: viewData.dates, y: viewData.market?.volume || [], marker: { color: volumeColors(viewData) }, opacity: 0.45, visible: state.visible.volume, hovertemplate: "Volume %{y:,.0f}<br>%{x}<extra></extra>", xaxis: "x", yaxis: "y4" },
+      { type: "scatter", mode: "markers", name: "Entry", x: entryMarkers.x, y: entryMarkers.y, hovertext: entryMarkers.text, visible: state.visible.entry, hovertemplate: "Entry<br>%{x}<br>Clicca per aprire i dettagli trade<extra></extra>", cliponaxis: false, marker: { color: "#21c98b", size: 14, symbol: "triangle-up", line: { width: 2, color: "#f8fffc" } }, xaxis: "x", yaxis: "y" },
+      { type: "scatter", mode: "markers", name: "Exit", x: exitMarkers.x, y: exitMarkers.y, hovertext: exitMarkers.text, visible: state.visible.exit, hovertemplate: "Exit<br>%{x}<br>Clicca per aprire i dettagli trade<extra></extra>", cliponaxis: false, marker: { color: "#ff5f73", size: 14, symbol: "triangle-down", line: { width: 2, color: "#fff6f7" } }, xaxis: "x", yaxis: "y" },
+      { type: "scatter", mode: "lines", name: "Strategia", x: viewData.dates, y: viewData.equity?.strategy || [], visible: state.visible.strategy, line: { color: "#4ade80", width: 2.5 }, hovertemplate: "Strategia %{y:,.2f}<br>%{x}<extra></extra>", xaxis: "x2", yaxis: "y2" },
+      { type: "scatter", mode: "lines", name: "Buy & hold", x: viewData.dates, y: viewData.equity?.benchmark || [], visible: state.visible.benchmark, line: { color: "#60a5fa", width: 2.1 }, hovertemplate: "Buy & hold %{y:,.2f}<br>%{x}<extra></extra>", xaxis: "x2", yaxis: "y2" },
+      { type: "scatter", mode: "lines", name: "Senza fee", x: viewData.dates, y: viewData.equity?.gross || [], visible: state.visible.gross, line: { color: "#fbbf24", width: 1.6, dash: "dot" }, hovertemplate: "Senza fee %{y:,.2f}<br>%{x}<extra></extra>", xaxis: "x2", yaxis: "y2" },
+      { type: "scatter", mode: "lines", name: "Drawdown", x: viewData.dates, y: viewData.drawdown_pct || [], visible: state.visible.drawdown, line: { color: "#ff6b7b", width: 2.2 }, fill: "tozeroy", fillcolor: "rgba(255,95,115,0.18)", hovertemplate: "Drawdown %{y:.2f}%<br>%{x}<extra></extra>", xaxis: "x3", yaxis: "y3" },
+      { type: "scatter", mode: "markers", name: "Entry preview", x: previewEntryMarkers.x, y: previewEntryMarkers.y, hovertext: previewEntryMarkers.text, visible: state.visible.preview_entry, hovertemplate: "Entry preview<br>%{x}<br>Clicca per aprire i dettagli<extra></extra>", cliponaxis: false, marker: { color: "#f59e0b", size: 12, symbol: "diamond", line: { width: 2, color: "#fff8ef" } }, xaxis: "x", yaxis: "y" },
+      { type: "scatter", mode: "markers", name: "Exit preview", x: previewExitMarkers.x, y: previewExitMarkers.y, hovertext: previewExitMarkers.text, visible: state.visible.preview_exit, hovertemplate: "Exit preview<br>%{x}<br>Clicca per aprire i dettagli<extra></extra>", cliponaxis: false, marker: { color: "#fb7185", size: 12, symbol: "diamond-open", line: { width: 2, color: "#fff5f7" } }, xaxis: "x", yaxis: "y" },
+      { type: "scatter", mode: "lines", name: "Preview live", x: viewPreview?.dates || viewData.dates, y: viewPreview?.equity?.strategy || [], visible: state.visible.preview_strategy, line: { color: "#f59e0b", width: 2.6 }, hovertemplate: "Preview %{y:,.2f}<br>%{x}<extra></extra>", xaxis: "x2", yaxis: "y2" },
+      { type: "scatter", mode: "lines", name: "Preview DD", x: viewPreview?.dates || viewData.dates, y: viewPreview?.drawdown_pct || [], visible: state.visible.preview_drawdown, line: { color: "#f97316", width: 2.2, dash: "dot" }, hovertemplate: "Preview DD %{y:.2f}%<br>%{x}<extra></extra>", xaxis: "x3", yaxis: "y3" },
+      { type: "scatter", mode: "markers", name: "Entry selected", x: selectedOverlay.entry.x, y: selectedOverlay.entry.y, visible: selectedOverlay.entry.visible, hoverinfo: "skip", cliponaxis: false, marker: { size: 24, symbol: "circle-open", color: "rgba(0,0,0,0)", line: { width: 3, color: "#34e6b8" } }, xaxis: "x", yaxis: "y" },
+      { type: "scatter", mode: "markers", name: "Exit selected", x: selectedOverlay.exit.x, y: selectedOverlay.exit.y, visible: selectedOverlay.exit.visible, hoverinfo: "skip", cliponaxis: false, marker: { size: 24, symbol: "circle-open", color: "rgba(0,0,0,0)", line: { width: 3, color: "#ff8fa0" } }, xaxis: "x", yaxis: "y" },
+      ...(showPreviewIndicatorsOnChart ? buildIndicatorOverlayTraces(previewData) : []),
+      ...(showPreviewIndicatorsOnChart ? buildIndicatorPanelTraces(previewData, chartStructure) : []),
+      ...(denseGuideTrace ? [denseGuideTrace] : []),
     ];
   }
 
@@ -294,12 +434,115 @@
     return traces;
   }
 
+  function buildSelectedTradeOverlay(data = activePayload()) {
+    const empty = {
+      entry: { x: [], y: [], visible: false },
+      exit: { x: [], y: [], visible: false },
+    };
+    if (!Number.isInteger(state.selectedTradeIndex) || state.selectedTradeIndex < 0) {
+      return empty;
+    }
+    const trade = tradeRows[state.selectedTradeIndex];
+    if (!trade) {
+      return empty;
+    }
+
+    const entryPoint = resolveTradeMarkerPoint({
+      markers: data.entry_markers,
+      rawTimestamp: trade.entry_raw,
+      expectedPrice: trade.entry_price_display,
+      intervalKey: data.interval,
+    });
+    const exitPoint = resolveTradeMarkerPoint({
+      markers: data.exit_markers,
+      rawTimestamp: trade.exit_raw,
+      expectedPrice: trade.exit_price_display,
+      intervalKey: data.interval,
+    });
+
+    if (entryPoint) {
+      empty.entry = { x: [entryPoint.x], y: [entryPoint.y], visible: true };
+    }
+    if (exitPoint) {
+      empty.exit = { x: [exitPoint.x], y: [exitPoint.y], visible: true };
+    }
+    return empty;
+  }
+
+  function resolveTradeMarkerPoint({ markers, rawTimestamp, expectedPrice, intervalKey }) {
+    if (!markers || !rawTimestamp) {
+      return null;
+    }
+
+    const markerLabels = Array.isArray(markers.x) ? markers.x : [];
+    const markerPrices = Array.isArray(markers.y) ? markers.y : [];
+    const targetLabel = signalBucketLabel(rawTimestamp, intervalKey);
+    if (!targetLabel) {
+      return null;
+    }
+
+    const candidateIndexes = [];
+    markerLabels.forEach((label, index) => {
+      if (normalizeSignalTimestamp(label) === normalizeSignalTimestamp(targetLabel)) {
+        candidateIndexes.push(index);
+      }
+    });
+    if (!candidateIndexes.length) {
+      return null;
+    }
+
+    const expected = parseSignalPrice(expectedPrice);
+    let chosenIndex = candidateIndexes[0];
+    if (Number.isFinite(expected)) {
+      chosenIndex = candidateIndexes.reduce((best, current) => {
+        const bestDistance = Math.abs(Number(markerPrices[best] ?? Number.POSITIVE_INFINITY) - expected);
+        const currentDistance = Math.abs(Number(markerPrices[current] ?? Number.POSITIVE_INFINITY) - expected);
+        return currentDistance < bestDistance ? current : best;
+      }, chosenIndex);
+    }
+
+    const xValue = markerLabels[chosenIndex];
+    const yValue = Number(markerPrices[chosenIndex]);
+    if (!xValue || !Number.isFinite(yValue)) {
+      return null;
+    }
+    return { x: String(xValue), y: yValue };
+  }
+
+  function signalBucketLabel(rawTimestamp, intervalKey) {
+    const parsed = parseChartDateLabel(rawTimestamp);
+    if (!parsed) {
+      return normalizeSignalTimestamp(rawTimestamp);
+    }
+    const bucketDate = floorToBucket(parsed, intervalKey);
+    return formatBucketLabel(bucketDate, intervalKey);
+  }
+
+  function parseSignalPrice(rawValue) {
+    const parsed = Number(String(rawValue || "").replace(/[^0-9.+-]/g, ""));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
   function buildChartStructure(previewData = activePreviewPayload()) {
+    const showEquityPanel = Boolean(
+      state.visible.strategy
+      || state.visible.benchmark
+      || state.visible.gross
+      || state.visible.preview_strategy,
+    );
+    const showDrawdownPanel = Boolean(
+      state.visible.drawdown
+      || state.visible.preview_drawdown,
+    );
+    const showIndicatorPanels = false;
     const panelIndicators = Array.isArray(previewData?.indicators)
       ? previewData.indicators.filter((indicator) => (
+        showIndicatorPanels
+        && (
         indicator?.placement === "panel"
         && Array.isArray(indicator.series)
         && indicator.series.some((series) => hasValues(series?.values))
+        )
       ))
       : [];
     const profile = focusProfiles[state.focus] || focusProfiles.all;
@@ -314,8 +557,12 @@
         ...axisKeys,
       });
     });
-    sections.push({ key: "equity", yRef: "y2", weight: profile.equity });
-    sections.push({ key: "drawdown", yRef: "y3", weight: profile.drawdown });
+    if (showEquityPanel) {
+      sections.push({ key: "equity", yRef: "y2", weight: profile.equity });
+    }
+    if (showDrawdownPanel) {
+      sections.push({ key: "drawdown", yRef: "y3", weight: profile.drawdown });
+    }
 
     const gap = sections.length > 1 ? 0.018 : 0;
     const usableHeight = Math.max(1 - (gap * (sections.length - 1)), 0.2);
@@ -348,6 +595,8 @@
     return {
       domains,
       panelAxes,
+      showEquityPanel,
+      showDrawdownPanel,
       height: Math.max(760, 700 + (panelAxes.length * 140)),
     };
   }
@@ -407,18 +656,22 @@
     const rangebreaks = buildAxisRangeBreaks();
     const chartStructure = buildChartStructure();
     root.style.minHeight = `${chartStructure.height}px`;
+    root.style.height = `${chartStructure.height}px`;
+    const equityDomain = chartStructure.domains.y2 || chartStructure.domains.y || [0, 1];
+    const drawdownDomain = chartStructure.domains.y3 || chartStructure.domains.y || [0, 1];
+    const showBottomLabels = !chartStructure.showDrawdownPanel;
     const layout = {
       paper_bgcolor: "#05070b", plot_bgcolor: "#05070b", font: { family: "Aptos, Segoe UI Variable, sans-serif", color: "#d6ddf5" },
       hoverlabel: { bgcolor: "#0f1520", bordercolor: "#212a3f", font: { color: "#eef3ff" } }, hovermode: "closest", dragmode: state.drag,
-      margin: { l: 60, r: 72, t: 18, b: 48 }, showlegend: false, uirevision: "chart-terminal-static", spikedistance: -1,
+      margin: { l: 60, r: 72, t: 24, b: 48 }, showlegend: true, legend: { orientation: "h", y: 1.02, x: 0.5, xanchor: "center", font: { size: 10 }, bgcolor: "rgba(0,0,0,0)" }, spikedistance: -1,
       height: chartStructure.height,
-      xaxis: axis("x", rangebreaks, { anchor: "y", showticklabels: false }),
+      xaxis: axis("x", rangebreaks, { anchor: "y", showticklabels: showBottomLabels }),
       xaxis2: axis("x2", rangebreaks, { anchor: "y2", showticklabels: false }),
-      xaxis3: axis("x3", rangebreaks, { anchor: "y3", showticklabels: true }),
-      yaxis: { domain: chartStructure.domains.y, side: "right", tickformat: ",.3f", gridcolor: "rgba(171,184,214,0.05)", zeroline: false },
+      xaxis3: axis("x3", rangebreaks, { anchor: "y3", showticklabels: Boolean(chartStructure.showDrawdownPanel) }),
+      yaxis: { domain: chartStructure.domains.y, side: "right", tickformat: ",.3f", gridcolor: "rgba(171,184,214,0.05)", zeroline: false, title: { text: "Prezzo", standoff: 10 } },
       yaxis4: { domain: chartStructure.domains.y4, overlaying: "y", side: "left", showgrid: false, zeroline: false, showticklabels: false },
-      yaxis2: { domain: chartStructure.domains.y2, side: "right", tickformat: ",.0f", gridcolor: "rgba(171,184,214,0.05)", zeroline: false },
-      yaxis3: { domain: chartStructure.domains.y3, side: "right", ticksuffix: "%", gridcolor: "rgba(171,184,214,0.05)", zeroline: true, zerolinecolor: "rgba(171,184,214,0.1)" },
+      yaxis2: { domain: equityDomain, side: "right", tickformat: ",.0f", gridcolor: "rgba(171,184,214,0.05)", zeroline: false, showticklabels: Boolean(chartStructure.showEquityPanel), title: { text: "Equity", standoff: 10 } },
+      yaxis3: { domain: drawdownDomain, side: "right", ticksuffix: "%", gridcolor: "rgba(171,184,214,0.05)", zeroline: true, zerolinecolor: "rgba(171,184,214,0.1)", showticklabels: Boolean(chartStructure.showDrawdownPanel), title: { text: "Drawdown", standoff: 10 } },
       annotations: buildPersistentAnnotations(chartStructure),
       shapes: buildPersistentShapes(chartStructure),
       bargap: 0.06,
@@ -441,7 +694,7 @@
   }
 
   function buildConfig() {
-    return { responsive: true, scrollZoom: true, displaylogo: false, modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d", "zoom2d", "pan2d", "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines"], toImageButtonOptions: { format: "png", filename: "trading-bot-chart", height: 1080, width: 1920, scale: 1 } };
+    return { responsive: true, scrollZoom: true, displayModeBar: false, displaylogo: false, modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d", "zoom2d", "pan2d", "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines"], toImageButtonOptions: { format: "png", filename: "trading-bot-chart", height: 1080, width: 1920, scale: 1 } };
   }
 
   function axis(name, rangebreaks = [], options = {}) {
@@ -484,7 +737,11 @@
     const nextKey = canonicalIntervalKey(intervalKey);
     if (!datasetCatalog.has(nextKey) || nextKey === state.candle) return;
     stopTimer();
+    // A viewport zoomed on one candle size can become invalid on another size.
+    // Reset the manual lock when switching timeframe to avoid broken layouts.
+    resetViewportLock();
     state.candle = nextKey;
+    state.win = hasWindowControl ? coerceVisibleWindowForInterval(nextKey, state.win) : "all";
     syncPreviewAvailability();
     rerenderChart();
   }
@@ -540,22 +797,16 @@
     const data = activePayload();
     const chartStructure = buildChartStructure();
     clamp();
-    const end = state.mode === "all" ? state.start + segLen() - 1 : state.start + state.progress;
-    const current = Math.min(Math.max(end, state.start), totalPoints() - 1);
-    const first = winLen() >= segLen() ? state.start : Math.max(state.start, current - winLen() + 1);
-    const left = Math.max(first - 1, 0), right = Math.min(current + 1, totalPoints() - 1);
+    const bounds = resolveVisibleBounds(data);
+    const current = bounds.current;
     const guideLine = priceLine(current, data);
     const relayoutUpdate = {
       shapes: [...buildPersistentShapes(chartStructure), guideLine.shape],
       annotations: [...buildPersistentAnnotations(chartStructure), guideLine.annotation],
     };
     if (!preserveViewport) {
-      relayoutUpdate["xaxis.range"] = [data.dates[left], data.dates[right]];
-      relayoutUpdate["xaxis2.range"] = [data.dates[left], data.dates[right]];
-      relayoutUpdate["xaxis3.range"] = [data.dates[left], data.dates[right]];
-      chartStructure.panelAxes.forEach((panelAxis) => {
-        relayoutUpdate[`${panelAxis.xLayout}.range`] = [data.dates[left], data.dates[right]];
-      });
+      relayoutUpdate["xaxis.autorange"] = true;
+      relayoutUpdate["yaxis.autorange"] = true;
     }
     runRelayout(relayoutUpdate).then(syncUi);
     updateMarket(current);
@@ -635,67 +886,131 @@
     return { shape: { type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: close, y1: close, line: { color: "rgba(255,255,255,0.08)", width: 1, dash: "dot" } }, annotation: { xref: "paper", x: 1.01, xanchor: "left", yref: "y", y: close, text: Number(close).toFixed(3), showarrow: false, font: { color: "#041011", size: 11, family: "Aptos, sans-serif" }, bgcolor: color, bordercolor: color, borderpad: 4 } };
   }
 
+  function computeVisiblePriceRange(data, leftIndex, rightIndex) {
+    const start = Math.max(Number(leftIndex) || 0, 0);
+    const end = Math.min(Number(rightIndex) || 0, totalPoints() - 1);
+    if (end < start) return null;
+
+    let minValue = Number.POSITIVE_INFINITY;
+    let maxValue = Number.NEGATIVE_INFINITY;
+    for (let index = start; index <= end; index += 1) {
+      const high = val(data.market?.high, index);
+      const low = val(data.market?.low, index);
+      const close = val(data.market?.close, index);
+
+      if (Number.isFinite(high)) maxValue = Math.max(maxValue, high);
+      if (Number.isFinite(low)) minValue = Math.min(minValue, low);
+      if (Number.isFinite(close)) {
+        maxValue = Math.max(maxValue, close);
+        minValue = Math.min(minValue, close);
+      }
+    }
+
+    if (!Number.isFinite(minValue) || !Number.isFinite(maxValue)) return null;
+    const span = maxValue - minValue;
+    const pad = span > 0 ? Math.max(span * 0.12, 0.01) : Math.max(Math.abs(maxValue) * 0.002, 0.02);
+    return [minValue - pad, maxValue + pad];
+  }
+
+  function buildPlotlyXRange(data, leftIndex, rightIndex) {
+    const leftDate = parsePlotlyDateValue(data.dates?.[leftIndex]);
+    const rightDate = parsePlotlyDateValue(data.dates?.[rightIndex]);
+    if (!(leftDate instanceof Date) || Number.isNaN(leftDate.getTime()) || !(rightDate instanceof Date) || Number.isNaN(rightDate.getTime())) {
+      return [data.dates?.[leftIndex], data.dates?.[rightIndex]];
+    }
+    return [leftDate.getTime(), rightDate.getTime()];
+  }
+
   function volumeColors(data = activePayload()) {
     const c = data.market?.close || [], o = data.market?.open || [];
     return (data.market?.volume || []).map((_, i) => ((c[i] ?? 0) >= ((o[i] ?? c[i - 1]) ?? 0) ? "rgba(38,208,168,0.45)" : "rgba(255,95,115,0.45)"));
   }
 
   function buildAxisRangeBreaks() {
-    const data = activePayload();
-    const intervalMinutes = intervalToMinutes(data.interval);
-    if (!intervalMinutes) return [];
-
-    const parsedDates = data.parsedDates.filter((value) => value instanceof Date && !Number.isNaN(value.getTime()));
-    if (parsedDates.length < 3) return [];
-
-    const sessionsByDay = new Map();
-    parsedDates.forEach((dateValue) => {
-      const dayKey = dateValue.toISOString().slice(0, 10);
-      const minuteOfDay = (dateValue.getUTCHours() * 60) + dateValue.getUTCMinutes();
-      const existing = sessionsByDay.get(dayKey);
-      if (!existing) {
-        sessionsByDay.set(dayKey, { start: minuteOfDay, end: minuteOfDay, count: 1 });
-        return;
-      }
-      existing.start = Math.min(existing.start, minuteOfDay);
-      existing.end = Math.max(existing.end, minuteOfDay);
-      existing.count += 1;
-    });
-
-    const daySessions = Array.from(sessionsByDay.values()).filter((session) => session.count > 1);
-    if (!daySessions.length) return [];
-
-    const medianStart = median(daySessions.map((session) => session.start).sort((a, b) => a - b));
-    const medianEnd = median(daySessions.map((session) => session.end).sort((a, b) => a - b)) + intervalMinutes;
-    const sessionStartMinutes = Math.max(0, Math.min(medianStart, (24 * 60) - intervalMinutes));
-    const sessionEndMinutes = Math.max(sessionStartMinutes + intervalMinutes, Math.min(medianEnd, 24 * 60));
-    const rangebreaks = [];
-
-    if ((sessionEndMinutes - sessionStartMinutes) < ((24 * 60) - Math.max(intervalMinutes / 2, 1))) {
-      rangebreaks.push({
-        pattern: "hour",
-        bounds: [roundHour(sessionEndMinutes / 60), roundHour(sessionStartMinutes / 60)],
-      });
-    }
-
-    if (!parsedDates.some((dateValue) => {
-      const day = dateValue.getUTCDay();
-      return day === 0 || day === 6;
-    })) {
-      rangebreaks.push({ bounds: ["sat", "mon"] });
-    }
-
-    const missingDays = buildMissingDayBreaks(parsedDates, sessionsByDay);
-    if (missingDays.length) {
-      rangebreaks.push({ values: missingDays });
-    }
-
-    return rangebreaks;
+    // Temporary safety fallback: avoid dynamic intraday rangebreaks,
+    // they can hide all candles on some minute datasets/browser combos.
+    return [];
   }
 
   function segLen() { return state.seg === "all" ? Math.max(totalPoints() - state.start, 1) : Math.max(Math.min(Number(state.seg) || 1, totalPoints() - state.start), 1); }
   function winLen() { return state.win === "all" ? segLen() : Math.max(Math.min(Number(state.win) || 1, segLen()), 1); }
   function maxStart() { return state.seg === "all" ? Math.max(totalPoints() - 1, 0) : Math.max(totalPoints() - (Number(state.seg) || 1), 0); }
+  function resolveVisibleBounds(data = activePayload()) {
+    const total = Array.isArray(data?.dates) ? data.dates.length : totalPoints();
+    const segLength = state.seg === "all"
+      ? Math.max(total - state.start, 1)
+      : Math.max(Math.min(Number(state.seg) || 1, total - state.start), 1);
+    const end = state.mode === "all" ? state.start + segLength - 1 : state.start + state.progress;
+    const current = Math.min(Math.max(end, state.start), Math.max(total - 1, 0));
+    const windowLength = state.win === "all" ? segLength : Math.max(Math.min(Number(state.win) || 1, segLength), 1);
+    const first = windowLength >= segLength ? state.start : Math.max(state.start, current - windowLength + 1);
+    const left = Math.max(first - 1, 0);
+    const right = Math.min(current + 1, Math.max(total - 1, 0));
+    return { left, right, current };
+  }
+  function slicePayloadWindow(payload, left, right) {
+    const start = Math.max(Number(left) || 0, 0);
+    const end = Math.max(Number(right) || start, start);
+    const slice = (values) => (Array.isArray(values) ? values.slice(start, end + 1) : []);
+    return {
+      ...payload,
+      dates: slice(payload?.dates),
+      parsedDates: slice(payload?.parsedDates),
+      market: {
+        has_candles: Boolean(payload?.market?.has_candles),
+        open: slice(payload?.market?.open),
+        high: slice(payload?.market?.high),
+        low: slice(payload?.market?.low),
+        close: slice(payload?.market?.close),
+        volume: slice(payload?.market?.volume),
+      },
+      equity: {
+        strategy: slice(payload?.equity?.strategy),
+        gross: slice(payload?.equity?.gross),
+        benchmark: slice(payload?.equity?.benchmark),
+      },
+      drawdown_pct: slice(payload?.drawdown_pct),
+      indicators: payload?.indicators,
+      entry_markers: payload?.entry_markers,
+      exit_markers: payload?.exit_markers,
+    };
+  }
+  function sliceMarkersByWindow(markers, leftLabel, rightLabel) {
+    const result = { x: [], y: [], text: [] };
+    if (!markers || !Array.isArray(markers.x) || !Array.isArray(markers.y)) return result;
+    const left = String(leftLabel || "");
+    const right = String(rightLabel || "");
+    markers.x.forEach((label, index) => {
+      const markerLabel = String(label || "");
+      if (left && markerLabel < left) return;
+      if (right && markerLabel > right) return;
+      result.x.push(markerLabel);
+      result.y.push(Number(markers.y[index]));
+      result.text.push(String(markers.text?.[index] || ""));
+    });
+    return result;
+  }
+  function defaultVisibleWindow(intervalKey) {
+    const minutes = intervalToMinutes(intervalKey);
+    if (!Number.isFinite(minutes)) return "all";
+    if (minutes <= 1) return 180;
+    if (minutes <= 2) return 150;
+    if (minutes <= 5) return 120;
+    if (minutes <= 30) return 100;
+    if (minutes <= 60) return 84;
+    if (minutes <= 240) return 72;
+    return "all";
+  }
+  function coerceVisibleWindowForInterval(intervalKey, currentWindow) {
+    const preferred = defaultVisibleWindow(intervalKey);
+    if (preferred === "all") return currentWindow;
+    if (currentWindow === "all") return preferred;
+    const preferredNumber = Number(preferred);
+    const currentNumber = Number(currentWindow);
+    if (!Number.isFinite(preferredNumber) || !Number.isFinite(currentNumber)) return preferred;
+    // Keep dense intraday frames readable by avoiding extremely wide windows.
+    return currentNumber > (preferredNumber * 2) ? preferred : currentNumber;
+  }
   function parseLen(v) { return v === "all" ? "all" : Math.max(Number(v) || 1, 1); }
   function val(arr, i) { return Array.isArray(arr) && arr[i] != null ? Number(arr[i]) : null; }
   function text(node, value) { if (node) node.textContent = value; }
@@ -714,12 +1029,13 @@
   }
   function intervalToMinutes(interval) { return intervalDefinitions[canonicalIntervalKey(interval)]?.unit === "minute" ? intervalDefinitions[canonicalIntervalKey(interval)].minutes : null; }
   function candleLabel(interval) { return intervalDefinitions[canonicalIntervalKey(interval)]?.label || String(interval || "").trim() || "n/d"; }
-  function median(values) { if (!values.length) return 0; const mid = Math.floor(values.length / 2); return values.length % 2 ? values[mid] : ((values[mid - 1] + values[mid]) / 2); }
   function roundHour(value) { return Math.round(value * 100) / 100; }
 
   function canonicalIntervalKey(interval) {
     const raw = String(interval || "").trim().toLowerCase();
     if (raw === "60m") return "1h";
+    if (raw === "240m") return "4h";
+    if (raw === "1g") return "1d";
     if (raw === "1w") return "1wk";
     return intervalDefinitions[raw]?.key || "1d";
   }
@@ -727,14 +1043,28 @@
   function buildSupportedCandleOptions(baseInterval) {
     const baseKey = canonicalIntervalKey(baseInterval);
     const baseDefinition = intervalDefinitions[baseKey] || intervalDefinitions["1d"];
-    return Object.values(intervalDefinitions).filter((candidate) => canUseCandleSize(baseDefinition, candidate));
+    const preferred = candleControlOrder
+      .map((key) => intervalDefinitions[key])
+      .filter((candidate) => Boolean(candidate))
+      .map((candidate) => ({
+        ...candidate,
+        enabled: canUseCandleSize(baseDefinition, candidate),
+      }));
+    if (!preferred.some((candidate) => candidate.key === baseDefinition.key)) {
+      return [{ ...baseDefinition, enabled: true }, ...preferred];
+    }
+    if (preferred.length) {
+      return preferred;
+    }
+    // Fallback for uncommon source intervals (es. monthly reports).
+    return [{ ...baseDefinition, enabled: true }];
   }
 
   function canUseCandleSize(baseDefinition, candidate) {
     if (!baseDefinition || !candidate) return false;
     if (candidate.minutes < baseDefinition.minutes) return false;
     if (baseDefinition.unit === "minute" && candidate.unit === "minute") {
-      return candidate.minutes % baseDefinition.minutes === 0;
+      return candidate.minutes >= baseDefinition.minutes;
     }
     if (baseDefinition.unit === "day") {
       return candidate.unit === "day" || candidate.unit === "week" || candidate.unit === "month";
@@ -750,17 +1080,27 @@
 
   function renderCandleControls() {
     if (!dom.candleControls) return;
-    dom.candleControls.innerHTML = supportedCandleOptions.map((option) => `
-      <button type="button" class="terminal-chip${option.key === state.candle ? " is-active" : ""}" data-candle-view="${option.key}">
+    dom.candleControls.innerHTML = candleControlOptions.map((option) => `
+      <button
+        type="button"
+        class="terminal-chip${option.key === state.candle ? " is-active" : ""}${option.enabled ? "" : " is-disabled"}"
+        data-candle-view="${option.key}"
+        ${option.enabled ? "" : "disabled aria-disabled=\"true\" title=\"Timeframe non disponibile su questo dataset\""}
+      >
         ${option.label}
       </button>
     `).join("");
     $$("[data-candle-view]").forEach((button) => {
+      if (button.disabled) return;
       button.addEventListener("click", () => setCandleSize(button.dataset.candleView || rawPayload.interval));
     });
   }
 
   function parseChartDateLabel(label) {
+    if (typeof label === "number" && Number.isFinite(label)) {
+      const fromEpoch = new Date(label);
+      return Number.isNaN(fromEpoch.getTime()) ? null : fromEpoch;
+    }
     const raw = String(label || "").trim();
     if (!raw) return null;
     const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
@@ -904,6 +1244,7 @@
       }
       updateBucket(bucket, payload, index);
     });
+    buckets.sort((a, b) => a.date.getTime() - b.date.getTime());
 
     return {
       focus: payload.focus,
@@ -982,7 +1323,6 @@
 
   function aggregateIndicatorSeries(values, dates, targetInterval) {
     if (!Array.isArray(values) || values.length === 0) return [];
-    const aggregated = [];
     const bucketByKey = new Map();
     (Array.isArray(dates) ? dates : []).forEach((label, index) => {
       const parsedDate = parseChartDateLabel(label);
@@ -991,10 +1331,9 @@
       const bucketKey = bucketDate.toISOString();
       bucketByKey.set(bucketKey, val(values, index));
     });
-    bucketByKey.forEach((bucketValue) => {
-      aggregated.push(bucketValue);
-    });
-    return aggregated;
+    return Array.from(bucketByKey.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([, bucketValue]) => bucketValue);
   }
 
   function floorToBucket(dateValue, intervalKey) {
@@ -1053,6 +1392,10 @@
     state.previewAvailable.preview_strategy = hasValues(previewData?.equity?.strategy);
     state.previewAvailable.preview_drawdown = hasValues(previewData?.drawdown_pct);
     Object.keys(state.previewAvailable).forEach((key) => {
+      if (key === "preview_strategy" || key === "preview_drawdown") {
+        state.visible[key] = false;
+        return;
+      }
       state.visible[key] = state.previewAvailable[key];
     });
   }
@@ -1111,6 +1454,10 @@
     }
     if (dom.indicatorModal?.hidden === false) {
       closeIndicatorModal();
+      return;
+    }
+    if (dom.signalPopup?.hidden === false) {
+      hideSignalPopup();
     }
   }
 
@@ -1118,26 +1465,19 @@
     if (state.isProgrammaticRelayout || !eventData) return;
     const hasManualViewportChange = Object.keys(eventData).some((key) => (
       key.startsWith("xaxis.range")
-      || key.startsWith("yaxis.range")
-      || key.startsWith("yaxis2.range")
-      || key.startsWith("yaxis3.range")
       || key === "xaxis.autorange"
-      || key === "yaxis.autorange"
-      || key === "yaxis2.autorange"
-      || key === "yaxis3.autorange"
     ));
     if (!hasManualViewportChange) return;
     captureViewport();
   }
 
-  function onPlotlyHover(eventData) {
+  function onPlotlyClick(eventData) {
     const point = Array.isArray(eventData?.points) ? eventData.points[0] : null;
-    if (!isSignalMarkerPoint(point)) return;
+    if (!isSignalMarkerPoint(point)) {
+      hideSignalPopup();
+      return;
+    }
     showSignalPopup(point);
-  }
-
-  function onPlotlyUnhover() {
-    scheduleSignalPopupHide();
   }
 
   function isSignalMarkerPoint(point) {
@@ -1146,42 +1486,105 @@
   }
 
   function showSignalPopup(point) {
-    if (!dom.signalPopup || !dom.signalPopupBody) return;
-    clearSignalPopupHideTimer();
-    signalPopupText = extractSignalPopupText(point);
-    if (!signalPopupText) return;
+    if (!dom.signalPopup || !dom.signalPopupEntry || !dom.signalPopupExit) return;
+    const payload = buildSignalPopupPayload(point);
+    const hasEntry = Boolean(String(payload.entryText || "").trim());
+    const hasExit = Boolean(String(payload.exitText || "").trim());
+    if (!hasEntry && !hasExit) return;
+
+    state.selectedTradeIndex = Number.isInteger(payload.tradeIndex) ? payload.tradeIndex : -1;
+    signalPopupPanels = {
+      entry: String(payload.entryText || ""),
+      exit: String(payload.exitText || ""),
+    };
+
     dom.signalPopup.hidden = false;
     if (dom.signalPopupTitle) {
-      dom.signalPopupTitle.textContent = String(point?.data?.name || "Segnale");
+      dom.signalPopupTitle.textContent = payload.title;
     }
-    dom.signalPopupBody.textContent = signalPopupText;
+    dom.signalPopupEntry.textContent = signalPopupPanels.entry || "Dettaglio entry non disponibile.";
+    dom.signalPopupExit.textContent = signalPopupPanels.exit || "Dettaglio exit non disponibile.";
+    setSignalPopupTab(payload.activeTab || "entry", { force: true });
     if (dom.signalPopupStatus) {
-      dom.signalPopupStatus.textContent = "Testo selezionabile. Usa Copia per portarlo fuori al volo.";
+      dom.signalPopupStatus.textContent = payload.status;
     }
     positionSignalPopup(point);
+    applySignalHighlight();
   }
 
   function hideSignalPopup() {
-    clearSignalPopupHideTimer();
+    state.selectedTradeIndex = -1;
+    signalPopupPanels = { entry: "", exit: "" };
     signalPopupText = "";
     if (dom.signalPopup) {
       dom.signalPopup.hidden = true;
     }
+    setSignalPopupTab("entry", { force: true });
+    applySignalHighlight();
   }
 
-  function scheduleSignalPopupHide() {
-    if (!dom.signalPopup || dom.signalPopup.hidden) return;
-    clearSignalPopupHideTimer();
-    signalPopupHideTimer = window.setTimeout(() => {
-      if (dom.signalPopup?.matches(":hover")) return;
-      hideSignalPopup();
-    }, 180);
+  function buildSignalPopupPayload(point) {
+    const traceName = String(point?.data?.name || "Segnale");
+    const fallbackText = extractSignalPopupText(point);
+    const signalSide = traceName.toLowerCase().includes("exit") ? "exit" : "entry";
+    const signalTime = extractSignalTimestamp(point, fallbackText);
+    const tradeIndex = resolveTradeIndex(signalSide, signalTime);
+
+    if (tradeIndex < 0 || !tradeRows[tradeIndex]) {
+      const isPreview = traceName.toLowerCase().includes("preview");
+      return {
+        title: traceName,
+        entryText: signalSide === "entry" ? (fallbackText || "Dettaglio entry non disponibile.") : "Entry collegata non disponibile.",
+        exitText: signalSide === "exit" ? (fallbackText || "Dettaglio exit non disponibile.") : "Exit collegata non disponibile.",
+        activeTab: signalSide,
+        tradeIndex: -1,
+        status: isPreview
+          ? "Segnale preview: pairing entry/exit disponibile solo quando il trade esiste nel report base."
+          : "Clicca un marker Entry/Exit del report per vedere la coppia completa.",
+      };
+    }
+
+    const trade = tradeRows[tradeIndex];
+    const sequence = Number.isFinite(Number(trade.sequence)) ? Number(trade.sequence) : tradeIndex + 1;
+    const tradeHeader = `Trade #${sequence} (${String(trade.status_label || "-")})`;
+    const entryBlock = String(trade.entry_detail_text || "").trim() || "ENTRY | Dettaglio non disponibile.";
+    const exitBlock = String(trade.exit_detail_text || "").trim() || "EXIT | Dettaglio non disponibile.";
+    const isOpenTrade = !String(trade.exit_raw || "").trim();
+    return {
+      title: isOpenTrade ? "Entry (trade aperto)" : "Entry + Exit",
+      entryText: `${tradeHeader}\n\n${entryBlock}`,
+      exitText: `${tradeHeader}\n\n${exitBlock}`,
+      activeTab: signalSide,
+      tradeIndex,
+      status: isOpenTrade
+        ? "Trade ancora aperto: la sezione EXIT viene aggiornata quando arriva la chiusura."
+        : "Coppia completa mostrata: stessa operazione (entry + exit).",
+    };
   }
 
-  function clearSignalPopupHideTimer() {
-    if (!signalPopupHideTimer) return;
-    window.clearTimeout(signalPopupHideTimer);
-    signalPopupHideTimer = null;
+  function setSignalPopupTab(nextTab, options = {}) {
+    const tab = nextTab === "exit" ? "exit" : "entry";
+    const force = Boolean(options.force);
+    if (!force && signalPopupTab === tab) {
+      return;
+    }
+    signalPopupTab = tab;
+
+    dom.signalPopupTabs.forEach((button) => {
+      const isActive = (button.dataset.signalPopupTab || "entry") === tab;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+
+    if (dom.signalPopupEntry) {
+      dom.signalPopupEntry.hidden = tab !== "entry";
+    }
+    if (dom.signalPopupExit) {
+      dom.signalPopupExit.hidden = tab !== "exit";
+    }
+    signalPopupText = tab === "exit"
+      ? (signalPopupPanels.exit || signalPopupPanels.entry || "")
+      : (signalPopupPanels.entry || signalPopupPanels.exit || "");
   }
 
   function extractSignalPopupText(point) {
@@ -1192,6 +1595,50 @@
       return String(traceHoverText[point.pointNumber] || "").trim();
     }
     return "";
+  }
+
+  function extractSignalTimestamp(point, fallbackText = "") {
+    const lines = String(fallbackText || "").split("\n");
+    const firstLine = String(lines[0] || "").trim();
+    const match = firstLine.match(/^(?:ENTRY|EXIT)\s*\|\s*(.+)$/i);
+    if (match && match[1]) {
+      return normalizeSignalTimestamp(match[1]);
+    }
+    return normalizeSignalTimestamp(point?.x);
+  }
+
+  function resolveTradeIndex(signalSide, signalTime) {
+    if (!signalTime) return -1;
+    if (signalSide === "exit") {
+      return tradeIndexByExitRaw.has(signalTime) ? Number(tradeIndexByExitRaw.get(signalTime)) : -1;
+    }
+    return tradeIndexByEntryRaw.has(signalTime) ? Number(tradeIndexByEntryRaw.get(signalTime)) : -1;
+  }
+
+  function normalizeSignalTimestamp(rawValue) {
+    const raw = String(rawValue || "").trim();
+    if (!raw) return "";
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}):(\d{2})(?::\d{2})?)?$/);
+    if (!match) return raw;
+    const [, datePart, hours = "", minutes = ""] = match;
+    return hours ? `${datePart} ${hours}:${minutes}` : datePart;
+  }
+
+  function applySignalHighlight() {
+    if (!Array.isArray(root?.data) || root.data.length <= traceIndexes.selected_exit) {
+      return;
+    }
+    const overlay = buildSelectedTradeOverlay(activePayload());
+    Plotly.restyle(root, {
+      x: [overlay.entry.x],
+      y: [overlay.entry.y],
+      visible: [overlay.entry.visible],
+    }, [traceIndexes.selected_entry]);
+    Plotly.restyle(root, {
+      x: [overlay.exit.x],
+      y: [overlay.exit.y],
+      visible: [overlay.exit.visible],
+    }, [traceIndexes.selected_exit]);
   }
 
   function positionSignalPopup(point) {
@@ -1499,6 +1946,7 @@
 
   function applyPreview(payload, previewLabel = "Preview live") {
     hideSignalPopup();
+    resetViewportLock();
     state.previewRawPayload = normalizePayload(payload || {}, rawPayload.interval);
     syncPreviewAvailability();
     setStatus("preview", previewLabel);
@@ -1508,12 +1956,14 @@
   function setPreviewIndicatorFilter(indicatorKeys) {
     state.previewIndicatorFilter = Array.isArray(indicatorKeys) ? [...indicatorKeys] : null;
     if (!state.previewRawPayload) return;
+    resetViewportLock();
     syncPreviewAvailability();
     rerenderChart();
   }
 
   function clearPreview() {
     hideSignalPopup();
+    resetViewportLock();
     state.previewRawPayload = null;
     state.previewIndicatorFilter = null;
     Object.keys(state.previewAvailable).forEach((key) => {
@@ -1537,39 +1987,29 @@
     });
   }
 
+  function resetViewportLock() {
+    state.viewport.locked = false;
+    state.viewport.xRange = null;
+    state.viewport.yRange = null;
+    state.viewport.y2Range = null;
+    state.viewport.y3Range = null;
+  }
+
   function captureViewport() {
     const fullLayout = root._fullLayout;
     if (!fullLayout) return;
     state.viewport.locked = true;
-    state.viewport.xRange = copyRange(fullLayout.xaxis?.range);
-    state.viewport.yRange = copyRange(fullLayout.yaxis?.range);
-    state.viewport.y2Range = copyRange(fullLayout.yaxis2?.range);
-    state.viewport.y3Range = copyRange(fullLayout.yaxis3?.range);
+    state.viewport.xRange = clampViewportXRange(copyRange(fullLayout.xaxis?.range), activePayload().dates);
+    state.viewport.yRange = null;
+    state.viewport.y2Range = null;
+    state.viewport.y3Range = null;
   }
 
   function restoreViewport() {
     if (!state.viewport.locked) return Promise.resolve();
-    const chartStructure = buildChartStructure();
     const update = {};
     if (state.viewport.xRange) {
       update["xaxis.range"] = [...state.viewport.xRange];
-      update["xaxis2.range"] = [...state.viewport.xRange];
-      update["xaxis3.range"] = [...state.viewport.xRange];
-      chartStructure.panelAxes.forEach((panelAxis) => {
-        update[`${panelAxis.xLayout}.range`] = [...state.viewport.xRange];
-      });
-    }
-    if (state.viewport.yRange) {
-      update["yaxis.range"] = [...state.viewport.yRange];
-      update["yaxis.autorange"] = false;
-    }
-    if (state.viewport.y2Range) {
-      update["yaxis2.range"] = [...state.viewport.y2Range];
-      update["yaxis2.autorange"] = false;
-    }
-    if (state.viewport.y3Range) {
-      update["yaxis3.range"] = [...state.viewport.y3Range];
-      update["yaxis3.autorange"] = false;
     }
     if (!Object.keys(update).length) return Promise.resolve();
     return runRelayout(update);
@@ -1578,5 +2018,54 @@
   function copyRange(range) {
     if (!Array.isArray(range) || range.length !== 2) return null;
     return [range[0], range[1]];
+  }
+
+  function clampViewportXRange(range, dates) {
+    if (!Array.isArray(range) || range.length !== 2) return null;
+    const parsedStart = parsePlotlyDateValue(range[0]);
+    const parsedEnd = parsePlotlyDateValue(range[1]);
+    if (!parsedStart || !parsedEnd) return copyRange(range);
+    const firstDate = parsePlotlyDateValue(dates?.[0]);
+    const lastDate = parsePlotlyDateValue(dates?.[(dates?.length || 1) - 1]);
+    if (!firstDate || !lastDate) return copyRange(range);
+
+    let start = parsedStart;
+    let end = parsedEnd;
+    if (start.getTime() > end.getTime()) {
+      [start, end] = [end, start];
+    }
+
+    if (start.getTime() < firstDate.getTime()) start = firstDate;
+    if (end.getTime() > lastDate.getTime()) end = lastDate;
+    if (end.getTime() <= start.getTime()) {
+      const fallbackStartIndex = Math.max((dates?.length || 1) - Math.max(winLen(), 2), 0);
+      const fallbackStart = parsePlotlyDateValue(dates?.[fallbackStartIndex]) || firstDate;
+      return [fallbackStart.getTime(), lastDate.getTime()];
+    }
+    return [start.getTime(), end.getTime()];
+  }
+
+  function parsePlotlyDateValue(value) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      const fromEpoch = new Date(value);
+      return Number.isNaN(fromEpoch.getTime()) ? null : fromEpoch;
+    }
+    const raw = String(value || "").trim();
+    if (!raw) return null;
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (match) {
+      const [, year, month, day, hours = "00", minutes = "00", seconds = "00"] = match;
+      const parsedLocal = new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hours),
+        Number(minutes),
+        Number(seconds),
+      );
+      return Number.isNaN(parsedLocal.getTime()) ? null : parsedLocal;
+    }
+    const fallback = new Date(raw);
+    return Number.isNaN(fallback.getTime()) ? null : fallback;
   }
 })();

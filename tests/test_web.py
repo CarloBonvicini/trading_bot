@@ -394,6 +394,9 @@ def test_history_page_can_focus_specific_report_session(tmp_path: Path) -> None:
     assert "Go to chart" in body
     assert "Riprendi strategie" in body
     assert "Backtest" in body
+    assert "mini-chart-legend" in body
+    assert "Strategy" in body
+    assert "Buy &amp; hold" in body
     assert f"/reports/SPY-sma_cross-20260403-090000/chart?focus=price" in body
 
 
@@ -408,9 +411,6 @@ def test_chart_window_uses_clear_labels_and_simplified_default_view(tmp_path: Pa
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "Confronto con il buy &amp; hold" in body
-    assert "Il setup iniziale e' <strong>SMA Crossover</strong>" in body
-    assert "sono sempre misurati contro il benchmark buy &amp; hold sullo stesso simbolo e nello stesso periodo." in body
-    assert "Tutti i valori differenziali qui sotto sono calcolati contro il benchmark buy &amp; hold" in body
     assert "Prime 10 operazioni della preview" not in body
     assert "Operazioni del report" in body
     assert "massimo 50 righe per pagina" in body
@@ -419,7 +419,7 @@ def test_chart_window_uses_clear_labels_and_simplified_default_view(tmp_path: Pa
     assert ">Reset<" in body
     assert ">Esporta<" in body
     assert ">Schermo<" in body
-    assert "Setup iniziale caricato. Modifica i toggle per confrontarti col buy &amp; hold." in body
+    assert "Pronto" in body
     assert "Layout standard del chart." in body
     assert 'data-chart-indicator-open' in body
     assert 'data-chart-indicator-modal' in body
@@ -440,14 +440,12 @@ def test_live_comparison_cards_use_clearer_copy(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Rendimento configurazione attuale" in body
+    assert "Rendimento attuale" in body
     assert "Rendimento buy &amp; hold" in body
-    assert "Differenza di rendimento vs buy &amp; hold" in body
-    assert "Differenza drawdown vs buy &amp; hold" in body
-    assert "Differenza equity finale vs buy &amp; hold" in body
-    assert "Fee pagate dalla configurazione attuale" in body
-    assert "configurazione attuale rende di piu&#39; del buy &amp; hold" in body
-    assert "benchmark buy &amp; hold sullo stesso simbolo e nello stesso periodo" in body
+    assert "Delta rendimento" in body
+    assert "Delta drawdown" in body
+    assert "Delta equity finale" in body
+    assert "Fee" in body
     assert "buy &amp; hold" in body
 
 

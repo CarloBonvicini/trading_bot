@@ -164,6 +164,14 @@
                     <polyline points="{{ series.points }}" stroke="{{ series.color }}" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
                   {% endfor %}
                 </svg>
+                <div class="mini-chart-legend" aria-label="Legenda anteprima ultima sessione">
+                  {% for series in dashboard.latest_session.preview_chart.series %}
+                    <span class="mini-chart-legend-item">
+                      <span class="mini-chart-legend-swatch" style="--legend-color: {{ series.color }}"></span>
+                      {{ series.label }}
+                    </span>
+                  {% endfor %}
+                </div>
               </div>
               <div class="button-row">
                 <a class="action-button" href="{{ dashboard.latest_session.open_url }}">{{ dashboard.latest_session.open_label }}</a>
@@ -805,6 +813,14 @@
                         <polyline points="{{ series.points }}" stroke="{{ series.color }}" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
                       {% endfor %}
                     </svg>
+                    <div class="mini-chart-legend" aria-label="Legenda anteprima sessione" id="session-preview-legend">
+                      {% for series in selected_session.preview_chart.series %}
+                        <span class="mini-chart-legend-item">
+                          <span class="mini-chart-legend-swatch" style="--legend-color: {{ series.color }}"></span>
+                          {{ series.label }}
+                        </span>
+                      {% endfor %}
+                    </div>
                   </div>
                 </article>
               </div>
