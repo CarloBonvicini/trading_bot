@@ -21,10 +21,11 @@ def test_run_sma_sweep_request_generates_all_valid_combinations(monkeypatch, tmp
         },
         index=pd.date_range("2024-01-01", periods=12, freq="D"),
     )
-    monkeypatch.setattr("trading_bot.services.download_price_data", lambda **_: data)
+    monkeypatch.setattr("trading_bot.application.execution.download_price_data", lambda **_: data)
 
     sweep_request = SweepRequest(
         symbol="SPY",
+        data_symbol="SPY",
         start="2024-01-01",
         end="2024-01-12",
         interval="1d",
@@ -49,10 +50,11 @@ def test_run_sma_sweep_request_supports_ema_crossover(monkeypatch, tmp_path: Pat
         },
         index=pd.date_range("2024-01-01", periods=12, freq="D"),
     )
-    monkeypatch.setattr("trading_bot.services.download_price_data", lambda **_: data)
+    monkeypatch.setattr("trading_bot.application.execution.download_price_data", lambda **_: data)
 
     sweep_request = SweepRequest(
         symbol="SPY",
+        data_symbol="SPY",
         start="2024-01-01",
         end="2024-01-12",
         interval="1d",

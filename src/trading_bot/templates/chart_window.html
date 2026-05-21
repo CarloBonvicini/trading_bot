@@ -2,7 +2,7 @@
 {% block title %}{{ chart.title }} - Chart Terminal{% endblock %}
 {% block body_class %}chart-terminal-body{% endblock %}
 {% block head_extra %}
-  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
 {% endblock %}
 {% block content %}
   <script id="chart-window-data" type="application/json">{{ chart.chart_payload | tojson }}</script>
@@ -46,7 +46,7 @@
 
       <div class="chart-terminal-actions">
         {% if chart.artifact_type == "report" %}
-          <a class="ghost-link chart-action-link" href="{{ url_for('report_overview', report_name=chart.artifact_name) }}">Overview</a>
+          <a class="ghost-link chart-action-link" href="{{ url_for('report_overview', report_name=chart.artifact_name) }}">Panoramica</a>
           <a class="ghost-link chart-action-link" href="{{ url_for('history_home', session=chart.artifact_name) }}">Sessioni</a>
           <a class="ghost-link chart-action-link" href="{{ url_for('download_report_file', report_name=chart.artifact_name, filename='equity_curve.csv') }}">Scarica equity</a>
           <a class="ghost-link chart-action-link" href="{{ url_for('download_report_file', report_name=chart.artifact_name, filename='trades.csv') }}">Scarica trade</a>
@@ -125,8 +125,8 @@
               <button type="button" class="ghost-link chart-action-link chart-signal-popup-copy-button" data-signal-popup-copy>Copia</button>
             </div>
             <div class="terminal-chip-row chart-signal-popup-tabs" role="tablist" aria-label="Dettaglio segnale">
-              <button type="button" class="terminal-chip chart-signal-popup-tab is-active" data-signal-popup-tab="entry" aria-selected="true">Entry</button>
-              <button type="button" class="terminal-chip chart-signal-popup-tab" data-signal-popup-tab="exit" aria-selected="false">Exit</button>
+              <button type="button" class="terminal-chip chart-signal-popup-tab is-active" data-signal-popup-tab="entry" aria-selected="true">Ingresso</button>
+              <button type="button" class="terminal-chip chart-signal-popup-tab" data-signal-popup-tab="exit" aria-selected="false">Uscita</button>
             </div>
             <pre class="chart-signal-popup-body" data-signal-popup-entry></pre>
             <pre class="chart-signal-popup-body" data-signal-popup-exit hidden></pre>
@@ -196,7 +196,7 @@
       <div class="chart-indicator-dialog panel" role="dialog" aria-modal="true" aria-labelledby="chart-indicator-title">
         <div class="chart-indicator-header">
           <div class="chart-indicator-header-copy">
-            <p class="eyebrow">chart tools</p>
+            <p class="eyebrow">strumenti grafico</p>
             <h3 id="chart-indicator-title">Indicatori e linee del grafico</h3>
             <p class="inline-note">Qui gestisci tutto quello che compare sul chart. Gli indicatori live vengono disegnati direttamente dentro il grafico come pannelli dedicati.</p>
           </div>
@@ -246,7 +246,7 @@
               >
                 <span class="terminal-layer-swatch terminal-layer-swatch-preview-entry"></span>
                 <span class="terminal-layer-copy">
-                  <strong>Entry preview</strong>
+                  <strong>Ingresso preview</strong>
                   <small>Ingresso simulato della configurazione attuale.</small>
                 </span>
                 <small class="terminal-layer-state">preview</small>
@@ -262,7 +262,7 @@
               >
                 <span class="terminal-layer-swatch terminal-layer-swatch-preview-exit"></span>
                 <span class="terminal-layer-copy">
-                  <strong>Exit preview</strong>
+                  <strong>Uscita preview</strong>
                   <small>Uscita simulata della configurazione attuale.</small>
                 </span>
                 <small class="terminal-layer-state">preview</small>

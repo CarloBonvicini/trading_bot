@@ -357,9 +357,8 @@ def test_history_page_lists_saved_results(tmp_path: Path) -> None:
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "Tutte le sessioni avviate" in body
-    assert "select session" in body
-    assert "Clicca una sessione per aprire direttamente il suo chart dedicato." in body
-    assert "Go to chart" in body
+    assert "sessioni" in body
+    assert "Apri grafico" in body
     assert 'data-session-selector="SPY-sma_cross-sweep-20260403-100000"' in body
     assert 'data-session-open-url="/sweeps/SPY-sma_cross-sweep-20260403-100000/chart?focus=price"' in body
     assert f"/sweeps/SPY-sma_cross-sweep-20260403-100000/chart?focus=price" in body
@@ -376,7 +375,7 @@ def test_history_page_can_focus_specific_session(tmp_path: Path) -> None:
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "Sweep - SMA Crossover" in body
-    assert "Go to chart" in body
+    assert "Apri grafico" in body
     assert "Best params" in body
     assert f"/sweeps/SPY-sma_cross-sweep-20260403-100000/chart?focus=price" in body
 
@@ -391,7 +390,7 @@ def test_history_page_can_focus_specific_report_session(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Go to chart" in body
+    assert "Apri grafico" in body
     assert "Riprendi strategie" in body
     assert "Backtest" in body
     assert "mini-chart-legend" in body
@@ -843,7 +842,7 @@ def test_report_chart_window_renders_interactive_chart(tmp_path: Path) -> None:
     assert 'data-signal-popup' in body
     assert 'data-signal-popup-copy' in body
     assert "Chart sessione" in body
-    assert "Overview" in body
+    assert "Panoramica" in body
     assert 'data-focus-view="price"' in body
     assert "Candela" in body
     assert 'data-candle-controls' in body
@@ -854,7 +853,7 @@ def test_report_chart_window_renders_interactive_chart(tmp_path: Path) -> None:
     assert "Panoramica sessione" in body
     assert 'data-preview-indicator-panels' not in body
     assert "Gli indicatori live vengono disegnati direttamente dentro il grafico come pannelli dedicati." in body
-    assert "Entry preview" in body
+    assert "Ingresso preview" in body
     assert "Ingresso simulato della configurazione attuale." in body
     assert "Lettura e coerenza del risultato" in body
     assert "Metriche operative" in body
@@ -1108,3 +1107,138 @@ def test_create_preset_saves_named_strategy_setup(tmp_path: Path) -> None:
     assert (tmp_path / "strategy_presets.json").exists()
     body = response.get_data(as_text=True)
     assert "Preset salvato: RSI daily base" in body
+
+
+# ---------------------------------------------------------------------------
+# Contratto del payload chart — proteggono la migrazione Plotly → Lightweight
+# ---------------------------------------------------------------------------
+# Il payload JSON generato da build_chart_payload() è l'interfaccia pubblica
+# tra il backend Python e il frontend JS. Ogni cambiamento alla struttura deve
+# far fallire questi test prima di arrivare alla UI.
+
+def _make_chart_equity_curve() -> pd.DataFrame:
+    """Fixture minima con 5 barre e 1 trade completo."""
+    return pd.DataFrame({
+        "date":             ["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"],
+        "open":             [100.0, 101.0, 99.0, 102.0, 103.0],
+        "high":             [101.0, 102.0, 100.0, 103.0, 104.0],
+        "low":              [99.0,  100.0,  98.0, 101.0, 102.0],
+        "close":            [100.5, 101.5, 99.5, 102.5, 103.5],
+        "volume":           [1000,  1200,  900,  1100,  1300],
+        "equity":           [10000.0, 10050.0, 9950.0, 10100.0, 10150.0],
+        "gross_equity":     [10000.0, 10055.0, 9960.0, 10110.0, 10160.0],
+        "benchmark_equity": [10000.0, 10020.0, 9980.0, 10060.0, 10080.0],
+        "drawdown":         [0.0, 0.0, -0.005, 0.0, 0.0],
+    })
+
+
+def _make_chart_trades() -> pd.DataFrame:
+    return pd.DataFrame({
+        "entry_date":  ["2024-01-03"],
+        "entry_price": [99.5],
+        "exit_date":   ["2024-01-04"],
+        "exit_price":  [102.5],
+        "pnl_pct":     [3.02],
+        "holding_days":[1],
+    })
+
+
+def _build_payload(focus: str = "price") -> dict:
+    return build_chart_payload(
+        equity_curve=_make_chart_equity_curve(),
+        trades=_make_chart_trades(),
+        focus=focus,
+        interval="1d",
+        signal_context=None,
+    )
+
+
+def test_chart_payload_has_required_top_level_keys() -> None:
+    """Il payload deve contenere tutte le chiavi attese dal frontend JS."""
+    payload = _build_payload()
+    required = {"dates", "interval", "market", "entry_markers", "exit_markers",
+                "equity", "drawdown_pct", "focus"}
+    missing = required - set(payload.keys())
+    assert not missing, f"Chiavi mancanti dal payload: {missing}"
+
+
+def test_chart_payload_market_has_ohlcv_keys() -> None:
+    """Il sottodict market deve esporre open/high/low/close/volume/has_candles."""
+    market = _build_payload()["market"]
+    required = {"open", "high", "low", "close", "volume", "has_candles"}
+    missing = required - set(market.keys())
+    assert not missing, f"Chiavi OHLCV mancanti: {missing}"
+
+
+def test_chart_payload_array_lengths_are_consistent() -> None:
+    """Tutte le serie temporali devono avere la stessa lunghezza di dates."""
+    payload = _build_payload()
+    n = len(payload["dates"])
+    assert n > 0, "dates è vuoto"
+    assert len(payload["equity"]["strategy"]) == n, "equity.strategy length mismatch"
+    assert len(payload["equity"]["gross"])    == n, "equity.gross length mismatch"
+    assert len(payload["drawdown_pct"]) == n, "drawdown_pct length mismatch"
+    market = payload["market"]
+    for key in ("open", "high", "low", "close", "volume"):
+        assert len(market[key]) == n, f"market.{key} length mismatch"
+
+
+def test_chart_payload_markers_have_x_y_text() -> None:
+    """entry_markers e exit_markers devono avere x, y, text della stessa lunghezza."""
+    payload = _build_payload()
+    for kind in ("entry_markers", "exit_markers"):
+        m = payload[kind]
+        assert "x" in m and "y" in m and "text" in m, f"{kind} mancante di x/y/text"
+        assert len(m["x"]) == len(m["y"]) == len(m["text"]), \
+            f"{kind}: x/y/text hanno lunghezze diverse"
+
+
+def test_chart_payload_marker_dates_exist_in_dates() -> None:
+    """Le date dei marker devono essere presenti nell'array dates del payload."""
+    payload = _build_payload()
+    date_set = set(payload["dates"])
+    for kind in ("entry_markers", "exit_markers"):
+        for x in payload[kind]["x"]:
+            assert x in date_set, \
+                f"{kind}: coordinata x='{x}' non presente in dates"
+
+
+def test_chart_payload_interval_is_preserved() -> None:
+    """L'intervallo passato a build_chart_payload deve essere rispecchiato nel payload."""
+    for interval in ("1m", "5m", "1d", "1wk"):
+        payload = build_chart_payload(
+            equity_curve=_make_chart_equity_curve(),
+            trades=_make_chart_trades(),
+            focus="price",
+            interval=interval,
+            signal_context=None,
+        )
+        assert payload["interval"] == interval, \
+            f"interval '{interval}' non preservato nel payload"
+
+
+def test_chart_payload_focus_is_preserved() -> None:
+    """Il focus (price/equity/drawdown/all) deve essere rispecchiato nel payload."""
+    for focus in ("price", "equity", "drawdown", "all"):
+        payload = _build_payload(focus=focus)
+        assert payload["focus"] == focus, f"focus '{focus}' non preservato"
+
+
+def test_chart_payload_drawdown_pct_values_are_percentages() -> None:
+    """drawdown_pct deve essere in percentuale (valori tra -100 e 0)."""
+    payload = _build_payload()
+    for val in payload["drawdown_pct"]:
+        if val is not None:
+            assert -100.0 <= val <= 0.0, \
+                f"drawdown_pct fuori range [-100, 0]: {val}"
+
+
+def test_chart_payload_entry_before_exit_in_dates() -> None:
+    """Per ogni trade, la data di ingresso deve precedere quella di uscita nel payload."""
+    payload = _build_payload()
+    dates = payload["dates"]
+    entry_xs = payload["entry_markers"]["x"]
+    exit_xs  = payload["exit_markers"]["x"]
+    for entry_x, exit_x in zip(entry_xs, exit_xs):
+        assert dates.index(entry_x) < dates.index(exit_x), \
+            f"Ingresso '{entry_x}' non precede uscita '{exit_x}' in dates"

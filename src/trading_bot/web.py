@@ -68,6 +68,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
     app.config.from_mapping(
         SECRET_KEY="trading-bot-local-dev",
         REPORTS_DIR=Path(DEFAULT_REPORTS_DIR).resolve(),
+        SEND_FILE_MAX_AGE_DEFAULT=0,
     )
     if config:
         app.config.update(config)
@@ -337,7 +338,7 @@ def _field_errors(exc: FormValidationError) -> dict[str, str]:
     return {exc.display_field: str(exc)}
 
 
-def _home_tab_for_render(
+def _home_view_for_render(
     *,
     form_values: dict[str, object] | None,
     invalid_fields: tuple[str, ...] | list[str] | set[str] | None,
@@ -354,14 +355,6 @@ def _home_tab_for_render(
         return HOME_VIEW_STRATEGIES
 
     return HOME_VIEW_SETUP
-
-
-def _home_view_for_render(
-    *,
-    form_values: dict[str, object] | None,
-    invalid_fields: tuple[str, ...] | list[str] | set[str] | None,
-) -> str:
-    return _home_tab_for_render(form_values=form_values, invalid_fields=invalid_fields)
 
 
 def _resolve_home_form_values(form_values: dict[str, object] | None = None) -> dict[str, object]:
@@ -430,11 +423,11 @@ def _build_home_session_items(saved_items: list[dict[str, object]]) -> list[dict
     for item in session_items:
         if item["artifact_type"] == "sweep":
             item["open_url"] = url_for("sweep_chart_window", sweep_name=item["name"], focus="price")
-            item["open_label"] = "Go to chart"
+            item["open_label"] = "Apri grafico"
             item["resume_url"] = ""
         else:
             item["open_url"] = url_for("report_chart_window", report_name=item["name"], focus="price")
-            item["open_label"] = "Go to chart"
+            item["open_label"] = "Apri grafico"
             item["resume_url"] = url_for("resume_backtest", report_name=item["name"])
     return session_items
 

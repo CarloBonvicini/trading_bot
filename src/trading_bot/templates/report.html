@@ -10,7 +10,7 @@
             <p class="eyebrow">{{ report.metadata.strategy_label or report.metadata.strategy }}</p>
             <h2>{{ report.metadata.symbol or report.name }}</h2>
             <p class="hero-copy report-overview-copy">
-              Backtest chiuso sul periodo {{ report.metadata.start or "n/d" }} -> {{ report.metadata.end or "n/d" }}
+              Backtest chiuso sul periodo {{ report.metadata.start or "n/d" }} → {{ report.metadata.end or "n/d" }}
               con timeframe {{ report.metadata.interval or "n/d" }} e fee {{ report.metadata.fee_bps or "n/d" }} bps.
             </p>
           </div>
@@ -139,22 +139,22 @@
                 {% if item.artifact_type == "sweep" %}
                   <div class="report-card-metrics">
                     <div>
-                      <label>Best return</label>
+                      <label>Miglior rendimento</label>
                       <span>{{ item.summary.best_total_return_pct }}%</span>
                     </div>
                     <div>
-                      <label>Run</label>
+                      <label>Combinazioni</label>
                       <span>{{ item.summary.run_count }}</span>
                     </div>
                   </div>
                 {% else %}
                   <div class="report-card-metrics">
                     <div>
-                      <label>Total return</label>
+                      <label>Rendimento totale</label>
                       <span>{{ item.summary.total_return_pct }}%</span>
                     </div>
                     <div>
-                      <label>Trades</label>
+                      <label>Operazioni</label>
                       <span>{{ item.summary.trade_count }}</span>
                     </div>
                   </div>
