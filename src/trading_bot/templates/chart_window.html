@@ -1,9 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ chart.title }} - Chart Terminal{% endblock %}
 {% block body_class %}chart-terminal-body{% endblock %}
-{% block head_extra %}
-  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-{% endblock %}
+{% block head_extra %}{% endblock %}
 {% block content %}
   <script id="chart-window-data" type="application/json">{{ chart.chart_payload | tojson }}</script>
   <script id="chart-strategy-lab-config" type="application/json">{{ chart.chart_lab | tojson }}</script>
@@ -46,7 +44,6 @@
 
       <div class="chart-terminal-actions">
         {% if chart.artifact_type == "report" %}
-          <a class="ghost-link chart-action-link" href="{{ url_for('report_overview', report_name=chart.artifact_name) }}">Panoramica</a>
           <a class="ghost-link chart-action-link" href="{{ url_for('history_home', session=chart.artifact_name) }}">Sessioni</a>
           <a class="ghost-link chart-action-link" href="{{ url_for('download_report_file', report_name=chart.artifact_name, filename='equity_curve.csv') }}">Scarica equity</a>
           <a class="ghost-link chart-action-link" href="{{ url_for('download_report_file', report_name=chart.artifact_name, filename='trades.csv') }}">Scarica trade</a>
@@ -117,20 +114,56 @@
         <div class="chart-signal-overlay-host" data-signal-popup-host>
           <div id="interactive-chart-root" class="interactive-chart-root interactive-chart-root-terminal" aria-label="Interactive chart"></div>
           <aside class="chart-signal-popup" data-signal-popup hidden>
+            <!-- Intestazione: numero trade + pulsante copia -->
             <div class="chart-signal-popup-head">
               <div class="chart-signal-popup-copy">
-                <p class="eyebrow">Segnale</p>
-                <strong data-signal-popup-title>Entry + Exit</strong>
+                <p class="eyebrow">Operazione</p>
+                <strong data-signal-popup-title>—</strong>
               </div>
               <button type="button" class="ghost-link chart-action-link chart-signal-popup-copy-button" data-signal-popup-copy>Copia</button>
             </div>
-            <div class="terminal-chip-row chart-signal-popup-tabs" role="tablist" aria-label="Dettaglio segnale">
-              <button type="button" class="terminal-chip chart-signal-popup-tab is-active" data-signal-popup-tab="entry" aria-selected="true">Ingresso</button>
-              <button type="button" class="terminal-chip chart-signal-popup-tab" data-signal-popup-tab="exit" aria-selected="false">Uscita</button>
+
+            <!-- Navigazione ← → tra trade (nascosta se nessun trade valido) -->
+            <div class="chart-signal-popup-nav" data-signal-popup-nav hidden>
+              <button type="button" class="terminal-chip chart-signal-popup-nav-btn" data-signal-popup-prev aria-label="Trade precedente">←</button>
+              <span class="chart-signal-popup-nav-count" data-signal-popup-nav-count>— / —</span>
+              <button type="button" class="terminal-chip chart-signal-popup-nav-btn" data-signal-popup-next aria-label="Trade successivo">→</button>
+              <span class="chart-signal-popup-nav-hint">o usa ← →</span>
             </div>
-            <pre class="chart-signal-popup-body" data-signal-popup-entry></pre>
-            <pre class="chart-signal-popup-body" data-signal-popup-exit hidden></pre>
-            <p class="inline-note chart-signal-popup-status" data-signal-popup-status>Clicca un marker entry/exit per aprire il dettaglio della coppia trade.</p>
+
+            <!-- P&L in evidenza -->
+            <div class="chart-signal-popup-pnl">
+              <span class="trade-pnl trade-pnl-neutral" data-signal-popup-pnl-badge>—</span>
+            </div>
+
+            <!-- Coppia entry / exit sempre visibile -->
+            <div class="chart-signal-popup-pair">
+              <div class="signal-pair-row">
+                <span class="signal-pair-icon signal-pair-icon-entry">↑</span>
+                <span class="signal-pair-label">Ingresso</span>
+                <span class="signal-pair-date" data-signal-popup-entry-date>—</span>
+              </div>
+              <div class="signal-pair-row">
+                <span class="signal-pair-icon signal-pair-icon-exit">↓</span>
+                <span class="signal-pair-label">Uscita</span>
+                <span class="signal-pair-date" data-signal-popup-exit-date>aperto</span>
+              </div>
+            </div>
+
+            <!-- Toggle dettagli (collassati di default) -->
+            <button type="button" class="chart-signal-popup-detail-toggle" data-signal-popup-detail-toggle aria-expanded="false">
+              ▶ Mostra dettagli
+            </button>
+            <div data-signal-popup-detail-body hidden>
+              <div class="terminal-chip-row chart-signal-popup-tabs" role="tablist" aria-label="Dettaglio segnale">
+                <button type="button" class="terminal-chip chart-signal-popup-tab is-active" data-signal-popup-tab="entry" aria-selected="true">Ingresso</button>
+                <button type="button" class="terminal-chip chart-signal-popup-tab" data-signal-popup-tab="exit" aria-selected="false">Uscita</button>
+              </div>
+              <pre class="chart-signal-popup-body" data-signal-popup-entry></pre>
+              <pre class="chart-signal-popup-body" data-signal-popup-exit hidden></pre>
+            </div>
+
+            <p class="inline-note chart-signal-popup-status" data-signal-popup-status></p>
           </aside>
         </div>
 
@@ -141,52 +174,50 @@
           <span>Config <strong data-chart-status="preview">{{ chart.chart_lab.baseline_label }}</strong></span>
         </div>
 
-        <div class="chart-standard-strip chart-standard-strip-market chart-standard-strip-inline">
-          <div class="chart-standard-strip-head chart-standard-strip-head-inline">
-            <p class="eyebrow">mercato</p>
-            <h3>Ultima candela</h3>
-          </div>
-          <div class="chart-standard-strip-cards">
-            <article class="chart-standard-card chart-standard-card-ohlc">
-              <span>Open</span>
-              <strong data-market-open>{{ chart.market_snapshot.open_display }}</strong>
-            </article>
-            <article class="chart-standard-card chart-standard-card-ohlc">
-              <span>High</span>
-              <strong data-market-high>{{ chart.market_snapshot.high_display }}</strong>
-            </article>
-            <article class="chart-standard-card chart-standard-card-ohlc">
-              <span>Low</span>
-              <strong data-market-low>{{ chart.market_snapshot.low_display }}</strong>
-            </article>
-            <article class="chart-standard-card chart-standard-card-ohlc">
-              <span>Close</span>
-              <strong data-market-close-panel>{{ chart.market_snapshot.close_display }}</strong>
-            </article>
-            <article class="chart-standard-card chart-standard-card-ohlc">
-              <span>Volume</span>
-              <strong data-market-volume>{{ chart.market_snapshot.volume_display or "n/a" }}</strong>
-            </article>
-            <article class="chart-standard-card chart-standard-card-ohlc">
-              <span>Timestamp</span>
-              <strong data-market-timestamp>{{ chart.market_snapshot.timestamp_display or "-" }}</strong>
-            </article>
-          </div>
+        <!-- Strip mercato: flat, senza box -->
+        <div class="chart-flat-strip chart-flat-strip-market">
+          <span class="cfl-eyebrow">OHLC</span>
+          <span class="cfl-kv">
+            <span class="cfl-label">O</span>
+            <strong class="cfl-val" data-market-open>{{ chart.market_snapshot.open_display }}</strong>
+          </span>
+          <span class="cfl-kv">
+            <span class="cfl-label">H</span>
+            <strong class="cfl-val cfl-val-high" data-market-high>{{ chart.market_snapshot.high_display }}</strong>
+          </span>
+          <span class="cfl-kv">
+            <span class="cfl-label">L</span>
+            <strong class="cfl-val cfl-val-low" data-market-low>{{ chart.market_snapshot.low_display }}</strong>
+          </span>
+          <span class="cfl-kv">
+            <span class="cfl-label">C</span>
+            <strong class="cfl-val" data-market-close-panel>{{ chart.market_snapshot.close_display }}</strong>
+          </span>
+          <span class="terminal-change terminal-change-{{ chart.market_snapshot.change_class }}" data-market-change>{{ chart.market_snapshot.change_display }}</span>
+          <span class="terminal-change terminal-change-{{ chart.market_snapshot.change_class }} cfl-change-pct" data-market-change-pct>{{ chart.market_snapshot.change_pct_display }}</span>
+          {% if chart.market_snapshot.volume_display %}
+            <span class="cfl-sep">·</span>
+            <span class="cfl-kv">
+              <span class="cfl-label">Vol</span>
+              <strong class="cfl-val" data-market-volume>{{ chart.market_snapshot.volume_display }}</strong>
+            </span>
+          {% endif %}
+          {% if chart.market_snapshot.timestamp_display %}
+            <span class="cfl-sep">·</span>
+            <strong class="cfl-ts" data-market-timestamp>{{ chart.market_snapshot.timestamp_display }}</strong>
+          {% endif %}
         </div>
 
-        <div class="chart-standard-strip chart-standard-strip-summary">
-          <div class="chart-standard-strip-head">
-            <p class="eyebrow">snapshot</p>
-            <h3>Panoramica sessione</h3>
-          </div>
-          <div class="chart-standard-strip-cards">
-            {% for card in chart.snapshot_cards %}
-              <article class="chart-standard-card chart-standard-card-summary">
-                <span>{{ card.label }}</span>
-                <strong>{{ card.value }}</strong>
-              </article>
-            {% endfor %}
-          </div>
+        <!-- Strip metriche: flat, senza box -->
+        <div class="chart-flat-strip chart-flat-strip-snapshot">
+          <span class="cfl-eyebrow">PERF</span>
+          {% for card in chart.snapshot_cards %}
+            {% if card.sep_before %}<span class="cfl-sep">·</span>{% endif %}
+            <span class="cfl-kv">
+              <span class="cfl-label">{{ card.label }}</span>
+              <strong class="cfl-val cfl-val-{{ card.value_class }}">{{ card.value }}</strong>
+            </span>
+          {% endfor %}
         </div>
       </article>
     </section>
@@ -322,7 +353,10 @@
             <p class="eyebrow">chart lab</p>
             <h3>Attiva strategie live sul grafico</h3>
           </div>
-          <button type="button" class="ghost-link chart-action-link" data-chart-preview-reset>Ripristina</button>
+          <div style="display:flex;gap:0.5rem;align-items:center;">
+            <button type="button" class="ghost-link chart-action-link" data-scan-all-btn>Scansione rapida</button>
+            <button type="button" class="ghost-link chart-action-link" data-chart-preview-reset>Ripristina</button>
+          </div>
         </div>
 
         <div class="chart-live-toolbar">
@@ -357,6 +391,7 @@
                 <strong>{{ strategy.label }}</strong>
                 <span>{{ strategy.description }}</span>
               </div>
+              <span class="strategy-scan-badge" data-strategy-score="{{ strategy_id }}" hidden></span>
             </label>
           {% endfor %}
         </div>
@@ -371,6 +406,14 @@
                 <div>
                   <div class="section-label">{{ strategy.label }}</div>
                 </div>
+                <button
+                  type="button"
+                  class="ghost-link chart-action-link chart-autosetting-btn"
+                  data-autosetting-btn="{{ strategy_id }}"
+                  data-autosetting-label="{{ strategy.label }}"
+                >
+                  Analisi parametri
+                </button>
               </div>
               <div class="input-grid">
                 {% for parameter in strategy.parameters %}
@@ -420,7 +463,12 @@
       </article>
     </section>
 
-    <section class="panel chart-terminal-validation">
+    <div class="chart-bottom-tab-bar">
+      <button type="button" class="chart-bottom-tab" data-bottom-tab="trades">Operazioni</button>
+      <button type="button" class="chart-bottom-tab" data-bottom-tab="validation">Verifica risultati</button>
+    </div>
+
+    <section class="panel chart-terminal-validation" data-bottom-panel="validation" hidden>
       <div class="panel-header chart-terminal-panel-header">
         <div>
           <p class="eyebrow">verifica risultati</p>
@@ -475,7 +523,7 @@
       </div>
     </section>
 
-    <section class="panel chart-terminal-trades">
+    <section class="panel chart-terminal-trades" data-bottom-panel="trades" hidden>
       <div class="panel-header chart-terminal-panel-header">
         <div>
           <p class="eyebrow">trade tape</p>
@@ -531,8 +579,54 @@
       </div>
     </section>
   </section>
+
+  <!-- Modal Analisi Parametri (Autosetting) -->
+  <div class="autosetting-modal" id="autosetting-modal" hidden>
+    <button type="button" class="autosetting-modal-backdrop" data-autosetting-modal-close aria-label="Chiudi"></button>
+    <div class="autosetting-dialog panel" role="dialog" aria-modal="true" aria-labelledby="autosetting-modal-title">
+
+      <div class="autosetting-header">
+        <div class="autosetting-header-copy">
+          <p class="eyebrow">analisi parametri</p>
+          <h3 id="autosetting-modal-title" data-autosetting-modal-title>Autosetting</h3>
+          <p class="inline-note" data-autosetting-modal-subtitle></p>
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center;">
+          <div class="autosetting-chart-toggle terminal-chip-row" data-autosetting-chart-toggle>
+            <button type="button" class="terminal-chip is-active" data-autosetting-metric="sharpe">Sharpe</button>
+            <button type="button" class="terminal-chip" data-autosetting-metric="robustness">Robustness</button>
+          </div>
+          <button type="button" class="ghost-link chart-action-link" data-autosetting-modal-close>Chiudi</button>
+        </div>
+      </div>
+
+      <div class="autosetting-loading" data-autosetting-loading>
+        <div class="autosetting-loading-spinner"></div>
+        <span>Calcolo in corso — analisi di tutte le combinazioni...</span>
+      </div>
+
+      <div class="autosetting-content" data-autosetting-content hidden>
+        <div class="autosetting-metric-strip" data-autosetting-metrics></div>
+        <div class="autosetting-warning" data-autosetting-warning hidden></div>
+        <div class="autosetting-chart-area" data-autosetting-chart></div>
+        <p class="autosetting-hint">
+          Clicca su un punto del grafico per selezionare quei parametri. La cella evidenziata è la scelta ottimale dell'Autosetting.
+        </p>
+        <div class="autosetting-footer">
+          <p class="autosetting-selected-params" data-autosetting-selected-label>Nessuna selezione.</p>
+          <button type="button" class="autosetting-apply-btn" data-autosetting-apply disabled>
+            Applica parametri
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
 {% endblock %}
 {% block page_scripts %}
+  <script src="{{ url_for('static', filename='lightweight-charts.standalone.production.js') }}"></script>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
   <script src="{{ url_for('static', filename='chart_window.js') }}"></script>
   <script src="{{ url_for('static', filename='chart_strategy_lab.js') }}"></script>
 {% endblock %}

@@ -234,31 +234,23 @@
         aria-label="Backtest"
         {% if current_home_view not in ['setup', 'strategies'] %}hidden{% endif %}
       >
-        <section
-          class="home-workspace-grid {% if current_home_view != 'strategies' %}is-active{% endif %}"
-          id="home-panel-setup"
-          aria-label="Setup backtest"
-          {% if current_home_view == 'strategies' %}hidden{% endif %}
-        >
+        <section class="home-workspace-grid is-active">
+
           <article class="panel panel-form home-launch-panel">
             <div class="panel-header home-panel-header">
               <div>
-                <p class="eyebrow">passo 1 di 2</p>
-                <h3>Setup backtest</h3>
+                <p class="eyebrow">apri grafico</p>
+                <h3>Configura il test</h3>
               </div>
-              <span class="strategy-chip strategy-chip-accent">{{ saved_items|length }} risultati disponibili</span>
+              <span class="strategy-chip strategy-chip-accent">{{ saved_items|length }} sessioni salvate</span>
             </div>
 
-            <form action="{{ url_for('strategies_home') }}" method="post" class="backtest-form" id="setup-form">
-              <section class="strategy-fields is-active preset-box">
-                <div class="section-head">
-                  <div>
-                    <div class="section-label">Preset strategia</div>
-                    <p class="inline-note">
-                      Salva la configurazione attuale con un nome e ricaricala al volo per nuovi test.
-                    </p>
-                  </div>
-                </div>
+            <form action="{{ url_for('create_backtest') }}" method="post" class="backtest-form" id="backtest-form">
+              <input type="hidden" name="run_mode" value="single">
+              <input type="hidden" name="rule_logic" value="all">
+              <input type="hidden" name="strategy" value="{{ form_values.strategy }}">
+
+              <div class="preset-box">
                 <div class="input-grid">
                   <div class="field-block">
                     <label>
@@ -273,7 +265,7 @@
                   </div>
                   <div class="field-block">
                     <label>
-                      <span>Nome preset</span>
+                      <span>Salva come</span>
                       <input
                         name="preset_name"
                         value="{{ form_values.preset_name }}"
@@ -286,22 +278,22 @@
                     {% endif %}
                   </div>
                 </div>
-                <div class="button-row">
-                  <button class="ghost-button" type="submit" formaction="{{ url_for('create_preset') }}">Salva preset</button>
-                </div>
-              </section>
+              </div>
 
-              <div class="field-block">
-                <label>
+              <div class="field-block symbol-search-container">
+                <label for="symbol-input">
                   <span>Simbolo</span>
                   <input
+                    id="symbol-input"
                     name="symbol"
                     value="{{ form_values.symbol }}"
-                    placeholder="SPY o BTC-USD"
+                    placeholder="Cerca: QQQ, AAPL, BTC-USD…"
                     required
+                    autocomplete="off"
                     {% if 'symbol' in invalid_fields %}class="input-error"{% endif %}
                   >
                 </label>
+                <div id="symbol-suggestions" class="symbol-suggestions" hidden></div>
                 {% if field_errors.get('symbol') %}
                   <p class="field-error">{{ field_errors['symbol'] }}</p>
                 {% endif %}
@@ -310,14 +302,9 @@
               <div class="input-grid">
                 <div class="field-block">
                   <label>
-                    <span>Data iniziale</span>
-                    <input
-                      type="date"
-                      name="start"
-                      value="{{ form_values.start }}"
-                      required
-                      {% if 'start' in invalid_fields %}class="input-error"{% endif %}
-                    >
+                    <span>Da</span>
+                    <input type="date" name="start" value="{{ form_values.start }}" required
+                      {% if 'start' in invalid_fields %}class="input-error"{% endif %}>
                   </label>
                   {% if field_errors.get('start') %}
                     <p class="field-error">{{ field_errors['start'] }}</p>
@@ -325,14 +312,9 @@
                 </div>
                 <div class="field-block">
                   <label>
-                    <span>Data finale</span>
-                    <input
-                      type="date"
-                      name="end"
-                      value="{{ form_values.end }}"
-                      required
-                      {% if 'end' in invalid_fields %}class="input-error"{% endif %}
-                    >
+                    <span>A</span>
+                    <input type="date" name="end" value="{{ form_values.end }}" required
+                      {% if 'end' in invalid_fields %}class="input-error"{% endif %}>
                   </label>
                   {% if field_errors.get('end') %}
                     <p class="field-error">{{ field_errors['end'] }}</p>
@@ -343,7 +325,7 @@
               <div class="input-grid">
                 <div class="field-block">
                   <label>
-                    <span>Intervallo</span>
+                    <span>Timeframe</span>
                     <select name="interval" id="setup-interval-select" {% if 'interval' in invalid_fields %}class="input-error"{% endif %}>
                       {% for interval in intervals %}
                         <option value="{{ interval }}" {% if form_values.interval == interval %}selected{% endif %}>{{ interval }}</option>
@@ -358,16 +340,20 @@
                 </div>
                 <div class="field-block">
                   <label>
-                    <span>Regime test</span>
-                    <select name="run_mode" id="setup-run-mode-select">
-                      {% for run_mode in run_modes %}
-                        <option value="{{ run_mode }}" {% if form_values.run_mode == run_mode %}selected{% endif %}>
-                          {% if run_mode == "single" %}Test singolo{% else %}Sweep parametri{% endif %}
+                    <span>Strategia iniziale</span>
+                    <select name="active_strategies" id="initial-strategy-select">
+                      {% set initial_strategy = form_values.active_strategies[0] if form_values.active_strategies else 'sma_cross' %}
+                      {% for strategy_id, strategy in strategies.items() %}
+                        <option value="{{ strategy_id }}" {% if strategy_id == initial_strategy %}selected{% endif %}>
+                          {{ strategy.label }}
                         </option>
                       {% endfor %}
                     </select>
                   </label>
-                  <p class="inline-note">Puoi modificarlo al passo successivo.</p>
+                  <p class="inline-note">Puoi cambiare strategia dalla finestra grafico.</p>
+                  {% if field_errors.get('active_strategies') %}
+                    <p class="field-error">{{ field_errors['active_strategies'] }}</p>
+                  {% endif %}
                 </div>
               </div>
 
@@ -386,36 +372,14 @@
                 </div>
               </div>
 
-              <select name="rule_logic" id="setup-rule-logic-select" hidden aria-hidden="true">
-                {% for logic_key, logic_label in rule_logic_options.items() %}
-                  <option value="{{ logic_key }}" {% if form_values.rule_logic == logic_key %}selected{% endif %}>{{ logic_label }}</option>
-                {% endfor %}
-              </select>
-
-              <input type="hidden" name="strategy" value="{{ form_values.strategy }}">
-              <div id="setup-hidden-active-strategies">
-                {% for strategy_id in form_values.active_strategies %}
-                  <input type="hidden" name="active_strategies" value="{{ strategy_id }}" data-hidden-active-strategy>
-                {% endfor %}
-              </div>
-
               <div class="strategy-hidden-inputs" hidden aria-hidden="true">
-                {% set strategy_badge_prefix = "setup" %}
+                {% set strategy_badge_prefix = "form" %}
                 {% include "partials/_strategy_sections.html" %}
               </div>
 
               <div class="button-row home-step-actions">
-                <button
-                  class="action-button home-continue-button"
-                  type="submit"
-                  data-backtest-continue="true"
-                  data-home-tab-trigger="backtest"
-                  data-home-backtest-stage="strategies"
-                  data-home-tab-route="{{ home_routes['strategies'] }}"
-                >
-                  Continua alle strategie
-                </button>
-                <p class="inline-note">Passi allo stage strategie senza ricaricare la shell principale.</p>
+                <button class="action-button" type="submit" id="submit-button">Apri grafico →</button>
+                <button class="ghost-button" type="submit" formaction="{{ url_for('create_preset') }}">Salva preset</button>
               </div>
             </form>
           </article>
@@ -424,241 +388,60 @@
             <article class="panel home-insight-panel">
               <div class="panel-header home-panel-header">
                 <div>
-                  <p class="eyebrow">panoramica</p>
-                  <h3>Contesto rapido</h3>
+                  <p class="eyebrow">sessioni recenti</p>
+                  <h3>Ultima attivita'</h3>
                 </div>
-              </div>
-              <div class="home-insight-list">
-                <article class="home-insight-card">
-                  <span>Miglior run</span>
-                  <strong>{{ dashboard.best_return }}</strong>
-                  <p>{{ dashboard.best_label }}</p>
-                </article>
-                <article class="home-insight-card">
-                  <span>Run sopra hold</span>
-                  <strong>{{ dashboard.positive_edge_display }}</strong>
-                  <p>Numero di run che hanno battuto il benchmark</p>
-                </article>
-                <article class="home-insight-card">
-                  <span>Simboli piu' usati</span>
-                  {% if dashboard.top_symbols %}
-                    <div class="home-sidebar-chip-row">
-                      {% for item in dashboard.top_symbols %}
-                        <span class="home-symbol-chip">{{ item.symbol }} · {{ item.count }}</span>
-                      {% endfor %}
-                    </div>
-                  {% else %}
-                    <p>Nessun simbolo ancora salvato.</p>
-                  {% endif %}
-                </article>
-              </div>
-            </article>
-          </div>
-        </section>
-
-        <section
-          class="home-workspace-grid {% if current_home_view == 'strategies' %}is-active{% endif %}"
-          id="home-panel-strategies"
-          aria-label="Strategie backtest"
-          {% if current_home_view != 'strategies' %}hidden{% endif %}
-        >
-          <article class="panel panel-form home-launch-panel">
-            <div class="panel-header home-panel-header">
-              <div>
-                <p class="eyebrow">passo 2 di 2</p>
-                <h3>Strategie e lancio</h3>
-              </div>
-              <button
-                class="ghost-button"
-                type="button"
-                data-home-tab-trigger="backtest"
-                data-home-backtest-stage="setup"
-                data-home-tab-route="{{ home_routes['setup'] }}"
-              >
-                Modifica setup
-              </button>
-            </div>
-
-            <form action="{{ url_for('create_backtest') }}" method="post" class="backtest-form" id="strategy-form">
-              <input type="hidden" name="symbol" value="{{ form_values.symbol }}">
-              <input type="hidden" name="start" value="{{ form_values.start }}">
-              <input type="hidden" name="end" value="{{ form_values.end }}">
-              <input type="hidden" name="interval" value="{{ form_values.interval }}" id="strategy-interval-input">
-              <input type="hidden" name="initial_capital" value="{{ form_values.initial_capital }}">
-              <input type="hidden" name="fee_bps" value="{{ form_values.fee_bps }}">
-              <input type="hidden" name="preset_name" value="{{ form_values.preset_name }}">
-
-              <article class="strategy-draft-card">
-                <p class="eyebrow">backtest corrente</p>
-                <div class="strategy-draft-top">
-                  <h4 id="current-backtest-label">Backtest in preparazione</h4>
-                  <span class="strategy-chip strategy-chip-accent">Bozza attiva</span>
-                </div>
-                <p class="inline-note" id="current-backtest-meta"></p>
-              </article>
-
-              <div class="input-grid">
-                <div class="field-block">
-                  <label>
-                    <span>Modalita</span>
-                    <select name="run_mode" id="strategy-run-mode-select" {% if 'run_mode' in invalid_fields %}class="input-error"{% endif %}>
-                      {% for run_mode in run_modes %}
-                        <option value="{{ run_mode }}" {% if form_values.run_mode == run_mode %}selected{% endif %}>
-                          {% if run_mode == "single" %}Test singolo{% else %}Sweep parametri{% endif %}
-                        </option>
-                      {% endfor %}
-                    </select>
-                  </label>
-                  {% if field_errors.get('run_mode') %}
-                    <p class="field-error">{{ field_errors['run_mode'] }}</p>
-                  {% endif %}
-                </div>
-                <div class="field-block">
-                  <label>
-                    <span>Combina le regole attive</span>
-                    <select name="rule_logic" id="strategy-rule-logic-select" {% if 'rule_logic' in invalid_fields %}class="input-error"{% endif %}>
-                      {% for logic_key, logic_label in rule_logic_options.items() %}
-                        <option value="{{ logic_key }}" {% if form_values.rule_logic == logic_key %}selected{% endif %}>{{ logic_label }}</option>
-                      {% endfor %}
-                    </select>
-                  </label>
-                  <p class="inline-note rule-logic-help" id="rule-logic-help"></p>
-                  {% if field_errors.get('rule_logic') %}
-                    <p class="field-error">{{ field_errors['rule_logic'] }}</p>
-                  {% endif %}
-                </div>
-              </div>
-
-              <article class="strategy-picker-card" id="strategy-picker-card">
-                <div class="strategy-picker-top">
-                  <strong id="strategy-picker-label"></strong>
-                  <span class="strategy-chip" id="strategy-picker-chip"></span>
-                </div>
-                <p class="inline-note" id="strategy-picker-description"></p>
-                <p class="inline-note" id="strategy-picker-rules"></p>
-              </article>
-
-              <section class="strategy-fields is-active strategy-toggle-shell" id="strategy-rules-panel">
-                <div class="section-head">
-                  <div>
-                    <div class="section-label">Regole da avviare</div>
-                    <p class="inline-note">
-                      Attiva le strategie da usare. La matita apre i parametri; il toggle Sweep attiva il test a griglia.
-                    </p>
-                  </div>
-                </div>
-
-                <div class="strategy-toggle-grid" id="strategy-toggle-grid">
-                  {% for strategy_id, strategy in strategies.items() %}
-                    <article
-                      class="strategy-toggle-card {% if strategy_id in form_values.active_strategies %}is-active{% endif %}"
-                      data-strategy-toggle-card="{{ strategy_id }}"
-                      title="{{ strategy.description }}"
-                    >
-                      <input
-                        type="checkbox"
-                        id="toggle-{{ strategy_id }}"
-                        name="active_strategies"
-                        value="{{ strategy_id }}"
-                        data-strategy-toggle="{{ strategy_id }}"
-                        {% if strategy_id in form_values.active_strategies %}checked{% endif %}
-                      >
-                      <div class="strategy-toggle-card-main">
-                        <div class="strategy-toggle-card-copy">
-                          <div class="strategy-toggle-title-row">
-                            <label class="strategy-toggle-title" for="toggle-{{ strategy_id }}">
-                              <strong>{{ strategy.label }}</strong>
-                            </label>
-                            <button
-                              class="strategy-edit-button"
-                              type="button"
-                              data-strategy-edit="{{ strategy_id }}"
-                              aria-label="Apri editor parametri per {{ strategy.label }}"
-                              title="Apri editor parametri"
-                            >
-                              &#9998;
-                            </button>
-                          </div>
-                          <div class="strategy-toggle-card-meta">
-                            <span>{{ strategy.parameters|length }} parametri</span>
-                            {% if strategy.supports_sweep %}
-                              <label class="strategy-sweep-inline" title="Usa questa strategia in modalita sweep">
-                                <input
-                                  type="checkbox"
-                                  data-strategy-sweep="{{ strategy_id }}"
-                                  {% if form_values.run_mode == "sweep" and form_values.active_strategies|length == 1 and strategy_id in form_values.active_strategies %}checked{% endif %}
-                                >
-                                <span class="strategy-sweep-inline-label">Sweep</span>
-                                <span class="strategy-mini-switch" aria-hidden="true">
-                                  <span class="strategy-mini-knob"></span>
-                                </span>
-                              </label>
-                            {% endif %}
-                          </div>
-                        </div>
-                        <label class="strategy-toggle-card-label" for="toggle-{{ strategy_id }}" aria-label="Attiva {{ strategy.label }}">
-                          <span class="strategy-toggle-switch" aria-hidden="true">
-                            <span class="strategy-toggle-knob"></span>
-                          </span>
-                        </label>
-                      </div>
-                    </article>
-                  {% endfor %}
-                </div>
-                {% if field_errors.get('active_strategies') %}
-                  <p class="field-error">{{ field_errors['active_strategies'] }}</p>
-                {% endif %}
-              </section>
-
-              <div class="strategy-hidden-inputs" hidden aria-hidden="true">
-                {% set strategy_badge_prefix = "strategy" %}
-                {% include "partials/_strategy_sections.html" %}
-              </div>
-
-              <div class="button-row">
                 <button
                   class="ghost-button"
                   type="button"
-                  data-home-tab-trigger="backtest"
-                  data-home-backtest-stage="setup"
-                  data-home-tab-route="{{ home_routes['setup'] }}"
-                >
-                  Torna al setup
-                </button>
-                <button class="action-button" type="submit" id="submit-button">Avvia backtest</button>
-              </div>
-            </form>
-          </article>
-
-          <div class="home-side-stack">
-            <article class="panel home-insight-panel">
-              <div class="panel-header home-panel-header">
-                <div>
-                  <p class="eyebrow">setup attivo</p>
-                  <h3>Riepilogo rapido</h3>
-                </div>
+                  data-home-tab-trigger="results"
+                  data-home-tab-route="{{ home_routes['results'] }}"
+                >Tutte →</button>
               </div>
               <div class="home-insight-list">
-                <article class="home-insight-card">
-                  <span>Simbolo</span>
-                  <strong>{{ form_values.symbol }}</strong>
-                  <p>{{ form_values.start }} → {{ form_values.end }}</p>
-                </article>
-                <article class="home-insight-card">
-                  <span>Timeframe</span>
-                  <strong>{{ form_values.interval }}</strong>
-                  <p>{{ interval_hints.get(form_values.interval, '') }}</p>
-                </article>
-                <article class="home-insight-card">
-                  <span>Capitale / fee</span>
-                  <strong>{{ form_values.initial_capital }}</strong>
-                  <p>Fee {{ form_values.fee_bps }} bps</p>
-                </article>
+                {% if session_items %}
+                  {% for item in session_items[:5] %}
+                    <a class="home-recent-session-link" href="{{ item.open_url }}">
+                      <div class="home-recent-session-info">
+                        <strong>{{ item.title }}</strong>
+                        <p>{{ item.list_metric_label }}: {{ item.list_metric }}</p>
+                      </div>
+                      <span class="strategy-chip {% if item.tone == 'positive' %}strategy-chip-accent{% endif %}">
+                        {{ item.artifact_label }}
+                      </span>
+                    </a>
+                  {% endfor %}
+                {% else %}
+                  <p class="inline-note">Nessuna sessione ancora. Apri il primo grafico.</p>
+                {% endif %}
               </div>
             </article>
+
+            {% if dashboard.best_return and dashboard.best_return != 'n/d' %}
+              <article class="panel home-insight-panel">
+                <div class="panel-header home-panel-header">
+                  <div>
+                    <p class="eyebrow">record workspace</p>
+                    <h3>Metriche globali</h3>
+                  </div>
+                </div>
+                <div class="home-insight-list">
+                  <article class="home-insight-card">
+                    <span>Miglior rendimento</span>
+                    <strong>{{ dashboard.best_return }}</strong>
+                    <p>{{ dashboard.best_label }}</p>
+                  </article>
+                  <article class="home-insight-card">
+                    <span>Run sopra hold</span>
+                    <strong>{{ dashboard.positive_edge_display }}</strong>
+                    <p>Run che hanno battuto il benchmark</p>
+                  </article>
+                </div>
+              </article>
+            {% endif %}
           </div>
+
         </section>
-        {% include "partials/_strategy_modal.html" %}
       </section>
 
       <section

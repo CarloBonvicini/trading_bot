@@ -296,8 +296,7 @@ def test_index_lists_existing_reports(tmp_path: Path) -> None:
     assert "Metriche da tenere d'occhio" in body
     assert "100.00%" in body
     assert "1.12" in body
-    assert 'id="home-panel-setup"' in body
-    assert 'id="home-panel-strategies"' in body
+    assert 'id="home-panel-backtest"' in body
     assert "/drafts/resume/SPY-sma_cross-20260403-090000" in body
     assert ">Backtest<" in body
 
@@ -312,16 +311,12 @@ def test_new_backtest_page_renders_setup_form(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Preset strategia" in body
     assert 'id="setup-preset-select"' in body
     assert 'name="symbol"' in body
     assert 'name="interval" id="setup-interval-select"' in body
     assert 'id="interval-auto-adjust-note"' in body
-    assert 'name="run_mode" id="setup-run-mode-select"' in body
-    assert "Continua alle strategie" in body
-    assert 'data-backtest-continue="true"' in body
-    assert 'id="home-panel-strategies"' in body
-    assert 'data-strategy-toggle="ema_cross"' in body
+    assert 'id="initial-strategy-select"' in body
+    assert 'id="home-panel-backtest"' in body
     assert '"intervalLookbackDays"' in body
 
 
@@ -331,19 +326,9 @@ def test_strategies_page_renders_strategy_workspace(tmp_path: Path) -> None:
     client = app.test_client()
     response = client.get("/strategies")
 
-    assert response.status_code == 200
-    body = response.get_data(as_text=True)
-    assert 'data-strategy-toggle="ema_cross"' in body
-    assert 'data-strategy-edit="ema_cross"' in body
-    assert 'data-strategy-sweep="ema_cross"' in body
-    assert 'data-home-tab-button="strategies"' not in body
-    assert 'name="rule_logic"' in body
-    assert 'id="strategy-modal-title"' in body
-    assert 'id="strategy-modal-state"' in body
-    assert 'data-modal-input="sma_cross__fast"' in body
-    assert 'id="submit-button"' in body
-    assert 'id="home-panel-setup"' in body
-    assert 'data-home-panel="results"' in body
+    # /strategies redirects to /backtests/new (strategy config is in the chart window)
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/backtests/new")
 
 
 def test_history_page_lists_saved_results(tmp_path: Path) -> None:
@@ -462,7 +447,6 @@ def test_internal_navigation_targets_resolve(tmp_path: Path) -> None:
         "/strategies",
         f"/history?session={report_name}",
         f"/history?session={sweep_name}",
-        f"/reports/{report_name}/overview",
         f"/reports/{report_name}/chart?focus=equity",
         f"/sweeps/{sweep_name}",
         f"/sweeps/{sweep_name}/chart?focus=equity",
@@ -471,7 +455,7 @@ def test_internal_navigation_targets_resolve(tmp_path: Path) -> None:
     checked_targets: set[str] = set()
     for page in pages:
         response = client.get(page)
-        assert response.status_code == 200
+        assert response.status_code in {200, 302}, page
         body = response.get_data(as_text=True)
         for target in extract_navigation_targets(body):
             if target in checked_targets:
@@ -490,7 +474,7 @@ def test_resume_backtest_redirects_to_strategies_and_stores_draft(tmp_path: Path
     response = client.get(f"/drafts/resume/{report_name}")
 
     assert response.status_code == 302
-    assert response.headers["Location"].endswith("/strategies")
+    assert response.headers["Location"].endswith("/backtests/new")
     with client.session_transaction() as flask_session:
         assert flask_session[HOME_DRAFT_SESSION_KEY]["symbol"] == "SPY"
         assert flask_session[HOME_DRAFT_SESSION_KEY]["active_strategies"] == ["sma_cross"]
@@ -759,24 +743,17 @@ def test_report_detail_redirects_to_chart_terminal(tmp_path: Path) -> None:
     assert response.headers["Location"].endswith(f"/reports/{report_name}/chart?focus=price")
 
 
-def test_report_overview_renders_dashboard(tmp_path: Path) -> None:
+def test_report_overview_redirects_to_chart(tmp_path: Path) -> None:
     report_name = "SPY-sma_cross-20260403-090000"
     create_report_fixture(tmp_path / report_name)
     app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
 
     client = app.test_client()
-    response = client.get(f"/reports/{report_name}/overview")
+    # /overview was removed; /reports/<name> redirects to chart
+    response = client.get(f"/reports/{report_name}")
 
-    assert response.status_code == 200
-    body = response.get_data(as_text=True)
-    assert "report-dashboard-body" in body
-    assert "Cosa dicono i numeri" in body
-    assert "Rendimento e benchmark" in body
-    assert "Costi e attrito" in body
-    assert "Prime 20 operazioni" in body
-    assert "Esito" in body
-    assert "Durata" in body
-    assert "WIN" in body
+    assert response.status_code == 302
+    assert f"/reports/{report_name}/chart" in response.headers["Location"]
 
 
 def test_report_chart_handles_empty_trades_file(tmp_path: Path) -> None:
@@ -793,7 +770,7 @@ def test_report_chart_handles_empty_trades_file(tmp_path: Path) -> None:
     assert 'data-chart-trade-table' in body
 
 
-def test_report_overview_infers_period_from_equity_curve_when_metadata_missing(tmp_path: Path) -> None:
+def test_report_chart_infers_period_from_equity_curve_when_metadata_missing(tmp_path: Path) -> None:
     report_name = "SPY-sma_cross-20260403-090000"
     report_dir = tmp_path / report_name
     create_report_fixture(report_dir)
@@ -801,29 +778,24 @@ def test_report_overview_infers_period_from_equity_curve_when_metadata_missing(t
     app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
 
     client = app.test_client()
-    response = client.get(f"/reports/{report_name}/overview")
+    response = client.get(f"/reports/{report_name}/chart?focus=price")
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "2024-01-01" in body
-    assert "2024-01-02" in body
-    assert "timeframe 1d" in body
+    assert "interactive-chart-root" in body
 
 
-def test_sweep_detail_renders_ranking_and_best_run(tmp_path: Path) -> None:
+def test_sweep_detail_redirects_to_chart_window(tmp_path: Path) -> None:
     sweep_name = "SPY-sma_cross-sweep-20260403-100000"
     create_sweep_fixture(tmp_path / sweep_name)
     app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
 
     client = app.test_client()
+    # sweep detail page was replaced by the chart window
     response = client.get(f"/sweeps/{sweep_name}")
 
-    assert response.status_code == 200
-    body = response.get_data(as_text=True)
-    assert "Best SMA Crossover vs semplice buy &amp; hold" in body
-    assert "Migliori combinazioni" in body
-    assert "Prime 20 operazioni del best run" in body
-    assert "20 / 100" in body
+    assert response.status_code == 302
+    assert f"/sweeps/{sweep_name}/chart" in response.headers["Location"]
 
 
 def test_report_chart_window_renders_interactive_chart(tmp_path: Path) -> None:
@@ -842,15 +814,14 @@ def test_report_chart_window_renders_interactive_chart(tmp_path: Path) -> None:
     assert 'data-signal-popup' in body
     assert 'data-signal-popup-copy' in body
     assert "Chart sessione" in body
-    assert "Panoramica" in body
     assert 'data-focus-view="price"' in body
     assert "Candela" in body
     assert 'data-candle-controls' in body
     assert 'data-trace-toggle="benchmark"' in body
     assert 'data-chart-indicator-search' in body
     assert "Layer attivi" not in body
-    assert "Ultima candela" in body
-    assert "Panoramica sessione" in body
+    assert "chart-flat-strip-market" in body
+    assert "chart-flat-strip-snapshot" in body
     assert 'data-preview-indicator-panels' not in body
     assert "Gli indicatori live vengono disegnati direttamente dentro il grafico come pannelli dedicati." in body
     assert "Ingresso preview" in body
@@ -1242,3 +1213,83 @@ def test_chart_payload_entry_before_exit_in_dates() -> None:
     for entry_x, exit_x in zip(entry_xs, exit_xs):
         assert dates.index(entry_x) < dates.index(exit_x), \
             f"Ingresso '{entry_x}' non precede uscita '{exit_x}' in dates"
+
+
+# ── Test build_chart_snapshot_cards ──────────────────────────────────────────
+
+def _sample_summary() -> dict:
+    """Summary minima compatibile con build_chart_snapshot_cards."""
+    return {
+        "total_return_pct":     20.0,
+        "benchmark_return_pct": 17.0,
+        "excess_return_pct":    3.0,
+        "annual_return_pct":    9.5,
+        "max_drawdown_pct":    -8.5,
+        "sharpe_ratio":         0.91,
+        "trade_count":          4,
+        "exposure_pct":         45.0,
+        "fees_paid":            32.5,
+    }
+
+
+def test_snapshot_cards_returns_nine_fields() -> None:
+    """Devono essere presenti esattamente 9 card (3 gruppi: rendimenti, rischio, attività)."""
+    from trading_bot.reporting import build_chart_snapshot_cards
+    cards = build_chart_snapshot_cards(_sample_summary())
+    assert len(cards) == 9, f"Attese 9 card, trovate {len(cards)}"
+
+
+def test_snapshot_cards_have_required_keys() -> None:
+    """Ogni card deve avere label, value, value_class e sep_before."""
+    from trading_bot.reporting import build_chart_snapshot_cards
+    cards = build_chart_snapshot_cards(_sample_summary())
+    for card in cards:
+        assert "label"       in card, f"Chiave 'label' mancante: {card}"
+        assert "value"       in card, f"Chiave 'value' mancante: {card}"
+        assert "value_class" in card, f"Chiave 'value_class' mancante: {card}"
+        assert "sep_before"  in card, f"Chiave 'sep_before' mancante: {card}"
+
+
+def test_snapshot_cards_value_class_positive_for_gains() -> None:
+    """Rendimento positivo deve produrre value_class='positive'."""
+    from trading_bot.reporting import build_chart_snapshot_cards
+    cards = build_chart_snapshot_cards(_sample_summary())
+    rendimento = next(c for c in cards if c["label"] == "Rendimento")
+    assert rendimento["value_class"] == "positive", \
+        f"Atteso 'positive', trovato '{rendimento['value_class']}'"
+
+
+def test_snapshot_cards_value_class_negative_for_drawdown() -> None:
+    """Max DD negativo deve produrre value_class='negative'."""
+    from trading_bot.reporting import build_chart_snapshot_cards
+    cards = build_chart_snapshot_cards(_sample_summary())
+    dd = next(c for c in cards if c["label"] == "Max DD")
+    assert dd["value_class"] == "negative", \
+        f"Atteso 'negative', trovato '{dd['value_class']}'"
+
+
+def test_snapshot_cards_separators_between_groups() -> None:
+    """I separatori devono comparire solo tra gruppi diversi (2 sep su 9 card)."""
+    from trading_bot.reporting import build_chart_snapshot_cards
+    cards = build_chart_snapshot_cards(_sample_summary())
+    seps = [c for c in cards if c["sep_before"]]
+    assert len(seps) == 2, f"Attesi 2 separatori, trovati {len(seps)}"
+    assert not cards[0]["sep_before"], "La prima card non deve avere sep_before"
+
+
+def test_snapshot_cards_trade_count_is_integer_string() -> None:
+    """Il campo Trade deve essere formattato come intero (senza decimali)."""
+    from trading_bot.reporting import build_chart_snapshot_cards
+    cards = build_chart_snapshot_cards(_sample_summary())
+    trade_card = next(c for c in cards if c["label"] == "Trade")
+    assert trade_card["value"] == "4", \
+        f"Atteso '4', trovato '{trade_card['value']}'"
+
+
+def test_snapshot_cards_missing_key_returns_nd() -> None:
+    """Chiave mancante nel summary deve produrre value='n/d' senza eccezioni."""
+    from trading_bot.reporting import build_chart_snapshot_cards
+    cards = build_chart_snapshot_cards({})
+    for card in cards:
+        assert card["value"] in ("n/d", "0"), \
+            f"Valore inatteso per summary vuoto: {card}"

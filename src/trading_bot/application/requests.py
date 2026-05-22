@@ -268,16 +268,16 @@ class SweepRequest:
         base_request = BacktestRequest.from_mapping(raw)
         if base_request.is_composite:
             raise FormValidationError(
-                "Lo sweep multiplo richiede una sola regola attiva. Disattiva le altre oppure usa Test singolo.",
-                fields=("run_mode", "active_strategies"),
-                display_field="run_mode",
+                "Lo sweep multiplo richiede una sola regola attiva.",
+                fields=("active_strategies",),
+                display_field="active_strategies",
             )
         strategy_spec = STRATEGY_SPECS[base_request.strategy]
         if not strategy_spec.supports_sweep:
             raise FormValidationError(
-                "La modalita' sweep e' disponibile solo sulle strategie che supportano il test multiplo dei parametri.",
-                fields=("run_mode", "strategy"),
-                display_field="run_mode",
+                "La strategia selezionata non supporta il test multiplo dei parametri.",
+                fields=("active_strategies",),
+                display_field="active_strategies",
             )
 
         return cls(

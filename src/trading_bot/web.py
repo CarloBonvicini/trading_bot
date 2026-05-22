@@ -5,6 +5,7 @@ from pathlib import Path
 
 from flask import Flask, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 
+from trading_bot.application.autosetting import run_autosetting
 from trading_bot.application.chart_lab import (
     build_chart_lab_state,
     build_preview_indicator_payload,
@@ -17,7 +18,6 @@ from trading_bot.application.forms import as_form_values_from_saved_metadata
 from trading_bot.data import INTRADAY_LOOKBACK_DAYS, coerce_interval_date_window
 from trading_bot.errors import FormValidationError
 from trading_bot.reporting import (
-    SUMMARY_LABELS,
     build_chart_payload,
     build_live_comparison_cards,
     build_result_validation_snapshot,
@@ -25,9 +25,7 @@ from trading_bot.reporting import (
     build_trade_preview,
     enrich_summary_with_equity_curve,
     list_saved_items,
-    load_report,
     load_report_chart_window,
-    load_sweep,
     load_sweep_chart_window,
 )
 from trading_bot.services import (
@@ -86,8 +84,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
     def strategies_home():
         if request.method == "POST":
             _store_home_draft(_resolve_home_form_values(request.form))
-            return redirect(url_for("strategies_home"))
-        return _render_home(view=HOME_VIEW_STRATEGIES)
+        return redirect(url_for("new_backtest_home"))
 
     @app.get("/history")
     def history_home() -> str:
@@ -98,7 +95,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
         saved_item = _find_saved_report(report_name)
         metadata = saved_item.get("metadata", {}) if isinstance(saved_item.get("metadata"), dict) else {}
         _store_home_draft(as_form_values_from_saved_metadata(metadata))
-        return redirect(url_for("strategies_home"))
+        return redirect(url_for("new_backtest_home"))
 
     @app.post("/backtests")
     def create_backtest():
@@ -176,20 +173,6 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
     def report_detail(report_name: str) -> str:
         return redirect(url_for("report_chart_window", report_name=report_name, focus="price"))
 
-    @app.get("/reports/<report_name>/overview")
-    def report_overview(report_name: str) -> str:
-        try:
-            report = load_report(output_dir=current_app.config["REPORTS_DIR"], report_name=report_name)
-        except FileNotFoundError:
-            abort(404)
-
-        return render_template(
-            "report.html",
-            report=report,
-            saved_items=list_saved_items(current_app.config["REPORTS_DIR"]),
-            summary_labels=SUMMARY_LABELS,
-        )
-
     @app.get("/reports/<report_name>/chart")
     def report_chart_window(report_name: str) -> str:
         focus = str(request.args.get("focus", "price")).strip().lower()
@@ -205,6 +188,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
         chart = _attach_chart_lab(
             chart=chart,
             preview_endpoint=url_for("report_chart_preview", report_name=report_name),
+            autosetting_endpoint=url_for("report_autosetting", report_name=report_name),
         )
         return render_template("chart_window.html", chart=chart)
 
@@ -215,19 +199,16 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             artifact_name=report_name,
         )
 
-    @app.get("/sweeps/<sweep_name>")
-    def sweep_detail(sweep_name: str) -> str:
-        try:
-            sweep = load_sweep(output_dir=current_app.config["REPORTS_DIR"], sweep_name=sweep_name)
-        except FileNotFoundError:
-            abort(404)
-
-        return render_template(
-            "sweep.html",
-            sweep=sweep,
-            saved_items=list_saved_items(current_app.config["REPORTS_DIR"]),
-            summary_labels=SUMMARY_LABELS,
+    @app.post("/reports/<report_name>/autosetting")
+    def report_autosetting(report_name: str):
+        return _build_autosetting_response(
+            artifact_type="report",
+            artifact_name=report_name,
         )
+
+    @app.get("/sweeps/<sweep_name>")
+    def sweep_detail(sweep_name: str):
+        return redirect(url_for("sweep_chart_window", sweep_name=sweep_name, focus="price"))
 
     @app.get("/sweeps/<sweep_name>/chart")
     def sweep_chart_window(sweep_name: str) -> str:
@@ -244,12 +225,20 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
         chart = _attach_chart_lab(
             chart=chart,
             preview_endpoint=url_for("sweep_chart_preview", sweep_name=sweep_name),
+            autosetting_endpoint=url_for("sweep_autosetting", sweep_name=sweep_name),
         )
         return render_template("chart_window.html", chart=chart)
 
     @app.post("/sweeps/<sweep_name>/chart-preview")
     def sweep_chart_preview(sweep_name: str):
         return _build_chart_preview_response(
+            artifact_type="sweep",
+            artifact_name=sweep_name,
+        )
+
+    @app.post("/sweeps/<sweep_name>/autosetting")
+    def sweep_autosetting(sweep_name: str):
+        return _build_autosetting_response(
             artifact_type="sweep",
             artifact_name=sweep_name,
         )
@@ -284,7 +273,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default="127.0.0.1", help="Host for the local server.")
     parser.add_argument("--port", type=int, default=8000, help="Port for the local server.")
     parser.add_argument("--reports-dir", default="reports", help="Directory containing generated reports.")
-    parser.add_argument("--debug", action="store_true", help="Enable Flask debug mode.")
+    parser.add_argument("--debug", action=argparse.BooleanOptionalAction, default=True,
+                        help="Abilita Flask debug mode (default: on). Usa --no-debug per produzione.")
     return parser
 
 
@@ -343,17 +333,6 @@ def _home_view_for_render(
     form_values: dict[str, object] | None,
     invalid_fields: tuple[str, ...] | list[str] | set[str] | None,
 ) -> str:
-    if not form_values:
-        return HOME_VIEW_SETUP
-
-    fields = {str(field_name) for field_name in (invalid_fields or ())}
-    strategy_related = {"active_strategies", "rule_logic"}
-    if fields & strategy_related:
-        return HOME_VIEW_STRATEGIES
-
-    if any("__" in field_name for field_name in fields):
-        return HOME_VIEW_STRATEGIES
-
     return HOME_VIEW_SETUP
 
 
@@ -444,7 +423,12 @@ def _select_home_session(session_items: list[dict[str, object]]) -> dict[str, ob
     return session_items[0]
 
 
-def _attach_chart_lab(chart: dict[str, object], *, preview_endpoint: str) -> dict[str, object]:
+def _attach_chart_lab(
+    chart: dict[str, object],
+    *,
+    preview_endpoint: str,
+    autosetting_endpoint: str = "",
+) -> dict[str, object]:
     metadata = chart["metadata"]
     chart_lab_state = build_chart_lab_state(metadata)
     baseline_label = chart_lab_state["baseline_label"]
@@ -454,6 +438,7 @@ def _attach_chart_lab(chart: dict[str, object], *, preview_endpoint: str) -> dic
         "chart_lab": {
             **chart_lab_state,
             "preview_endpoint": preview_endpoint,
+            "autosetting_endpoint": autosetting_endpoint,
             "strategies": STRATEGY_OPTIONS,
             "rule_logic_options": RULE_LOGIC_OPTIONS,
             "comparison_cards": build_live_comparison_cards(
@@ -574,6 +559,39 @@ def _preview_raw_mapping() -> dict[str, object]:
     if hasattr(request.form, "getlist"):
         raw["active_strategies"] = request.form.getlist("active_strategies")
     return raw
+
+
+def _build_autosetting_response(*, artifact_type: str, artifact_name: str):
+    try:
+        chart, market_data_path = _load_chart_preview_source(
+            artifact_type=artifact_type,
+            artifact_name=artifact_name,
+        )
+        payload = request.get_json(silent=True) or {}
+        strategy_id = str(payload.get("strategy_id", "")).strip()
+        if not strategy_id:
+            return jsonify({"error": "strategy_id mancante."}), 400
+
+        fee_bps = float(payload.get("fee_bps", chart.get("summary", {}).get("fee_bps") or 5))
+        initial_capital = float(
+            chart.get("summary", {}).get("initial_capital") or 10_000.0
+        )
+
+        market_data = load_market_data_from_saved_equity(market_data_path)
+        autosetting_result = run_autosetting(
+            strategy_id=strategy_id,
+            data=market_data,
+            initial_capital=initial_capital,
+            fee_bps=fee_bps,
+        )
+    except FileNotFoundError:
+        abort(404)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify(autosetting_result)
 
 
 def _metadata_for_chart_preview(
