@@ -858,6 +858,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       renderAutosettingMetrics(data);
       renderAutosettingChart(data, autosettingActiveMetric);
+      renderAutosettingEquity(data);
       updateAutosettingSelectedLabel(data.best_params, data);
 
       if (autosettingApplyBtn) autosettingApplyBtn.disabled = false;
@@ -1064,6 +1065,92 @@ document.addEventListener("DOMContentLoaded", () => {
         if (autosettingApplyBtn) autosettingApplyBtn.disabled = false;
       });
     }
+  }
+
+  function renderAutosettingEquity(data) {
+    const section   = autosettingModal?.querySelector("[data-autosetting-equity-section]");
+    const chartNode = autosettingModal?.querySelector("[data-autosetting-equity-chart]");
+    if (!section || !chartNode || typeof Plotly === "undefined") return;
+
+    const is  = data.equity_is;
+    const oos = data.equity_oos;
+
+    if (!is?.dates?.length && !oos?.dates?.length) {
+      section.hidden = true;
+      return;
+    }
+
+    section.hidden = false;
+
+    const traces = [];
+
+    if (is?.dates?.length) {
+      traces.push({
+        type: "scatter", mode: "lines",
+        x: is.dates, y: is.values,
+        name: `In-sample (${data.train_bars ?? "?"} barre)`,
+        line: { color: "#10b981", width: 1.6 },
+        hovertemplate: "%{x}<br><b>%{y:.1f}%</b><extra>In-sample</extra>",
+      });
+    }
+
+    if (oos?.dates?.length) {
+      traces.push({
+        type: "scatter", mode: "lines",
+        x: oos.dates, y: oos.values,
+        name: `Out-of-sample (${data.test_bars ?? "?"} barre)`,
+        line: { color: "#38bdf8", width: 1.6 },
+        hovertemplate: "%{x}<br><b>%{y:.1f}%</b><extra>Out-of-sample</extra>",
+      });
+    }
+
+    const splitDate = oos?.dates?.[0] ?? null;
+    const shapes = [];
+    const annotations = [];
+
+    if (splitDate && is?.dates?.length && oos?.dates?.length) {
+      // Shading IS
+      shapes.push({
+        type: "rect", xref: "x", yref: "paper",
+        x0: is.dates[0], x1: splitDate, y0: 0, y1: 1,
+        fillcolor: "rgba(16,185,129,0.05)", line: { width: 0 },
+      });
+      // Shading OOS
+      shapes.push({
+        type: "rect", xref: "x", yref: "paper",
+        x0: splitDate, x1: oos.dates[oos.dates.length - 1], y0: 0, y1: 1,
+        fillcolor: "rgba(56,189,248,0.05)", line: { width: 0 },
+      });
+      // Linea di split
+      shapes.push({
+        type: "line", xref: "x", yref: "paper",
+        x0: splitDate, x1: splitDate, y0: 0, y1: 1,
+        line: { color: "rgba(163,177,204,0.4)", width: 1, dash: "dash" },
+      });
+      annotations.push({
+        x: splitDate, y: 1, xref: "x", yref: "paper",
+        text: "split", showarrow: false, xanchor: "left", yanchor: "top",
+        font: { color: "#9ba7c2", size: 9.5 },
+      });
+    }
+
+    Plotly.react(
+      chartNode,
+      traces,
+      {
+        paper_bgcolor: "transparent",
+        plot_bgcolor: "transparent",
+        margin: { t: 8, r: 16, b: 44, l: 52 },
+        legend: { font: { color: "#9ba7c2", size: 10 }, bgcolor: "transparent", orientation: "h", x: 0, y: -0.18 },
+        xaxis: { tickfont: { size: 9.5, color: "#9ba7c2" }, gridcolor: "rgba(163,177,204,0.07)", linecolor: "rgba(163,177,204,0.1)", showgrid: true },
+        yaxis: { tickfont: { size: 9.5, color: "#9ba7c2" }, gridcolor: "rgba(163,177,204,0.07)", linecolor: "rgba(163,177,204,0.1)", ticksuffix: "%" },
+        hovermode: "x unified",
+        hoverlabel: { bgcolor: "#0f172a", font: { color: "#e2e8f0", size: 11 }, bordercolor: "rgba(163,177,204,0.2)" },
+        shapes,
+        annotations,
+      },
+      { responsive: true, displaylogo: false, displayModeBar: false },
+    );
   }
 
   function updateAutosettingSelectedLabel(params, data) {

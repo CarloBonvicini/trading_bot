@@ -245,6 +245,7 @@ def run_autosetting(
             best_params = dict(zip(param_names, combo))
 
     # --- Valutazione out-of-sample con buffer warm-up ---
+    oos_result = None
     spec = STRATEGY_SPECS[strategy_id]
     int_param_names = [p.name for p in spec.parameters if p.value_type == "int"]
     warmup = max(
@@ -273,6 +274,28 @@ def run_autosetting(
     except Exception:
         oos_score = float("nan")
 
+    # --- Curve equity IS e OOS per visualizzazione ---
+    equity_is: dict | None = None
+    equity_oos: dict | None = None
+
+    try:
+        signal_is = build_strategy_signal(
+            strategy_id=strategy_id, data=train_data, parameters=best_params
+        )
+        is_result = run_backtest(
+            data=train_data, signal=signal_is,
+            initial_capital=initial_capital, fee_bps=fee_bps,
+        )
+        equity_is = _equity_to_payload(is_result.equity_curve)
+    except Exception:
+        pass
+
+    if oos_result is not None:
+        try:
+            equity_oos = _equity_to_payload(oos_result.equity_curve)
+        except Exception:
+            pass
+
     overfitting_warning = _calcola_warning_overfitting(best_own_sharpe, oos_score)
 
     # Costruisce lista di tutti i risultati per la visualizzazione heatmap
@@ -298,6 +321,8 @@ def run_autosetting(
         "overfitting_warning": overfitting_warning,
         "param_names": param_names,
         "all_scores": all_scores,
+        "equity_is": equity_is,
+        "equity_oos": equity_oos,
     }
 
 
@@ -315,3 +340,12 @@ def _calcola_warning_overfitting(is_score: float, oos_score: float) -> str | Non
 
 def _is_nan(value: float) -> bool:
     return math.isnan(value) or math.isinf(value)
+
+
+def _equity_to_payload(equity_curve: "pd.DataFrame") -> dict:
+    """Converte equity_curve in {dates, values} normalizzati a 100 all'inizio."""
+    eq = equity_curve["equity"].values
+    initial = float(eq[0]) if len(eq) > 0 and float(eq[0]) > 0 else 1.0
+    dates = equity_curve.index.strftime("%Y-%m-%d").tolist()
+    values = [round(float(v) / initial * 100.0, 2) for v in eq]
+    return {"dates": dates, "values": values}
