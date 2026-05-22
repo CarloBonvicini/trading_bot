@@ -139,6 +139,133 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  // ── Correlazione strategie ──────────────────────────────────────
+  const correlationBtn = document.querySelector("[data-correlation-btn]");
+  const correlationModal = document.getElementById("correlation-modal");
+
+  correlationBtn?.addEventListener("click", openCorrelationModal);
+  correlationModal?.querySelectorAll("[data-correlation-modal-close]").forEach((el) => {
+    el.addEventListener("click", closeCorrelationModal);
+  });
+
+  function openCorrelationModal() {
+    if (!correlationModal || !config.correlation_endpoint) return;
+    const loadingNode = correlationModal.querySelector("[data-correlation-loading]");
+    const contentNode = correlationModal.querySelector("[data-correlation-content]");
+    if (loadingNode) { loadingNode.hidden = false; loadingNode.innerHTML = '<div class="autosetting-loading-spinner"></div><span>Calcolo segnali in corso...</span>'; }
+    if (contentNode) contentNode.hidden = true;
+    correlationModal.hidden = false;
+    document.body.classList.add("autosetting-modal-open");
+    fetchCorrelationData();
+  }
+
+  function closeCorrelationModal() {
+    if (!correlationModal) return;
+    correlationModal.hidden = true;
+    document.body.classList.remove("autosetting-modal-open");
+  }
+
+  async function fetchCorrelationData() {
+    try {
+      const response = await fetch(config.correlation_endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildPayload()),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Correlazione non disponibile.");
+      renderCorrelationHeatmap(data);
+    } catch (error) {
+      const loadingNode = correlationModal?.querySelector("[data-correlation-loading]");
+      if (loadingNode) loadingNode.innerHTML = `<span style="color:#ef4444">Errore: ${escapeHtml(error.message)}</span>`;
+    }
+  }
+
+  function renderCorrelationHeatmap(data) {
+    const chartNode = correlationModal?.querySelector("[data-correlation-chart]");
+    const hintNode  = correlationModal?.querySelector("[data-correlation-hint]");
+    const loadingNode  = correlationModal?.querySelector("[data-correlation-loading]");
+    const contentNode  = correlationModal?.querySelector("[data-correlation-content]");
+    if (!chartNode || typeof Plotly === "undefined") return;
+
+    if (loadingNode) loadingNode.hidden = true;
+    if (contentNode) contentNode.hidden = false;
+
+    const labels = data.labels || [];
+    const matrix = data.matrix || [];
+
+    // Abbreviazioni leggibili per etichette di asse
+    const short = labels.map((l) =>
+      l.replace(" Crossover", "").replace(" Mean Reversion", "").replace(" Reversion", "")
+       .replace(" Trend Filter", "").replace(" Trend", "").replace(" Breakout", "").replace(" Momentum", "")
+    );
+
+    const textMatrix = matrix.map((row) => row.map((v) => (typeof v === "number" ? v.toFixed(2) : "—")));
+
+    const colorscale = [
+      [0.00, "#7f1d1d"],
+      [0.20, "#dc2626"],
+      [0.40, "#374151"],
+      [0.50, "#1e293b"],
+      [0.60, "#374151"],
+      [0.80, "#059669"],
+      [1.00, "#064e3b"],
+    ];
+
+    Plotly.react(
+      chartNode,
+      [{
+        type: "heatmap",
+        z: matrix,
+        x: short,
+        y: short,
+        colorscale,
+        zmin: -1,
+        zmax: 1,
+        text: textMatrix,
+        texttemplate: "%{text}",
+        textfont: { size: 9, color: "#cbd5e1" },
+        showscale: true,
+        colorbar: {
+          tickcolor: "#9ba7c2",
+          tickfont: { color: "#9ba7c2", size: 10 },
+          bgcolor: "transparent",
+          bordercolor: "rgba(163,177,204,0.12)",
+          thickness: 14,
+        },
+        hoverongaps: false,
+        hovertemplate: "<b>%{y} × %{x}</b><br>Correlazione: <b>%{z:.3f}</b><extra></extra>",
+      }],
+      {
+        paper_bgcolor: "transparent",
+        plot_bgcolor: "transparent",
+        margin: { t: 8, r: 70, b: 130, l: 130 },
+        xaxis: {
+          tickangle: -42,
+          tickfont: { size: 10, color: "#9ba7c2" },
+          gridcolor: "rgba(163,177,204,0.07)",
+          linecolor: "rgba(163,177,204,0.1)",
+        },
+        yaxis: {
+          tickfont: { size: 10, color: "#9ba7c2" },
+          gridcolor: "rgba(163,177,204,0.07)",
+          linecolor: "rgba(163,177,204,0.1)",
+          autorange: "reversed",
+        },
+      },
+      { responsive: true, displaylogo: false, displayModeBar: false },
+    );
+
+    if (hintNode) {
+      if (data.failed_strategies?.length) {
+        hintNode.textContent = `${data.failed_strategies.length} strateg${data.failed_strategies.length === 1 ? "ia esclusa" : "ie escluse"} per dati mancanti (high/low/volume non presenti nel dataset).`;
+        hintNode.hidden = false;
+      } else {
+        hintNode.hidden = true;
+      }
+    }
+  }
+
   // ── Scansione (rapida / media / lunga) ───────────────────────────
   const scanAllBtn = document.querySelector("[data-scan-all-btn]");
   const scanModeToggle = document.querySelector("[data-scan-mode-toggle]");

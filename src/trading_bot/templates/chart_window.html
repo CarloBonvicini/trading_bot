@@ -376,6 +376,7 @@
                 </button>
               </div>
             </div>
+            <button type="button" class="ghost-link chart-action-link" data-correlation-btn>Correlazione</button>
             <button type="button" class="ghost-link chart-action-link" data-chart-preview-reset>Ripristina</button>
           </div>
         </div>
@@ -601,6 +602,33 @@
       </div>
     </section>
   </section>
+
+  <!-- Modal Correlazione strategie -->
+  <div class="autosetting-modal" id="correlation-modal" hidden>
+    <button type="button" class="autosetting-modal-backdrop" data-correlation-modal-close aria-label="Chiudi"></button>
+    <div class="autosetting-dialog panel" role="dialog" aria-modal="true" aria-labelledby="correlation-modal-title">
+
+      <div class="autosetting-header">
+        <div class="autosetting-header-copy">
+          <p class="eyebrow">analisi segnali</p>
+          <h3 id="correlation-modal-title">Correlazione tra strategie</h3>
+          <p class="inline-note">Correlazione di Pearson tra i segnali 0/1 generati sul dataset corrente con i parametri attivi.</p>
+        </div>
+        <button type="button" class="ghost-link chart-action-link" data-correlation-modal-close>Chiudi</button>
+      </div>
+
+      <div class="autosetting-loading" data-correlation-loading>
+        <div class="autosetting-loading-spinner"></div>
+        <span>Calcolo segnali in corso...</span>
+      </div>
+
+      <div data-correlation-content hidden>
+        <div data-correlation-chart style="height:560px;"></div>
+        <p class="autosetting-hint" data-correlation-hint hidden></p>
+      </div>
+
+    </div>
+  </div>
 
   <!-- Modal Analisi Parametri (Autosetting) -->
   <div class="autosetting-modal" id="autosetting-modal" hidden>

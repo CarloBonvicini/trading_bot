@@ -3,9 +3,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+import pandas as pd
+
 from flask import Flask, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 
 from trading_bot.application.autosetting import run_autosetting
+from trading_bot.strategies import STRATEGY_SPECS, build_strategy_signal, parse_strategy_parameters
 from trading_bot.application.chart_lab import (
     build_chart_lab_state,
     build_preview_indicator_payload,
@@ -189,6 +192,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             chart=chart,
             preview_endpoint=url_for("report_chart_preview", report_name=report_name),
             autosetting_endpoint=url_for("report_autosetting", report_name=report_name),
+            correlation_endpoint=url_for("report_correlation", report_name=report_name),
         )
         return render_template("chart_window.html", chart=chart)
 
@@ -202,6 +206,13 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
     @app.post("/reports/<report_name>/autosetting")
     def report_autosetting(report_name: str):
         return _build_autosetting_response(
+            artifact_type="report",
+            artifact_name=report_name,
+        )
+
+    @app.post("/reports/<report_name>/correlation")
+    def report_correlation(report_name: str):
+        return _build_correlation_response(
             artifact_type="report",
             artifact_name=report_name,
         )
@@ -226,6 +237,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             chart=chart,
             preview_endpoint=url_for("sweep_chart_preview", sweep_name=sweep_name),
             autosetting_endpoint=url_for("sweep_autosetting", sweep_name=sweep_name),
+            correlation_endpoint=url_for("sweep_correlation", sweep_name=sweep_name),
         )
         return render_template("chart_window.html", chart=chart)
 
@@ -239,6 +251,13 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
     @app.post("/sweeps/<sweep_name>/autosetting")
     def sweep_autosetting(sweep_name: str):
         return _build_autosetting_response(
+            artifact_type="sweep",
+            artifact_name=sweep_name,
+        )
+
+    @app.post("/sweeps/<sweep_name>/correlation")
+    def sweep_correlation(sweep_name: str):
+        return _build_correlation_response(
             artifact_type="sweep",
             artifact_name=sweep_name,
         )
@@ -428,6 +447,7 @@ def _attach_chart_lab(
     *,
     preview_endpoint: str,
     autosetting_endpoint: str = "",
+    correlation_endpoint: str = "",
 ) -> dict[str, object]:
     metadata = chart["metadata"]
     chart_lab_state = build_chart_lab_state(metadata)
@@ -439,6 +459,7 @@ def _attach_chart_lab(
             **chart_lab_state,
             "preview_endpoint": preview_endpoint,
             "autosetting_endpoint": autosetting_endpoint,
+            "correlation_endpoint": correlation_endpoint,
             "strategies": STRATEGY_OPTIONS,
             "rule_logic_options": RULE_LOGIC_OPTIONS,
             "comparison_cards": build_live_comparison_cards(
@@ -530,6 +551,41 @@ def _build_chart_preview_response(*, artifact_type: str, artifact_name: str):
             "validation_checks": validation["checks"],
         }
     )
+
+
+def _build_correlation_response(*, artifact_type: str, artifact_name: str):
+    try:
+        chart, market_data_path = _load_chart_preview_source(
+            artifact_type=artifact_type,
+            artifact_name=artifact_name,
+        )
+        market_data = load_market_data_from_saved_equity(market_data_path)
+    except FileNotFoundError:
+        abort(404)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    payload = request.get_json(silent=True) or {}
+    signals: dict[str, pd.Series] = {}
+    failed: list[str] = []
+
+    for strategy_id, spec in STRATEGY_SPECS.items():
+        try:
+            params = parse_strategy_parameters(strategy_id, payload)
+            signal = build_strategy_signal(strategy_id, market_data, params).fillna(0.0)
+            signals[spec.label] = signal
+        except Exception:
+            failed.append(strategy_id)
+
+    if len(signals) < 2:
+        return jsonify({"error": "Meno di 2 strategie calcolabili sul dataset corrente."}), 400
+
+    corr = pd.DataFrame(signals).dropna().corr().round(3)
+    return jsonify({
+        "labels": list(corr.columns),
+        "matrix": corr.values.tolist(),
+        "failed_strategies": failed,
+    })
 
 
 def _load_chart_preview_source(*, artifact_type: str, artifact_name: str) -> tuple[dict[str, object], Path]:
