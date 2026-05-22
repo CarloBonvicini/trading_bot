@@ -457,6 +457,7 @@
             <article class="terminal-metric-card">
               <p>{{ card.label }}</p>
               <strong>{{ card.value }}</strong>
+              {% if card.hint %}<span>{{ card.hint }}</span>{% endif %}
             </article>
           {% endfor %}
         </div>

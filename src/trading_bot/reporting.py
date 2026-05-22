@@ -557,26 +557,46 @@ def build_summary_cards(summary: dict[str, object]) -> list[dict[str, object]]:
 
 
 def build_chart_snapshot_cards(summary: dict[str, object]) -> list[dict[str, str]]:
+    # (label, chiave, tipo, gruppo)
+    # Un nuovo gruppo inserisce un separatore visivo nella strip flat.
     fields = (
-        ("Rendimento", "total_return_pct", "percent"),
-        ("Buy & hold", "benchmark_return_pct", "percent"),
-        ("Delta", "excess_return_pct", "signed_percent"),
-        ("Equity finale", "final_equity", "number"),
-        ("Max DD", "max_drawdown_pct", "percent"),
-        ("Sharpe", "sharpe_ratio", "ratio"),
+        ("Rendimento",  "total_return_pct",     "signed_percent", "rendimenti"),
+        ("Buy & hold",  "benchmark_return_pct", "percent",        "rendimenti"),
+        ("Delta",       "excess_return_pct",    "signed_percent", "rendimenti"),
+        ("Rend. annuo", "annual_return_pct",    "signed_percent", "rendimenti"),
+        ("Max DD",      "max_drawdown_pct",     "percent",        "rischio"),
+        ("Sharpe",      "sharpe_ratio",         "ratio",          "rischio"),
+        ("Trade",       "trade_count",          "integer",        "attivita"),
+        ("Esposizione", "exposure_pct",         "percent",        "attivita"),
+        ("Fee",         "fees_paid",            "number",         "attivita"),
     )
     cards: list[dict[str, str]] = []
-    for label, key, kind in fields:
+    prev_group = ""
+    for label, key, kind, group in fields:
         value = summary.get(key)
+        numeric = _to_float(value)
         if kind == "percent":
             display_value = _format_percent_metric(value)
+            value_class = _delta_tone(numeric)
         elif kind == "signed_percent":
             display_value = _format_percent_metric(value, signed=True)
+            value_class = _delta_tone(numeric)
         elif kind == "ratio":
             display_value = _format_ratio_metric(value)
+            value_class = _delta_tone(numeric)
+        elif kind == "integer":
+            display_value = str(int(numeric)) if numeric is not None else "n/d"
+            value_class = "neutral"
         else:
             display_value = _format_number_metric(value)
-        cards.append({"label": label, "value": display_value})
+            value_class = "neutral"
+        cards.append({
+            "label":      label,
+            "value":      display_value,
+            "value_class": value_class,
+            "sep_before": bool(prev_group and group != prev_group),
+        })
+        prev_group = group
     return cards
 
 
@@ -665,6 +685,8 @@ def build_live_comparison_cards(
         )
     )
     preview_fees = float(preview_summary.get("fees_paid", 0.0))
+    preview_sharpe = preview_summary.get("sharpe_ratio")
+    sharpe_str = f"{float(preview_sharpe):+.2f}" if preview_sharpe is not None else "n/d"
 
     return [
         {
@@ -676,6 +698,11 @@ def build_live_comparison_cards(
             "label": "Rendimento buy & hold",
             "value": f"{benchmark_return:.2f}%",
             "hint": "",
+        },
+        {
+            "label": "Sharpe ratio",
+            "value": sharpe_str,
+            "hint": "Rendimento / rischio (annualizzato)",
         },
         {
             "label": "Delta rendimento",
