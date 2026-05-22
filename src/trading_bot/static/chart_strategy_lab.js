@@ -180,11 +180,15 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const sharpe = data.sharpe_in_sample;
+        const ret = typeof data.total_return_pct === "number" ? data.total_return_pct : null;
         if (badge) {
-          const sign = sharpe >= 0 ? "+" : "";
-          badge.textContent = `Sharpe ${sign}${sharpe.toFixed(2)}`;
-          badge.className = `strategy-scan-badge ${_scanTone(sharpe)}`;
-          badge.title = `Sharpe in-sample: ${sharpe.toFixed(3)} · out-of-sample: ${typeof data.sharpe_out_of_sample === "number" ? data.sharpe_out_of_sample.toFixed(3) : "—"}`;
+          const sharpeSign = sharpe >= 0 ? "+" : "";
+          const retSign = ret !== null && ret >= 0 ? "+" : "";
+          const retStr = ret !== null ? ` · ${retSign}${ret.toFixed(1)}%` : "";
+          badge.innerHTML = `<span>Sharpe ${sharpeSign}${sharpe.toFixed(2)}</span><span>${ret !== null ? `${retSign}${ret.toFixed(1)}%` : ""}</span>`;
+          badge.className = `strategy-scan-badge strategy-scan-badge-dual ${_scanTone(sharpe)}`;
+          badge.title = `Sharpe in-sample: ${sharpe.toFixed(3)} · out-of-sample: ${typeof data.sharpe_out_of_sample === "number" ? data.sharpe_out_of_sample.toFixed(3) : "—"}${retStr}`;
+          badge.hidden = false;
         }
       } catch (_) {
         if (badge) {

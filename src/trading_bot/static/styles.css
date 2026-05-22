@@ -4268,6 +4268,14 @@ td {
   margin-top: 0.1rem;
 }
 
+.strategy-scan-badge-dual {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  padding: 0.28rem 0.5rem;
+  line-height: 1.2;
+}
+
 .strategy-scan-badge.scan-loading {
   background: rgba(171, 184, 214, 0.12);
   color: #6b7794;
