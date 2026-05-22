@@ -173,7 +173,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const strategyIds = Object.keys(config.strategies || {});
     if (!strategyIds.length) return;
 
-    const modeLabel = { rapida: "Rapida", media: "Media", lunga: "Lunga" }[currentScanMode] || "Rapida";
+    const modeLabel = { rapida: "Rapida", media: "Media", lunga: "Lunga", xl: "XL" }[currentScanMode] || "Rapida";
     scanAllBtn.disabled = true;
     scanAllBtn.textContent = `Scansione ${modeLabel}…`;
 

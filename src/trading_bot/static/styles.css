@@ -4688,3 +4688,15 @@ body.autosetting-modal-open {
 .scan-mode-option.is-selected strong {
   color: #26d0a8;
 }
+
+.scan-mode-option-xl strong {
+  color: #f59e0b;
+}
+
+.scan-mode-option-xl.is-selected {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.scan-mode-option-xl.is-selected strong {
+  color: #f59e0b;
+}

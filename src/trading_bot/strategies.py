@@ -261,6 +261,31 @@ def on_balance_volume(data: pd.DataFrame) -> pd.Series:
     return (direction * volume).cumsum().rename("obv")
 
 
+def donchian_breakout(data: pd.DataFrame, entry_period: int = 20, exit_period: int = 10) -> pd.Series:
+    """Breakout sul canale di Donchian.
+
+    Entra long quando il close supera il massimo degli ultimi `entry_period` giorni
+    (nuovo massimo storico recente). Esce quando il close scende sotto il minimo
+    degli ultimi `exit_period` giorni.
+    """
+    if entry_period <= 1 or exit_period <= 1:
+        raise ValueError("I periodi Donchian devono essere maggiori di 1.")
+    if exit_period >= entry_period:
+        raise ValueError("L'exit period deve essere minore dell'entry period.")
+
+    _require_columns(data, ("high", "low"))
+    close = data["close"].astype(float)
+    high = data["high"].astype(float)
+    low = data["low"].astype(float)
+
+    upper_channel = high.rolling(window=entry_period, min_periods=entry_period).max()
+    lower_channel = low.rolling(window=exit_period, min_periods=exit_period).min()
+
+    entry_condition = close >= upper_channel
+    exit_condition = close <= lower_channel
+    return _stateful_signal(entry_condition=entry_condition, exit_condition=exit_condition, index=data.index)
+
+
 def obv_trend(data: pd.DataFrame, fast: int = 10, slow: int = 30) -> pd.Series:
     if fast <= 0 or slow <= 0:
         raise ValueError("Le finestre OBV devono essere positive.")
@@ -374,6 +399,16 @@ STRATEGY_SPECS: dict[str, StrategySpec] = {
         ),
         supports_sweep=True,
     ),
+    "donchian_breakout": StrategySpec(
+        key="donchian_breakout",
+        label="Donchian Breakout",
+        description="Breakout sul canale di Donchian: compra su nuovo massimo, vende su nuovo minimo.",
+        parameters=(
+            StrategyParameter("entry_period", "Entry period", "int", 20, minimum=2, step=1),
+            StrategyParameter("exit_period", "Exit period", "int", 10, minimum=2, step=1),
+        ),
+        supports_sweep=True,
+    ),
 }
 
 
@@ -388,6 +423,7 @@ STRATEGY_FUNCTIONS = {
     "williams_r_reversion": williams_r_reversion,
     "adx_trend": adx_trend,
     "obv_trend": obv_trend,
+    "donchian_breakout": donchian_breakout,
 }
 
 
@@ -426,6 +462,8 @@ def validate_strategy_parameters(strategy_id: str, parameters: Mapping[str, int 
         raise ValueError("MACD fast deve essere minore di MACD slow.")
     if strategy_id in {"rsi_mean_reversion", "stochastic_reversion", "cci_reversion", "williams_r_reversion"} and numeric["lower"] >= numeric["upper"]:
         raise ValueError("Il parametro lower deve essere minore del parametro upper.")
+    if strategy_id == "donchian_breakout" and numeric["exit_period"] >= numeric["entry_period"]:
+        raise ValueError("Donchian exit period deve essere minore di entry period.")
 
 
 def build_strategy_signal(strategy_id: str, data: pd.DataFrame, parameters: Mapping[str, int | float]) -> pd.Series:

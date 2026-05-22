@@ -577,7 +577,7 @@ def _build_autosetting_response(*, artifact_type: str, artifact_name: str):
             chart.get("summary", {}).get("initial_capital") or 10_000.0
         )
         scan_mode = str(payload.get("scan_mode", "rapida")).strip()
-        if scan_mode not in ("rapida", "media", "lunga"):
+        if scan_mode not in ("rapida", "media", "lunga", "xl"):
             scan_mode = "rapida"
 
         market_data = load_market_data_from_saved_equity(market_data_path)

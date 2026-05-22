@@ -1,22 +1,29 @@
-(() => {
-  // ─── Setup e guard ────────────────────────────────────────────────────────────
-  const dataNode        = document.getElementById("chart-window-data");
-  const tradeTableDataNode = document.getElementById("chart-trade-table-data");
-  const root            = document.getElementById("interactive-chart-root");
+// Attende che LightweightCharts sia disponibile (max 500ms), poi avvia il modulo.
+// Safety-net per eventuali ritardi di caricamento script — non dovrebbe mai servire.
+(function waitForLwc(attempt) {
+  const dataNode = document.getElementById("chart-window-data");
+  const root     = document.getElementById("interactive-chart-root");
 
-  if (!dataNode || !root || typeof LightweightCharts === "undefined") {
+  if (typeof window.LightweightCharts === "undefined") {
+    if (attempt < 10) {
+      // Riprova ogni 50ms finché LWC non è disponibile (max 500ms)
+      setTimeout(() => waitForLwc(attempt + 1), 50);
+      return;
+    }
+    // Timeout: LWC non si è caricato
     const diagnostics = {
       dataNode:     Boolean(dataNode),
       root:         Boolean(root),
-      lwcLoaded:    typeof LightweightCharts !== "undefined",
-      lwcVersion:   typeof LightweightCharts !== "undefined" ? (LightweightCharts.version || "?") : null,
+      lwcLoaded:    false,
+      lwcVersion:   null,
+      tentativi:    attempt,
     };
-    console.error("Inizializzazione grafico fallita", diagnostics);
+    console.error("Inizializzazione grafico fallita: LWC non disponibile dopo 500ms", diagnostics);
     if (root) {
       root.innerHTML = `
         <div class="chart-error">
-          <strong>Impossibile caricare il grafico</strong>
-          <p>Controlla la console per gli errori JS.</p>
+          <strong>Impossibile caricare il grafico (libreria non disponibile)</strong>
+          <p>Controlla la console per gli errori JS. Prova a ricaricare la pagina.</p>
           <pre>${Object.entries(diagnostics).map(([k, v]) => `${k}: ${v}`).join("\n")}</pre>
         </div>
       `;
@@ -24,7 +31,22 @@
     return;
   }
 
-  const { createChart, CrosshairMode, LineStyle, PriceScaleMode } = LightweightCharts;
+  // LWC disponibile: avvia il modulo
+  initChartModule(dataNode, root);
+})(0);
+
+function initChartModule(dataNode, rootEl) {
+(() => {
+  // ─── Setup ────────────────────────────────────────────────────────────────────
+  const tradeTableDataNode = document.getElementById("chart-trade-table-data");
+  const root            = rootEl;
+
+  if (!dataNode || !root) {
+    console.error("Elementi DOM mancanti", { dataNode: Boolean(dataNode), root: Boolean(root) });
+    return;
+  }
+
+  const { createChart, CrosshairMode, LineStyle, PriceScaleMode } = window.LightweightCharts;
 
   // ─── Definizioni intervallo ───────────────────────────────────────────────────
   const intervalDefinitions = {
@@ -94,6 +116,15 @@
     signalPopupHost: $("[data-signal-popup-host]"),
     signalPopup: $("[data-signal-popup]"),
     signalPopupTitle: $("[data-signal-popup-title]"),
+    signalPopupNav: $("[data-signal-popup-nav]"),
+    signalPopupNavCount: $("[data-signal-popup-nav-count]"),
+    signalPopupPrev: $("[data-signal-popup-prev]"),
+    signalPopupNext: $("[data-signal-popup-next]"),
+    signalPopupPnlBadge: $("[data-signal-popup-pnl-badge]"),
+    signalPopupEntryDate: $("[data-signal-popup-entry-date]"),
+    signalPopupExitDate: $("[data-signal-popup-exit-date]"),
+    signalPopupDetailToggle: $("[data-signal-popup-detail-toggle]"),
+    signalPopupDetailBody: $("[data-signal-popup-detail-body]"),
     signalPopupEntry: $("[data-signal-popup-entry]"),
     signalPopupExit: $("[data-signal-popup-exit]"),
     signalPopupTabs: $$("[data-signal-popup-tab]"),
@@ -444,6 +475,16 @@
     dom.signalPopupTabs.forEach((button) => {
       button.addEventListener("click", () => setSignalPopupTab(button.dataset.signalPopupTab || "entry"));
     });
+    dom.signalPopupDetailToggle?.addEventListener("click", () => {
+      const aperto = dom.signalPopupDetailBody?.hidden === false;
+      if (dom.signalPopupDetailBody)   dom.signalPopupDetailBody.hidden = aperto;
+      if (dom.signalPopupDetailToggle) {
+        dom.signalPopupDetailToggle.textContent = aperto ? "▶ Mostra dettagli" : "▼ Nascondi dettagli";
+        dom.signalPopupDetailToggle.setAttribute("aria-expanded", aperto ? "false" : "true");
+      }
+    });
+    dom.signalPopupPrev?.addEventListener("click", () => navigateTrade(-1));
+    dom.signalPopupNext?.addEventListener("click", () => navigateTrade(1));
     dom.tradePrev?.addEventListener("click", () => moveTradePage(-1));
     dom.tradeNext?.addEventListener("click", () => moveTradePage(1));
     dom.tradeTable?.addEventListener("click",   onTradeTableClick);
@@ -457,7 +498,12 @@
     charts.equity?.subscribeClick(() => hideSignalPopup());
     charts.drawdown?.subscribeClick(() => hideSignalPopup());
 
-    window.addEventListener("resize", onWindowResize);
+    // ResizeObserver: cattura sia il resize della finestra che i cambi di layout interni
+    if (typeof ResizeObserver !== "undefined" && root) {
+      new ResizeObserver(onWindowResize).observe(root);
+    } else {
+      window.addEventListener("resize", onWindowResize);
+    }
   }
 
   // ─── Sincronizzazione time scale multi-pannello ───────────────────────────────
@@ -471,7 +517,13 @@
         isSyncingTimeScale = true;
         try {
           all.forEach((target, j) => {
-            if (i !== j && target) target.timeScale().setVisibleLogicalRange(range);
+            if (i !== j && target) {
+              // LWC può lanciare "Value is null" se il chart di destinazione non ha dati:
+              // in quel caso ignoriamo silenziosamente la sincronizzazione.
+              try {
+                target.timeScale().setVisibleLogicalRange(range);
+              } catch (_) { /* chart senza dati, sync ignorata */ }
+            }
           });
           // Cattura viewport solo per input utente
           if (!isProgrammaticViewport) {
@@ -583,11 +635,13 @@
       });
     }
 
-    // I marker devono essere ordinati per time
-    markers.sort((a, b) => Number(a.time) - Number(b.time));
+    // LWC richiede che i marker siano su timestamp presenti nella serie (altrimenti lancia "Value is null").
+    // Filtriamo sui timestamp effettivamente presenti nel timeIndex (costruito dai dati della serie attiva).
+    const validMarkers = markers.filter((m) => timeIndex.has(m.time));
+    validMarkers.sort((a, b) => Number(a.time) - Number(b.time));
 
     const activeSeries = series.candle || series.close;
-    activeSeries?.setMarkers(markers);
+    activeSeries?.setMarkers(validMarkers);
   }
 
   // ─── Linea prezzo corrente ────────────────────────────────────────────────────
@@ -705,9 +759,9 @@
     try {
       const all = [charts.price, charts.equity, charts.drawdown];
       if (logicalRange) {
-        all.forEach((c) => c?.timeScale().setVisibleLogicalRange(logicalRange));
+        all.forEach((c) => { try { c?.timeScale().setVisibleLogicalRange(logicalRange); } catch (_) {} });
       } else if (timeRange) {
-        all.forEach((c) => c?.timeScale().setVisibleRange(timeRange));
+        all.forEach((c) => { try { c?.timeScale().setVisibleRange(timeRange); } catch (_) {} });
       }
     } finally {
       isSyncingTimeScale     = false;
@@ -1516,14 +1570,54 @@
 
   // ─── Keyboard ─────────────────────────────────────────────────────────────────
   function onKeydown(event) {
+    // Frecce sinistra/destra: naviga tra trade quando il popup è aperto
+    if (dom.signalPopup?.hidden === false && state.selectedTradeIndex >= 0) {
+      if (event.key === "ArrowLeft")  { event.preventDefault(); navigateTrade(-1); return; }
+      if (event.key === "ArrowRight") { event.preventDefault(); navigateTrade(1);  return; }
+    }
     if (event.key !== "Escape") return;
     if (dom.tradeDetailModal?.hidden === false) { closeTradeDetailModal(); return; }
     if (dom.indicatorModal?.hidden === false)   { closeIndicatorModal();   return; }
     if (dom.signalPopup?.hidden === false)       hideSignalPopup();
   }
 
+  // ─── Navigazione trade nel popup ─────────────────────────────────────────────
+  function navigateTrade(delta) {
+    const total = tradeRows.length;
+    if (total === 0) return;
+    const current = state.selectedTradeIndex;
+    const next = current < 0
+      ? (delta >= 0 ? 0 : total - 1)
+      : ((current + delta + total) % total);
+    showSignalPopupForTrade(next);
+  }
+
+  function showSignalPopupForTrade(index) {
+    if (index < 0 || index >= tradeRows.length || !tradeRows[index]) return;
+    const trade = tradeRows[index];
+    const mockPoint = { data: { name: "Ingresso" }, x: trade.entry_raw, event: null };
+    showSignalPopup(mockPoint, { reposition: false });
+    panToTrade(index);
+  }
+
+  function panToTrade(index) {
+    const trade = tradeRows[index];
+    if (!trade?.entry_raw) return;
+    const entryTs = toLwcTime(normalizeSignalTimestamp(trade.entry_raw));
+    const exitTs  = trade.exit_raw ? toLwcTime(normalizeSignalTimestamp(trade.exit_raw)) : entryTs;
+    if (entryTs === null) return;
+
+    const entryIdx = timeIndex.get(entryTs) ?? null;
+    if (entryIdx === null) return;
+    const exitIdx  = (exitTs !== null && timeIndex.has(exitTs)) ? timeIndex.get(exitTs) : entryIdx;
+
+    const span    = Math.max(exitIdx - entryIdx, 1);
+    const padding = Math.max(Math.ceil(span * 0.6), 8);
+    setRangeProgrammatically({ from: entryIdx - padding, to: exitIdx + padding });
+  }
+
   // ─── Signal popup ─────────────────────────────────────────────────────────────
-  function showSignalPopup(point) {
+  function showSignalPopup(point, { reposition = true } = {}) {
     if (!dom.signalPopup || !dom.signalPopupEntry || !dom.signalPopupExit) return;
     const payload = buildSignalPopupPayload(point);
     const hasEntry = Boolean(String(payload.entryText || "").trim());
@@ -1534,11 +1628,33 @@
     signalPopupPanels = { entry: String(payload.entryText || ""), exit: String(payload.exitText || "") };
     dom.signalPopup.hidden = false;
     if (dom.signalPopupTitle) dom.signalPopupTitle.textContent = payload.title;
+    // P&L prominente
+    if (dom.signalPopupPnlBadge) {
+      dom.signalPopupPnlBadge.textContent = payload.pnlDisplay || "—";
+      dom.signalPopupPnlBadge.className = `trade-pnl trade-pnl-${payload.pnlClass || "neutral"}`;
+    }
+    // Coppia date sempre visibile
+    if (dom.signalPopupEntryDate) dom.signalPopupEntryDate.textContent = payload.entryDate || "—";
+    if (dom.signalPopupExitDate)  dom.signalPopupExitDate.textContent  = payload.exitDate  || "aperto";
+    // Navigazione trade (visibile solo se trade valido)
+    const hasNav = payload.tradeIndex >= 0 && tradeRows.length > 1;
+    if (dom.signalPopupNav) dom.signalPopupNav.hidden = !hasNav;
+    if (hasNav && dom.signalPopupNavCount) {
+      dom.signalPopupNavCount.textContent = `${payload.tradeIndex + 1} / ${tradeRows.length}`;
+    }
+    // Dettagli collassati di default a ogni nuova apertura (non durante navigazione)
+    if (reposition) {
+      if (dom.signalPopupDetailBody)   dom.signalPopupDetailBody.hidden = true;
+      if (dom.signalPopupDetailToggle) {
+        dom.signalPopupDetailToggle.textContent = "▶ Mostra dettagli";
+        dom.signalPopupDetailToggle.setAttribute("aria-expanded", "false");
+      }
+    }
     dom.signalPopupEntry.textContent = signalPopupPanels.entry || "Dettaglio ingresso non disponibile.";
     dom.signalPopupExit.textContent  = signalPopupPanels.exit  || "Dettaglio uscita non disponibile.";
     setSignalPopupTab(payload.activeTab || "entry", { force: true });
     if (dom.signalPopupStatus) dom.signalPopupStatus.textContent = payload.status;
-    positionSignalPopup(point);
+    if (reposition) positionSignalPopup(point);
     updateAllMarkers();
   }
 
@@ -1547,6 +1663,11 @@
     signalPopupPanels = { entry: "", exit: "" };
     signalPopupText   = "";
     if (dom.signalPopup) dom.signalPopup.hidden = true;
+    if (dom.signalPopupDetailBody)   dom.signalPopupDetailBody.hidden = true;
+    if (dom.signalPopupDetailToggle) {
+      dom.signalPopupDetailToggle.textContent = "▶ Mostra dettagli";
+      dom.signalPopupDetailToggle.setAttribute("aria-expanded", "false");
+    }
     setSignalPopupTab("entry", { force: true });
     updateAllMarkers();
   }
@@ -1562,6 +1683,10 @@
       const isPreview = traceName.toLowerCase().includes("preview");
       return {
         title:      traceName,
+        pnlDisplay: "—",
+        pnlClass:   "neutral",
+        entryDate:  "—",
+        exitDate:   "",
         entryText:  signalSide === "entry" ? (fallbackText || "Dettaglio ingresso non disponibile.") : "Ingresso collegato non disponibile.",
         exitText:   signalSide === "exit"  ? (fallbackText || "Dettaglio uscita non disponibile.")   : "Uscita collegata non disponibile.",
         activeTab:  signalSide,
@@ -1579,14 +1704,18 @@
     const exitBlock   = String(trade.exit_detail_text  || "").trim() || "USCITA | Dettaglio non disponibile.";
     const isOpenTrade = !String(trade.exit_raw || "").trim();
     return {
-      title:      isOpenTrade ? "Ingresso (trade aperto)" : "Ingresso + Uscita",
+      title:      `Trade #${sequence}`,
+      pnlDisplay: trade.pnl_display || "—",
+      pnlClass:   trade.status_class || "neutral",
+      entryDate:  trade.entry_raw || "—",
+      exitDate:   trade.exit_raw  || "",
       entryText:  `${tradeHeader}\n\n${entryBlock}`,
       exitText:   `${tradeHeader}\n\n${exitBlock}`,
       activeTab:  signalSide,
       tradeIndex,
       status: isOpenTrade
-        ? "Trade ancora aperto: la sezione EXIT viene aggiornata quando arriva la chiusura."
-        : "Coppia completa mostrata: stessa operazione (entry + exit).",
+        ? "Trade ancora aperto: la sezione uscita sarà aggiornata alla chiusura."
+        : "Coppia completa: entry + exit della stessa operazione.",
     };
   }
 
@@ -1810,7 +1939,13 @@
     state.previewRawPayload = normalizePayload(payload || {}, rawPayload.interval);
     syncPreviewAvailability();
     setStatus("preview", previewLabel);
-    rerenderChart();
+    try {
+      rerenderChart();
+    } catch (e) {
+      // LWC può lanciare "Value is null" se il grafico non ha ancora dati validi
+      // per la sincronizzazione della time scale. Non è un errore bloccante.
+      console.warn("Errore LWC durante il rerenderChart della preview:", e?.message || e);
+    }
   }
 
   function setPreviewIndicatorFilter(indicatorKeys) {
@@ -1845,3 +1980,4 @@
     syncInputs();
   }
 })();
+} // fine initChartModule

@@ -333,6 +333,26 @@ def _indicator_payload_for_rule(
             ],
         }
 
+    if strategy_id == "donchian_breakout":
+        _require_columns_for_indicator(data, ("high", "low"))
+        entry_period = int(parameters["entry_period"])
+        exit_period = int(parameters["exit_period"])
+        high = data["high"].astype(float)
+        low = data["low"].astype(float)
+        upper_channel = high.rolling(window=entry_period, min_periods=entry_period).max()
+        lower_channel = low.rolling(window=exit_period, min_periods=exit_period).min()
+        return {
+            "key": strategy_id,
+            "label": label,
+            "description": f"Canale di Donchian: massimo {entry_period} barre (ingresso), minimo {exit_period} barre (uscita).",
+            "placement": "overlay",
+            "series": [
+                _indicator_series(f"{strategy_id}_upper", f"Upper {entry_period}", "#34d399", upper_channel),
+                _indicator_series(f"{strategy_id}_lower", f"Lower {exit_period}", "#f87171", lower_channel),
+            ],
+            "thresholds": [],
+        }
+
     if strategy_id == "obv_trend":
         fast = int(parameters["fast"])
         slow = int(parameters["slow"])

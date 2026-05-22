@@ -96,6 +96,10 @@ AUTOSETTING_GRIDS_BY_MODE: dict[str, dict[str, dict[str, list]]] = {
         sid: {param: _dense(vals, 4) for param, vals in grid.items()}
         for sid, grid in AUTOSETTING_GRIDS.items()
     },
+    "xl": {
+        sid: {param: _dense(vals, 8) for param, vals in grid.items()}
+        for sid, grid in AUTOSETTING_GRIDS.items()
+    },
 }
 
 
