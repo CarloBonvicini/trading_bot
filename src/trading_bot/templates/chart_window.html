@@ -476,10 +476,10 @@
         </p>
         <div class="terminal-metric-grid chart-live-comparison-grid" data-live-comparison-grid>
           {% for card in chart.chart_lab.comparison_cards %}
-            <article class="terminal-metric-card">
+            <article class="terminal-metric-card report-tone-{{ card.tone or 'neutral' }}">
               <p>{{ card.label }}</p>
-              <strong>{{ card.value }}</strong>
               {% if card.hint %}<span>{{ card.hint }}</span>{% endif %}
+              <strong>{{ card.value }}</strong>
             </article>
           {% endfor %}
         </div>

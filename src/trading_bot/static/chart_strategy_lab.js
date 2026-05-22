@@ -571,12 +571,17 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    comparisonGrid.innerHTML = cards.map((card) => `
-      <article class="terminal-metric-card">
-        <p>${escapeHtml(card.label ?? "")}</p>
-        <strong>${escapeHtml(card.value ?? "")}</strong>
-      </article>
-    `).join("");
+    comparisonGrid.innerHTML = cards.map((card) => {
+      const tone = card.tone ? ` report-tone-${escapeHtml(card.tone)}` : "";
+      const hint = card.hint ? `<span>${escapeHtml(card.hint)}</span>` : "";
+      return `
+        <article class="terminal-metric-card${tone}">
+          <p>${escapeHtml(card.label ?? "")}</p>
+          ${hint}
+          <strong>${escapeHtml(card.value ?? "")}</strong>
+        </article>
+      `;
+    }).join("");
   }
 
   function renderTradePreview(trades) {

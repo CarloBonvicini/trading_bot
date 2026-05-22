@@ -688,41 +688,32 @@ def build_live_comparison_cards(
     preview_sharpe = preview_summary.get("sharpe_ratio")
     sharpe_str = f"{float(preview_sharpe):+.2f}" if preview_sharpe is not None else "n/d"
 
+    delta = preview_return - benchmark_return
+
     return [
         {
-            "label": "Rendimento attuale",
-            "value": f"{preview_return:.2f}%",
-            "hint": preview_label,
-        },
-        {
-            "label": "Rendimento buy & hold",
-            "value": f"{benchmark_return:.2f}%",
-            "hint": "",
+            "label": "Guadagno vs buy & hold",
+            "value": f"{delta:+.2f}%",
+            "hint": f"Strategia {preview_return:+.2f}% · B&H {benchmark_return:+.2f}%",
+            "tone": _delta_tone(delta),
         },
         {
             "label": "Sharpe ratio",
             "value": sharpe_str,
             "hint": "Rendimento / rischio (annualizzato)",
+            "tone": "neutral",
         },
         {
-            "label": "Delta rendimento",
-            "value": f"{(preview_return - benchmark_return):+.2f}%",
+            "label": "Max drawdown",
+            "value": f"{preview_drawdown:.2f}%",
             "hint": "",
+            "tone": "neutral",
         },
         {
-            "label": "Delta drawdown",
-            "value": f"{(preview_drawdown - benchmark_drawdown):+.2f}%",
-            "hint": "",
-        },
-        {
-            "label": "Delta equity finale",
-            "value": _format_signed_number(preview_final_equity - benchmark_final_equity, decimals=2),
-            "hint": "",
-        },
-        {
-            "label": "Fee",
+            "label": "Fee pagate",
             "value": _format_number_metric(preview_fees),
             "hint": "",
+            "tone": "neutral",
         },
     ]
 

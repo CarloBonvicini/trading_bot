@@ -424,13 +424,10 @@ def test_live_comparison_cards_use_clearer_copy(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Rendimento attuale" in body
-    assert "Rendimento buy &amp; hold" in body
-    assert "Delta rendimento" in body
-    assert "Delta drawdown" in body
-    assert "Delta equity finale" in body
-    assert "Fee" in body
-    assert "buy &amp; hold" in body
+    assert "Guadagno vs buy &amp; hold" in body
+    assert "Sharpe ratio" in body
+    assert "Max drawdown" in body
+    assert "Fee pagate" in body
 
 
 def test_internal_navigation_targets_resolve(tmp_path: Path) -> None:
