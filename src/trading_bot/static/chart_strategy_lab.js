@@ -46,9 +46,25 @@ document.addEventListener("DOMContentLoaded", () => {
 
   strategyToggles.forEach((toggle) => {
     toggle.addEventListener("change", () => {
-      ensureAtLeastOneActive(toggle.value);
       syncSections();
       schedulePreview();
+    });
+  });
+
+  // Doppio clic su una card → apre l'Analisi parametri per quella strategia
+  strategyCards.forEach((card) => {
+    card.addEventListener("dblclick", () => {
+      const strategyId = card.dataset.chartStrategyCard;
+      const label = config.strategies?.[strategyId]?.label || strategyId;
+      // Dopo il doppio clic la checkbox è tornata allo stato originale (due toggle).
+      // Se la strategia non era attiva, la attiviamo esplicitamente.
+      const toggle = strategyToggles.find((t) => t.value === strategyId);
+      if (toggle && !toggle.checked) {
+        toggle.checked = true;
+        syncSections();
+        schedulePreview();
+      }
+      openAutosettingModal(strategyId, label);
     });
   });
 
@@ -259,19 +275,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return strategyToggles.filter((toggle) => toggle.checked).map((toggle) => toggle.value);
   }
 
-  function ensureAtLeastOneActive(preferredStrategyId = "") {
-    if (activeStrategyIds().length > 0) {
-      return;
-    }
-
-    const fallback =
-      strategyToggles.find((toggle) => toggle.value === preferredStrategyId)
-      || strategyToggles[0];
-    if (fallback) {
-      fallback.checked = true;
-    }
-  }
-
   function syncSections() {
     const activeIds = activeStrategyIds();
     window.tradingBotChartTerminal?.setPreviewIndicatorFilter(activeIds);
@@ -314,6 +317,11 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function runPreview() {
+    if (activeStrategyIds().length === 0) {
+      if (statusNode) statusNode.textContent = "Nessuna regola attiva — disattiva o seleziona una strategia.";
+      return;
+    }
+
     const requestId = ++requestCounter;
     const payload = buildPayload();
 

@@ -278,8 +278,10 @@ def donchian_breakout(data: pd.DataFrame, entry_period: int = 20, exit_period: i
     high = data["high"].astype(float)
     low = data["low"].astype(float)
 
-    upper_channel = high.rolling(window=entry_period, min_periods=entry_period).max()
-    lower_channel = low.rolling(window=exit_period, min_periods=exit_period).min()
+    # Canale calcolato sulle barre precedenti (shift 1) per evitare che il massimo/minimo
+    # della barra corrente impedisca sempre alla condizione di scattare (high[t] >= close[t]).
+    upper_channel = high.rolling(window=entry_period, min_periods=entry_period).max().shift(1)
+    lower_channel = low.rolling(window=exit_period, min_periods=exit_period).min().shift(1)
 
     entry_condition = close >= upper_channel
     exit_condition = close <= lower_channel
