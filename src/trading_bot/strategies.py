@@ -298,6 +298,158 @@ def obv_trend(data: pd.DataFrame, fast: int = 10, slow: int = 30) -> pd.Series:
     return (fast_ma > slow_ma).astype(float).rename("position")
 
 
+def roc_momentum(data: pd.DataFrame, period: int = 10, threshold: float = 5.0) -> pd.Series:
+    """Rate of Change (ROC): momentum puro.
+
+    Entra long quando il ROC supera la soglia positiva (slancio al rialzo)
+    ed esce quando il ROC torna sotto zero (momentum esaurito).
+    """
+    if period <= 0:
+        raise ValueError("ROC period deve essere positivo.")
+    if threshold <= 0:
+        raise ValueError("La soglia ROC deve essere positiva.")
+
+    close = data["close"].astype(float)
+    prev_close = close.shift(period).replace(0.0, pd.NA)
+    roc = ((close - prev_close) / prev_close) * 100.0
+    roc = roc.fillna(0.0)
+    return _stateful_signal(entry_condition=roc >= threshold, exit_condition=roc <= 0.0, index=data.index)
+
+
+def keltner_reversion(data: pd.DataFrame, period: int = 20, multiplier: float = 2.0) -> pd.Series:
+    """Keltner Channel Reversion: canale basato su EMA + ATR.
+
+    Compra quando il prezzo scende sotto la banda inferiore (EMA - multiplier × ATR)
+    e chiude quando risale alla media (EMA).
+    """
+    if period <= 1:
+        raise ValueError("Il periodo Keltner deve essere maggiore di 1.")
+    if multiplier <= 0:
+        raise ValueError("Il moltiplicatore ATR deve essere positivo.")
+
+    _require_columns(data, ("high", "low"))
+    close = data["close"].astype(float)
+    high = data["high"].astype(float)
+    low = data["low"].astype(float)
+
+    middle = close.ewm(span=period, adjust=False, min_periods=period).mean()
+    prev_close = close.shift(1)
+    true_range = pd.concat(
+        [
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+    atr = true_range.ewm(span=period, adjust=False, min_periods=period).mean()
+    lower_band = middle - multiplier * atr
+    return _stateful_signal(entry_condition=close <= lower_band, exit_condition=close >= middle, index=data.index)
+
+
+def money_flow_index(data: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Money Flow Index: RSI pesato per il volume."""
+    if period <= 1:
+        raise ValueError("MFI period deve essere maggiore di 1.")
+
+    _require_columns(data, ("high", "low", "volume"))
+    high = data["high"].astype(float)
+    low = data["low"].astype(float)
+    close = data["close"].astype(float)
+    volume = data["volume"].fillna(0.0).astype(float)
+
+    typical_price = (high + low + close) / 3.0
+    money_flow = typical_price * volume
+    price_diff = typical_price.diff()
+
+    positive_flow = money_flow.where(price_diff > 0, 0.0).rolling(window=period, min_periods=period).sum()
+    negative_flow = money_flow.where(price_diff < 0, 0.0).rolling(window=period, min_periods=period).sum()
+    money_ratio = positive_flow / negative_flow.replace(0.0, pd.NA)
+    mfi = 100.0 - (100.0 / (1.0 + money_ratio))
+    return mfi.fillna(50.0).rename("mfi")
+
+
+def mfi_reversion(data: pd.DataFrame, period: int = 14, lower: float = 20.0, upper: float = 80.0) -> pd.Series:
+    """MFI Mean Reversion: entra su ipervenduto MFI ed esce su ipercomprato."""
+    if lower >= upper:
+        raise ValueError("MFI lower deve essere piu' piccolo di upper.")
+
+    mfi = money_flow_index(data, period=period)
+    return _stateful_signal(entry_condition=mfi <= lower, exit_condition=mfi >= upper, index=data.index)
+
+
+def parabolic_sar(data: pd.DataFrame, step: float = 0.02, max_step: float = 0.20) -> pd.Series:
+    """Parabolic SAR: trend following con stop parabolico accelerato.
+
+    Posizione long quando il prezzo e' sopra il SAR, flat quando e' sotto.
+    L'acceleration factor parte da `step` e si incrementa di `step` ogni volta
+    che si registra un nuovo estremo, fino a `max_step`.
+    """
+    if step <= 0:
+        raise ValueError("Il parametro step deve essere positivo.")
+    if max_step <= step:
+        raise ValueError("Il parametro max_step deve essere maggiore di step.")
+
+    _require_columns(data, ("high", "low"))
+    high_vals = data["high"].astype(float).values
+    low_vals = data["low"].astype(float).values
+    n = len(high_vals)
+
+    bullish = True
+    af = step
+    ep = float(high_vals[0])
+    sar = float(low_vals[0])
+    positions: list[float] = []
+
+    for i in range(n):
+        if i == 0:
+            positions.append(1.0)
+            continue
+
+        if bullish:
+            new_sar = sar + af * (ep - sar)
+            # SAR non puo' essere sopra i minimi delle ultime due barre
+            new_sar = min(new_sar, float(low_vals[i - 1]))
+            if i >= 2:
+                new_sar = min(new_sar, float(low_vals[i - 2]))
+            sar = new_sar
+
+            if float(low_vals[i]) < sar:
+                # Inversione a ribassista
+                bullish = False
+                sar = ep
+                ep = float(low_vals[i])
+                af = step
+                positions.append(0.0)
+            else:
+                if float(high_vals[i]) > ep:
+                    ep = float(high_vals[i])
+                    af = min(af + step, max_step)
+                positions.append(1.0)
+        else:
+            new_sar = sar + af * (ep - sar)
+            # SAR non puo' essere sotto i massimi delle ultime due barre
+            new_sar = max(new_sar, float(high_vals[i - 1]))
+            if i >= 2:
+                new_sar = max(new_sar, float(high_vals[i - 2]))
+            sar = new_sar
+
+            if float(high_vals[i]) > sar:
+                # Inversione a rialzista
+                bullish = True
+                sar = ep
+                ep = float(high_vals[i])
+                af = step
+                positions.append(1.0)
+            else:
+                if float(low_vals[i]) < ep:
+                    ep = float(low_vals[i])
+                    af = min(af + step, max_step)
+                positions.append(0.0)
+
+    return pd.Series(positions, index=data.index, name="position", dtype=float)
+
+
 STRATEGY_SPECS: dict[str, StrategySpec] = {
     "sma_cross": StrategySpec(
         key="sma_cross",
@@ -409,6 +561,45 @@ STRATEGY_SPECS: dict[str, StrategySpec] = {
         ),
         supports_sweep=True,
     ),
+    "roc_momentum": StrategySpec(
+        key="roc_momentum",
+        label="ROC Momentum",
+        description="Momentum puro: entra quando il Rate of Change supera la soglia, esce quando si azzera.",
+        parameters=(
+            StrategyParameter("period", "ROC period", "int", 10, minimum=2, step=1),
+            StrategyParameter("threshold", "Soglia (%)", "float", 5.0, minimum=0.1, step=0.5),
+        ),
+        supports_sweep=True,
+    ),
+    "keltner_reversion": StrategySpec(
+        key="keltner_reversion",
+        label="Keltner Reversion",
+        description="Canale ATR-based: compra sotto la banda inferiore e chiude sul ritorno alla EMA.",
+        parameters=(
+            StrategyParameter("period", "Periodo", "int", 20, minimum=2, step=1),
+            StrategyParameter("multiplier", "Moltiplicatore ATR", "float", 2.0, minimum=0.5, step=0.1),
+        ),
+    ),
+    "mfi_reversion": StrategySpec(
+        key="mfi_reversion",
+        label="MFI Reversion",
+        description="Money Flow Index (RSI pesato volume): entra su ipervenduto, esce su ipercomprato.",
+        parameters=(
+            StrategyParameter("period", "MFI period", "int", 14, minimum=2, step=1),
+            StrategyParameter("lower", "MFI lower", "float", 20.0, minimum=1.0, maximum=99.0, step=0.5),
+            StrategyParameter("upper", "MFI upper", "float", 80.0, minimum=1.0, maximum=99.0, step=0.5),
+        ),
+    ),
+    "parabolic_sar": StrategySpec(
+        key="parabolic_sar",
+        label="Parabolic SAR",
+        description="Stop parabolico accelerato: long sopra il SAR, flat quando il prezzo lo buca al ribasso.",
+        parameters=(
+            StrategyParameter("step", "Acceleration step", "float", 0.02, minimum=0.001, maximum=0.5, step=0.005),
+            StrategyParameter("max_step", "Max acceleration", "float", 0.20, minimum=0.01, maximum=1.0, step=0.01),
+        ),
+        supports_sweep=True,
+    ),
 }
 
 
@@ -424,6 +615,10 @@ STRATEGY_FUNCTIONS = {
     "adx_trend": adx_trend,
     "obv_trend": obv_trend,
     "donchian_breakout": donchian_breakout,
+    "roc_momentum": roc_momentum,
+    "keltner_reversion": keltner_reversion,
+    "mfi_reversion": mfi_reversion,
+    "parabolic_sar": parabolic_sar,
 }
 
 
@@ -460,10 +655,12 @@ def validate_strategy_parameters(strategy_id: str, parameters: Mapping[str, int 
         raise ValueError("Il parametro fast deve essere minore del parametro slow.")
     if strategy_id == "macd_trend" and numeric["fast"] >= numeric["slow"]:
         raise ValueError("MACD fast deve essere minore di MACD slow.")
-    if strategy_id in {"rsi_mean_reversion", "stochastic_reversion", "cci_reversion", "williams_r_reversion"} and numeric["lower"] >= numeric["upper"]:
+    if strategy_id in {"rsi_mean_reversion", "stochastic_reversion", "cci_reversion", "williams_r_reversion", "mfi_reversion"} and numeric["lower"] >= numeric["upper"]:
         raise ValueError("Il parametro lower deve essere minore del parametro upper.")
     if strategy_id == "donchian_breakout" and numeric["exit_period"] >= numeric["entry_period"]:
         raise ValueError("Donchian exit period deve essere minore di entry period.")
+    if strategy_id == "parabolic_sar" and numeric["max_step"] <= numeric["step"]:
+        raise ValueError("Parabolic SAR max_step deve essere maggiore di step.")
 
 
 def build_strategy_signal(strategy_id: str, data: pd.DataFrame, parameters: Mapping[str, int | float]) -> pd.Series:

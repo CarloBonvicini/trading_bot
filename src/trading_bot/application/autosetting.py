@@ -84,6 +84,23 @@ AUTOSETTING_GRIDS: dict[str, dict[str, list]] = {
         "entry_period": [10, 20, 40, 60],
         "exit_period": [5, 10, 20],
     },
+    "roc_momentum": {
+        "period": [5, 10, 15, 20, 30],
+        "threshold": [2.0, 5.0, 8.0, 12.0, 18.0],
+    },
+    "keltner_reversion": {
+        "period": [10, 15, 20, 25, 30],
+        "multiplier": [1.5, 2.0, 2.5, 3.0],
+    },
+    "mfi_reversion": {
+        "period": [10, 14, 20, 28],
+        "lower": [15.0, 20.0, 25.0, 30.0],
+        "upper": [70.0, 75.0, 80.0, 85.0],
+    },
+    "parabolic_sar": {
+        "step": [0.01, 0.02, 0.03, 0.05],
+        "max_step": [0.10, 0.20, 0.30],
+    },
 }
 
 AUTOSETTING_GRIDS_BY_MODE: dict[str, dict[str, dict[str, list]]] = {
