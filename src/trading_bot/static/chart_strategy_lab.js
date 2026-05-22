@@ -123,8 +123,41 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // ── Scansione rapida ─────────────────────────────────────────────
+  // ── Scansione (rapida / media / lunga) ───────────────────────────
   const scanAllBtn = document.querySelector("[data-scan-all-btn]");
+  const scanModeToggle = document.querySelector("[data-scan-mode-toggle]");
+  const scanModeMenu = document.querySelector("[data-scan-mode-menu]");
+  const scanModeOptions = Array.from(document.querySelectorAll("[data-scan-mode]"));
+  let currentScanMode = "rapida";
+
+  // Apre/chiude il menu di selezione modalità
+  scanModeToggle?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isOpen = !scanModeMenu.hidden;
+    scanModeMenu.hidden = isOpen;
+    scanModeToggle.setAttribute("aria-expanded", String(!isOpen));
+  });
+
+  // Seleziona una modalità dal menu
+  scanModeOptions.forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      currentScanMode = btn.dataset.scanMode;
+      scanModeOptions.forEach((b) => b.classList.remove("is-selected"));
+      btn.classList.add("is-selected");
+      scanModeMenu.hidden = true;
+      scanModeToggle.setAttribute("aria-expanded", "false");
+    });
+  });
+
+  // Chiude il menu cliccando fuori
+  document.addEventListener("click", () => {
+    if (scanModeMenu && !scanModeMenu.hidden) {
+      scanModeMenu.hidden = true;
+      scanModeToggle?.setAttribute("aria-expanded", "false");
+    }
+  });
+
   const scanBadges = Object.fromEntries(
     Array.from(document.querySelectorAll("[data-strategy-score]")).map((el) => [
       el.dataset.strategyScore,
@@ -140,8 +173,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const strategyIds = Object.keys(config.strategies || {});
     if (!strategyIds.length) return;
 
+    const modeLabel = { rapida: "Rapida", media: "Media", lunga: "Lunga" }[currentScanMode] || "Rapida";
     scanAllBtn.disabled = true;
-    scanAllBtn.textContent = "Scansione…";
+    scanAllBtn.textContent = `Scansione ${modeLabel}…`;
 
     // Mostra stato "…" su tutti i badge
     strategyIds.forEach((id) => {
@@ -171,7 +205,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const response = await fetch(config.autosetting_endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ strategy_id: strategyId, fee_bps: feeValue }),
+          body: JSON.stringify({ strategy_id: strategyId, fee_bps: feeValue, scan_mode: currentScanMode }),
         });
         const data = await response.json();
 
@@ -199,7 +233,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     scanAllBtn.disabled = false;
-    scanAllBtn.textContent = "Scansione rapida";
+    scanAllBtn.textContent = "Scansione";
     if (statusNode) statusNode.textContent = "Scansione completata.";
   }
 

@@ -576,6 +576,9 @@ def _build_autosetting_response(*, artifact_type: str, artifact_name: str):
         initial_capital = float(
             chart.get("summary", {}).get("initial_capital") or 10_000.0
         )
+        scan_mode = str(payload.get("scan_mode", "rapida")).strip()
+        if scan_mode not in ("rapida", "media", "lunga"):
+            scan_mode = "rapida"
 
         market_data = load_market_data_from_saved_equity(market_data_path)
         autosetting_result = run_autosetting(
@@ -583,6 +586,7 @@ def _build_autosetting_response(*, artifact_type: str, artifact_name: str):
             data=market_data,
             initial_capital=initial_capital,
             fee_bps=fee_bps,
+            scan_mode=scan_mode,
         )
     except FileNotFoundError:
         abort(404)

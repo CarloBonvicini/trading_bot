@@ -354,7 +354,24 @@
             <h3>Attiva strategie live sul grafico</h3>
           </div>
           <div style="display:flex;gap:0.5rem;align-items:center;">
-            <button type="button" class="ghost-link chart-action-link" data-scan-all-btn>Scansione rapida</button>
+            <div class="scan-split" data-scan-split>
+              <button type="button" class="ghost-link chart-action-link scan-split-run" data-scan-all-btn>Scansione</button>
+              <button type="button" class="ghost-link chart-action-link scan-split-arrow" data-scan-mode-toggle aria-label="Tipo di scansione" aria-expanded="false">▾</button>
+              <div class="scan-mode-menu" data-scan-mode-menu hidden>
+                <button type="button" class="scan-mode-option is-selected" data-scan-mode="rapida">
+                  <strong>Rapida</strong>
+                  <span>Griglia base, ~50–100 combinazioni</span>
+                </button>
+                <button type="button" class="scan-mode-option" data-scan-mode="media">
+                  <strong>Media</strong>
+                  <span>Griglia 2× più densa, ~200–400 combinazioni</span>
+                </button>
+                <button type="button" class="scan-mode-option" data-scan-mode="lunga">
+                  <strong>Lunga</strong>
+                  <span>Griglia 4×, ~800–1600 combinazioni</span>
+                </button>
+              </div>
+            </div>
             <button type="button" class="ghost-link chart-action-link" data-chart-preview-reset>Ripristina</button>
           </div>
         </div>

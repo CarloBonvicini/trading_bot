@@ -13,6 +13,25 @@ OVERFIT_SOGLIA = 0.40      # calo Sharpe OOS > 40% rispetto IS → warning
 PESO_PROPRIO = 0.60        # peso Sharpe della combinazione stessa nel robustness score
 PESO_VICINI = 0.40         # peso media Sharpe dei vicini immediati nella griglia
 
+def _dense(values: list, factor: int) -> list:
+    """Densifica una lista inserendo valori intermedi equidistanti.
+    factor=1 → nessuna modifica; factor=2 → 1 punto intermedio per gap;
+    factor=4 → 3 punti intermedi per gap."""
+    if factor <= 1 or len(values) < 2:
+        return list(values)
+    is_float = any(isinstance(v, float) for v in values)
+    result = []
+    for i in range(len(values) - 1):
+        a, b = values[i], values[i + 1]
+        result.append(a)
+        for j in range(1, factor):
+            interp = a + (b - a) * j / factor
+            result.append(round(interp, 2) if is_float else int(round(interp)))
+    result.append(values[-1])
+    seen: set = set()
+    return [v for v in result if not (v in seen or seen.add(v))]  # type: ignore[func-returns-value]
+
+
 AUTOSETTING_GRIDS: dict[str, dict[str, list]] = {
     "sma_cross": {
         "fast": list(range(5, 55, 5)),     # [5, 10, ..., 50]
@@ -67,6 +86,18 @@ AUTOSETTING_GRIDS: dict[str, dict[str, list]] = {
     },
 }
 
+AUTOSETTING_GRIDS_BY_MODE: dict[str, dict[str, dict[str, list]]] = {
+    "rapida": AUTOSETTING_GRIDS,
+    "media": {
+        sid: {param: _dense(vals, 2) for param, vals in grid.items()}
+        for sid, grid in AUTOSETTING_GRIDS.items()
+    },
+    "lunga": {
+        sid: {param: _dense(vals, 4) for param, vals in grid.items()}
+        for sid, grid in AUTOSETTING_GRIDS.items()
+    },
+}
+
 
 def run_autosetting(
     strategy_id: str,
@@ -74,22 +105,22 @@ def run_autosetting(
     *,
     initial_capital: float = 10_000.0,
     fee_bps: float = 5.0,
+    scan_mode: str = "rapida",
 ) -> dict[str, object]:
     """Cerca la combinazione di parametri più robusta sul training set (70%)
     e la valida sull'out-of-sample (30%) per verificare l'assenza di overfitting.
 
-    La selezione usa un robustness score = 60% Sharpe proprio + 40% media Sharpe
-    dei vicini immediati nella griglia (±1 passo per ogni dimensione). Questo
-    favorisce i plateau stabili rispetto ai picchi isolati.
+    scan_mode: "rapida" (griglia base), "media" (2× più densa), "lunga" (4× più densa).
 
     Returns:
         dict con best_params, sharpe_in_sample, sharpe_out_of_sample,
         robustness_score, combinations_tested, overfitting_warning.
     """
-    if strategy_id not in AUTOSETTING_GRIDS:
+    grids = AUTOSETTING_GRIDS_BY_MODE.get(scan_mode, AUTOSETTING_GRIDS)
+    if strategy_id not in grids:
         raise ValueError(f"Autosetting non disponibile per la strategia '{strategy_id}'.")
 
-    grid = AUTOSETTING_GRIDS[strategy_id]
+    grid = grids[strategy_id]
     param_names = list(grid.keys())
     param_values = [grid[name] for name in param_names]
 
