@@ -10,9 +10,13 @@ import pandas as pd
 
 from trading_bot.application.constants import DEFAULT_REPORTS_DIR, SWEEP_SORT_OPTIONS
 from trading_bot.application.requests import BacktestRequest, SweepRequest
-from trading_bot.backtest import BacktestResult, run_backtest, save_report
+from trading_bot.backtest import (
+    BacktestResult,
+    run_backtest,
+    save_report,
+)
 from trading_bot.data import download_price_data
-from trading_bot.strategies import build_combined_signal, build_strategy_signal
+from trading_bot.strategies import build_combined_signal, build_strategy_signal, validate_strategy_parameters
 
 
 @dataclass(frozen=True)
@@ -39,12 +43,18 @@ def build_backtest_result(
         data=data,
         rules=[(rule.strategy_id, rule.parameters) for rule in backtest_request.active_rules()],
         combination_mode=backtest_request.rule_logic,
+        groups=list(backtest_request.groups) if backtest_request.groups else None,
+        expression=backtest_request.expression,
     )
     return run_backtest(
         data=data,
         signal=signal,
         initial_capital=backtest_request.initial_capital,
         fee_bps=backtest_request.fee_bps,
+        sl_pct=backtest_request.sl_pct,
+        tp_pct=backtest_request.tp_pct,
+        sizing_method=backtest_request.sizing_method,
+        sizing_param=backtest_request.sizing_param,
     )
 
 
@@ -89,27 +99,47 @@ def run_sma_sweep_request(
     )
 
     results: list[dict[str, object]] = []
-    completed_by_parameters: dict[tuple[int, int], BacktestResult] = {}
+    completed_by_parameters: dict[tuple, BacktestResult] = {}
     invalid_combinations = 0
 
-    for fast, slow in sweep_request.iter_parameter_combinations():
-        if fast >= slow:
+    param_names = sweep_request.parameter_names
+
+    for parameters in sweep_request.iter_parameter_combinations():
+        # Validazione vincoli specifici della strategia (es. fast < slow,
+        # exit < entry). Una combinazione invalida non blocca lo sweep.
+        try:
+            validate_strategy_parameters(sweep_request.strategy, parameters)
+        except ValueError:
             invalid_combinations += 1
             continue
 
-        parameters = {"fast": fast, "slow": slow}
-        signal = build_strategy_signal(strategy_id=sweep_request.strategy, data=data, parameters=parameters)
-        result = run_backtest(
-            data=data,
-            signal=signal,
-            initial_capital=sweep_request.initial_capital,
-            fee_bps=sweep_request.fee_bps,
-        )
-        results.append({"fast": fast, "slow": slow, **result.summary})
-        completed_by_parameters[(fast, slow)] = result
+        try:
+            signal = build_strategy_signal(
+                strategy_id=sweep_request.strategy, data=data, parameters=parameters
+            )
+            result = run_backtest(
+                data=data,
+                signal=signal,
+                initial_capital=sweep_request.initial_capital,
+                fee_bps=sweep_request.fee_bps,
+                sl_pct=sweep_request.sl_pct,
+                tp_pct=sweep_request.tp_pct,
+                sizing_method=sweep_request.sizing_method,
+                sizing_param=sweep_request.sizing_param,
+            )
+        except Exception:
+            invalid_combinations += 1
+            continue
+
+        results.append({**parameters, **result.summary})
+        key = tuple(parameters[name] for name in param_names)
+        completed_by_parameters[key] = result
 
     if not results:
-        raise ValueError("Nessuna combinazione valida da testare. Controlla i range SMA e assicurati che fast < slow.")
+        raise ValueError(
+            "Nessuna combinazione valida da testare. "
+            "Controlla i range dei parametri e i vincoli della strategia."
+        )
 
     results_df = pd.DataFrame(results)
     sort_columns = _resolve_sweep_sort_columns(sweep_request.sort_by, results_df)
@@ -117,7 +147,12 @@ def run_sma_sweep_request(
     results_df = results_df.sort_values(by=sort_columns, ascending=ascending, kind="stable").reset_index(drop=True)
     results_df.insert(0, "rank", range(1, len(results_df) + 1))
 
-    best_result, summary = _build_sweep_summary(results_df=results_df, completed_by_parameters=completed_by_parameters, sort_by=sweep_request.sort_by)
+    best_result, summary = _build_sweep_summary(
+        results_df=results_df,
+        completed_by_parameters=completed_by_parameters,
+        sort_by=sweep_request.sort_by,
+        param_names=list(param_names),
+    )
     sweep_dir = save_sweep_report(
         sweep_request=sweep_request,
         results=results_df,
@@ -187,18 +222,21 @@ def _resolve_sweep_sort_columns(sort_by: str, results_df: pd.DataFrame) -> list[
 def _build_sweep_summary(
     *,
     results_df: pd.DataFrame,
-    completed_by_parameters: dict[tuple[int, int], BacktestResult],
+    completed_by_parameters: dict[tuple, BacktestResult],
     sort_by: str,
+    param_names: list[str],
 ) -> tuple[BacktestResult, dict[str, object]]:
     best_row = results_df.iloc[0].to_dict()
-    best_parameters = (int(best_row["fast"]), int(best_row["slow"]))
+    best_parameters = tuple(int(best_row[name]) for name in param_names)
     best_result = completed_by_parameters[best_parameters]
-    summary = {
+
+    # Espone i parametri vincenti con prefisso ``best_`` per ciascun parametro
+    # (es. best_fast, best_slow, best_entry_period, ...). Mantiene retro-compat
+    # con i campi storici best_fast/best_slow.
+    summary: dict[str, object] = {
         "artifact_type": "sweep",
         "run_count": int(len(results_df)),
         "sort_by": sort_by,
-        "best_fast": int(best_row["fast"]),
-        "best_slow": int(best_row["slow"]),
         "best_total_return_pct": round(float(best_row["total_return_pct"]), 2),
         "best_sharpe_ratio": round(float(best_row["sharpe_ratio"]), 3),
         "best_max_drawdown_pct": round(float(best_row["max_drawdown_pct"]), 2),
@@ -206,5 +244,8 @@ def _build_sweep_summary(
         "best_benchmark_return_pct": round(float(best_row["benchmark_return_pct"]), 2),
         "best_excess_return_pct": round(float(best_row["excess_return_pct"]), 2),
         "best_fees_paid": round(float(best_row["fees_paid"]), 2),
+        "best_parameters": {name: best_row[name] for name in param_names},
     }
+    for name in param_names:
+        summary[f"best_{name}"] = best_row[name]
     return best_result, summary

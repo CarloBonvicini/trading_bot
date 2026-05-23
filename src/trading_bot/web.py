@@ -21,6 +21,7 @@ from trading_bot.application.forms import as_form_values_from_saved_metadata
 from trading_bot.data import INTRADAY_LOOKBACK_DAYS, coerce_interval_date_window
 from trading_bot.errors import FormValidationError
 from trading_bot.reporting import (
+    METRIC_TOOLTIPS,
     build_chart_payload,
     build_live_comparison_cards,
     build_result_validation_snapshot,
@@ -30,14 +31,18 @@ from trading_bot.reporting import (
     list_saved_items,
     load_report_chart_window,
     load_sweep_chart_window,
+    metric_tooltip,
 )
 from trading_bot.services import (
     DEFAULT_REPORTS_DIR,
     INTERVAL_OPTIONS,
     RULE_LOGIC_OPTIONS,
     RUN_MODE_OPTIONS,
+    SIZING_OPTIONS,
     STRATEGY_OPTIONS,
     SWEEP_SORT_OPTIONS,
+    WALKFORWARD_SORT_OPTIONS,
+    WalkForwardResult,
     BacktestRequest,
     SweepRequest,
     as_form_values,
@@ -45,6 +50,7 @@ from trading_bot.services import (
     list_strategy_presets,
     run_backtest_request,
     run_sma_sweep_request,
+    run_walk_forward,
     save_strategy_preset,
 )
 
@@ -74,6 +80,12 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
     if config:
         app.config.update(config)
     app.config["REPORTS_DIR"] = Path(app.config["REPORTS_DIR"]).resolve()
+
+    # Espone i tooltip come filtro Jinja: {{ "sharpe_ratio" | tooltip }}
+    # restituisce la spiegazione, o stringa vuota se la chiave è sconosciuta.
+    app.jinja_env.filters["tooltip"] = metric_tooltip
+    # Mappa completa disponibile come variabile globale per il JS (chart lab).
+    app.jinja_env.globals["METRIC_TOOLTIPS"] = METRIC_TOOLTIPS
 
     @app.get("/")
     def index() -> str:
@@ -121,6 +133,9 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
                 )
                 return redirect(url_for("sweep_detail", sweep_name=completed_sweep.sweep_dir.name))
 
+            if run_mode == "walkforward":
+                return _run_walkforward_view(normalized_form)
+
             backtest_request = BacktestRequest.from_mapping(normalized_form)
             completed = run_backtest_request(
                 backtest_request=backtest_request,
@@ -147,6 +162,42 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
 
         flash(f"Backtest completato: {completed.report_dir.name}", "success")
         return redirect(url_for("report_detail", report_name=completed.report_dir.name))
+
+    @app.post("/api/chart-lab/preset")
+    def api_save_chart_lab_preset():
+        """Salva la configurazione corrente del chart lab come preset (chiamata JSON)."""
+        data = request.get_json(force=True) or {}
+        name = str(data.get("name", "")).strip()
+        if not name:
+            return jsonify({"error": "Inserisci un nome per il preset."}), 400
+
+        # Ricostruisce il mapping atteso da save_strategy_preset
+        merged: dict[str, object] = {
+            "preset_name": name,
+            "symbol": data.get("symbol", ""),
+            "start": data.get("start", ""),
+            "end": data.get("end", ""),
+            "interval": data.get("interval", "1d"),
+            "active_strategies": data.get("active_strategies", []),
+            "rule_logic": data.get("rule_logic", "all"),
+            "run_mode": "single",
+        }
+        # Parametri per singola strategia (es. "sma_cross__fast": 20)
+        for key, value in data.items():
+            if "__" in key:
+                merged[key] = value
+
+        try:
+            preset = save_strategy_preset(
+                raw=merged,
+                output_dir=current_app.config["REPORTS_DIR"],
+            )
+        except FormValidationError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+        return jsonify({"success": True, "name": preset["name"]}), 201
 
     @app.post("/presets")
     def create_preset():
@@ -193,6 +244,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             preview_endpoint=url_for("report_chart_preview", report_name=report_name),
             autosetting_endpoint=url_for("report_autosetting", report_name=report_name),
             correlation_endpoint=url_for("report_correlation", report_name=report_name),
+            save_endpoint=url_for("api_save_chart_lab_preset"),
         )
         return render_template("chart_window.html", chart=chart)
 
@@ -238,6 +290,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             preview_endpoint=url_for("sweep_chart_preview", sweep_name=sweep_name),
             autosetting_endpoint=url_for("sweep_autosetting", sweep_name=sweep_name),
             correlation_endpoint=url_for("sweep_correlation", sweep_name=sweep_name),
+            save_endpoint=url_for("api_save_chart_lab_preset"),
         )
         return render_template("chart_window.html", chart=chart)
 
@@ -285,6 +338,68 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
         return send_file(file_path, as_attachment=True)
 
     return app
+
+
+def _run_walkforward_view(form: dict[str, object]):
+    """Esegue la walk-forward e renderizza la pagina dei risultati."""
+    from trading_bot.data import download_price_data, coerce_interval_date_window
+
+    try:
+        req = BacktestRequest.from_mapping(form)
+    except FormValidationError as exc:
+        flash(str(exc), "error")
+        return _render_home(
+            form_values=form,
+            field_errors=_field_errors(exc),
+            invalid_fields=exc.field_names,
+            view=HOME_VIEW_SETUP,
+            status=400,
+        )
+
+    try:
+        data = download_price_data(
+            symbol=req.data_symbol,
+            start=req.start,
+            end=req.end,
+            interval=req.interval,
+        )
+        is_days = int(form.get("wf_is_days") or 252)
+        oos_days = int(form.get("wf_oos_days") or 63)
+        optimize_by = str(form.get("wf_optimize_by") or "sharpe_ratio")
+        if optimize_by not in WALKFORWARD_SORT_OPTIONS:
+            optimize_by = "sharpe_ratio"
+
+        wf = run_walk_forward(
+            data=data,
+            strategy_id=req.strategy,
+            is_days=is_days,
+            oos_days=oos_days,
+            optimize_by=optimize_by,
+            fee_bps=req.fee_bps,
+            sl_pct=req.sl_pct,
+            tp_pct=req.tp_pct,
+            sizing_method=req.sizing_method,
+            sizing_param=req.sizing_param,
+            initial_capital=req.initial_capital,
+        )
+    except Exception as exc:
+        flash(str(exc), "error")
+        return _render_home(
+            form_values=form,
+            view=HOME_VIEW_SETUP,
+            status=400,
+        )
+
+    strategy_label = STRATEGY_OPTIONS.get(req.strategy, {}).get("label", req.strategy)
+    return render_template(
+        "walkforward.html",
+        wf=wf,
+        req=req,
+        strategy_label=strategy_label,
+        optimize_by_label=WALKFORWARD_SORT_OPTIONS.get(wf.optimize_by, wf.optimize_by),
+        is_days=is_days,
+        oos_days=oos_days,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -448,6 +563,7 @@ def _attach_chart_lab(
     preview_endpoint: str,
     autosetting_endpoint: str = "",
     correlation_endpoint: str = "",
+    save_endpoint: str = "",
 ) -> dict[str, object]:
     metadata = chart["metadata"]
     chart_lab_state = build_chart_lab_state(metadata)
@@ -460,6 +576,12 @@ def _attach_chart_lab(
             "preview_endpoint": preview_endpoint,
             "autosetting_endpoint": autosetting_endpoint,
             "correlation_endpoint": correlation_endpoint,
+            "save_endpoint": save_endpoint,
+            # Metadati del report necessari per salvare un preset dal chart lab
+            "report_symbol": str(metadata.get("symbol", "")),
+            "report_start": str(metadata.get("start", "")),
+            "report_end": str(metadata.get("end", "")),
+            "report_interval": str(metadata.get("interval", "1d")),
             "strategies": STRATEGY_OPTIONS,
             "rule_logic_options": RULE_LOGIC_OPTIONS,
             "comparison_cards": build_live_comparison_cards(

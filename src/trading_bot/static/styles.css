@@ -345,6 +345,147 @@ body.chart-indicator-modal-open {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.field-hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* Sezioni collassabili Gestione rischio / Walk-Forward */
+.risk-details {
+  border: 1px solid rgba(163, 177, 204, 0.15);
+  border-radius: var(--radius-md);
+  margin-top: 0.75rem;
+}
+.risk-summary {
+  padding: 0.6rem 0.85rem;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  user-select: none;
+}
+.risk-summary::before {
+  content: "▸";
+  font-size: 0.75rem;
+  color: var(--muted);
+  transition: transform 160ms;
+}
+details[open] > .risk-summary::before {
+  transform: rotate(90deg);
+}
+.risk-body {
+  padding: 0.75rem 0.85rem 0.85rem;
+  border-top: 1px solid rgba(163, 177, 204, 0.1);
+  display: grid;
+  gap: 0.75rem;
+}
+
+/* Tabella walk-forward */
+.wf-summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 1.25rem;
+}
+.wf-efficiency-note {
+  margin-bottom: 1.25rem;
+}
+.tone-positive { color: var(--positive, #10b981); }
+.tone-neutral  { color: var(--muted); }
+.tone-negative { color: var(--negative, #ef4444); }
+.table-scroll {
+  overflow-x: auto;
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.data-table th, .data-table td {
+  padding: 0.45rem 0.7rem;
+  text-align: left;
+  border-bottom: 1px solid rgba(163, 177, 204, 0.1);
+  white-space: nowrap;
+}
+.data-table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.muted-text { color: var(--muted); font-size: 0.78rem; }
+
+/* ── Confronto live: empty state ─────────────────────────────────── */
+.chart-comparison-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.875rem;
+  border: 1px dashed rgba(163, 177, 204, 0.25);
+  border-radius: var(--radius-md);
+  margin-top: 0.5rem;
+}
+.chart-comparison-placeholder p { margin: 0; }
+
+/* ── Save popover ─────────────────────────────────────────────────── */
+.chart-save-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 200;
+  background: var(--panel-strong, #fff7ee);
+  border: 1px solid rgba(163, 177, 204, 0.25);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 220px;
+}
+.chart-save-name-input {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid rgba(163, 177, 204, 0.3);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.875rem;
+  outline: none;
+}
+.chart-save-name-input:focus { border-color: var(--accent); }
+.chart-save-popover-row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+.chart-save-confirm-btn {
+  padding: 0.35rem 0.85rem;
+  border-radius: 8px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.8rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.chart-save-confirm-btn:disabled { opacity: 0.5; cursor: default; }
+.chart-save-popover-msg {
+  font-size: 0.78rem;
+  margin: 0;
+  padding: 0;
+}
+.chart-save-popover-msg-ok { color: var(--accent); }
+.chart-save-popover-msg-err { color: var(--danger); }
+
 label {
   display: grid;
   gap: 0.45rem;
@@ -2579,26 +2720,40 @@ td {
   padding: 0.82rem;
 }
 
-.chart-live-toolbar {
-  display: grid;
-  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
-  gap: 0.7rem;
-  margin: 0.75rem 0;
+
+/* Spinner preview */
+@keyframes preview-spin {
+  to { transform: rotate(360deg); }
+}
+.preview-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(163, 177, 204, 0.25);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: preview-spin 0.65s linear infinite;
+  vertical-align: middle;
+}
+.preview-error-text {
+  color: #ef4444;
+  font-size: 0.82rem;
+}
+.preview-status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-width: 18px;
+  min-height: 18px;
 }
 
-.chart-live-status {
-  display: grid;
-  gap: 0.25rem;
-  padding: 0.7rem 0.78rem;
-  border-radius: 16px;
-  border: 1px solid rgba(171, 184, 214, 0.1);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.chart-live-status strong {
-  color: var(--ink);
-  font-size: 0.86rem;
-  line-height: 1.4;
+.chart-lab-spinner-anchor {
+  position: absolute;
+  top: 0.9rem;
+  right: 0.9rem;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+  z-index: 2;
 }
 
 .chart-live-comparison-grid span {
@@ -4317,6 +4472,296 @@ td {
   position: relative;
 }
 
+/* ── Badge gruppo strategia ─────────────────────────────────── */
+.group-badge-btn {
+  position: absolute;
+  top: 0.28rem;
+  right: 0.28rem;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 50%;
+  border: 1.5px solid rgba(163, 177, 204, 0.35);
+  background: rgba(163, 177, 204, 0.12);
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 160ms ease, background 160ms ease, border-color 160ms ease, color 160ms ease;
+  z-index: 2;
+}
+
+.chart-live-toggle-card:hover .group-badge-btn,
+.chart-live-toggle-card.is-active .group-badge-btn {
+  opacity: 1;
+}
+
+/* I colori del badge G2+ sono impostati inline via JS dalla palette */
+
+/* ── Sezione drag & drop gruppi ─────────────────────────────── */
+.group-dnd-section {
+  margin-bottom: 0.75rem;
+}
+
+.group-dnd-eyebrow {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin: 0 0 0.45rem;
+}
+
+.group-dnd-track {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.group-dnd-track > * {
+  flex-shrink: 0;
+}
+
+.group-dnd-bucket {
+  flex: 1 1 160px;
+  max-width: 320px;
+  min-width: 130px;
+  border: 1.5px dashed rgba(163, 177, 204, 0.28);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.55rem;
+  min-height: 3.5rem;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.group-dnd-bucket.is-empty {
+  opacity: 0.65;
+}
+
+.group-dnd-bucket.drag-over {
+  border-color: var(--gcolor, rgba(163, 177, 204, 0.6));
+  border-style: solid;
+  background: rgba(163, 177, 204, 0.06);
+}
+
+.group-dnd-bucket-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.group-dnd-bucket-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  /* Il colore è impostato inline via JS dalla palette */
+}
+
+.group-dnd-logic-sel {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: 5px;
+  border: 1px solid rgba(163, 177, 204, 0.4);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.group-dnd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  min-height: 1.6rem;
+}
+
+.group-dnd-chip {
+  background: rgba(163, 177, 204, 0.1);
+  border: 1px solid rgba(163, 177, 204, 0.28);
+  border-radius: 6px;
+  padding: 0.18rem 0.5rem;
+  font-size: 0.71rem;
+  cursor: grab;
+  user-select: none;
+  white-space: nowrap;
+  transition: background 120ms, opacity 120ms;
+}
+
+.group-dnd-chip:hover {
+  background: rgba(163, 177, 204, 0.18);
+}
+
+.group-dnd-chip.is-dragging {
+  opacity: 0.35;
+  cursor: grabbing;
+}
+
+/* I colori delle chip sono impostati inline via JS dalla palette */
+
+.group-dnd-empty {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-style: italic;
+  padding: 0.15rem 0;
+  opacity: 0.6;
+}
+
+.group-dnd-single-hint {
+  font-size: 0.65rem;
+  color: var(--muted);
+  opacity: 0.55;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  display: block;
+}
+
+/* Header sezione DnD (toggle AND/OR) */
+.group-dnd-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+  min-height: 1.6rem;
+}
+
+/* Cluster di gruppi parentesizzati */
+.group-bound-cluster {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border: 1.5px solid rgba(163, 177, 204, 0.35);
+  border-radius: var(--radius-md);
+  padding: 0.35rem;
+  background: rgba(163, 177, 204, 0.04);
+  position: relative;
+  flex-shrink: 0;
+}
+.group-bound-cluster::before {
+  content: "( )";
+  position: absolute;
+  top: -0.55rem;
+  left: 0.5rem;
+  font-size: 0.6rem;
+  color: var(--muted);
+  background: var(--surface, var(--panel));
+  padding: 0 0.25rem;
+  letter-spacing: 0.06em;
+}
+
+/* Wrapper per ogni coppia op + bottone () */
+.group-inter-op-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+  padding: 0 0.15rem;
+}
+
+/* Bottone () per bindare/sbindare */
+.group-bound-toggle {
+  width: 22px;
+  height: 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(163, 177, 204, 0.25);
+  background: transparent;
+  color: rgba(163, 177, 204, 0.45);
+  font-size: 0.6rem;
+  cursor: pointer;
+  transition: border-color 140ms, background 140ms, color 140ms;
+  line-height: 1;
+}
+.group-bound-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.group-bound-toggle.is-bound {
+  border-color: rgba(163, 177, 204, 0.55);
+  background: rgba(163, 177, 204, 0.1);
+  color: var(--ink);
+}
+
+/* Operatore AND/OR inline tra i bucket */
+.group-inter-op-inline {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 0.2rem 0.45rem;
+  border-radius: 20px;
+  border: 1.5px solid rgba(163, 177, 204, 0.3);
+  background: rgba(163, 177, 204, 0.06);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: border-color 140ms, background 140ms, color 140ms;
+  white-space: nowrap;
+  margin: 0 0.1rem;
+}
+.group-inter-op-inline:hover {
+  border-color: var(--accent);
+  background: rgba(163, 177, 204, 0.13);
+  color: var(--ink);
+}
+
+/* Pulsante reset gruppi */
+.group-reset-btn {
+  margin-left: auto;
+  padding: 0.18rem 0.5rem;
+  border-radius: 20px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: transparent;
+  color: rgba(239, 68, 68, 0.6);
+  font-size: 0.68rem;
+  cursor: pointer;
+  transition: border-color 140ms, background 140ms, color 140ms;
+  white-space: nowrap;
+}
+.group-reset-btn:hover {
+  border-color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+}
+
+/* Zona nuovo gruppo */
+.group-dnd-bucket.is-new-group {
+  border-style: dotted;
+  opacity: 0.5;
+  transition: opacity 140ms, border-color 140ms, background 140ms;
+}
+
+.group-dnd-bucket.is-new-group.drag-over {
+  opacity: 1;
+  border-color: rgba(163, 177, 204, 0.6);
+  background: rgba(163, 177, 204, 0.07);
+}
+
+.group-dnd-new-label {
+  color: var(--muted) !important;
+}
+
+/* Carta in fase di trascinamento */
+.chart-live-toggle-card.is-card-dragging {
+  opacity: 0.4;
+}
+
+/* Placeholder nel bucket durante drag-over */
+.group-dnd-bucket.drag-over .group-dnd-chips::after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 1.6rem;
+  border: 1.5px dashed currentColor;
+  border-radius: 6px;
+  opacity: 0.4;
+  margin-top: 0.2rem;
+}
+
 /* ── Autosetting modal ────────────────────────────────────── */
 
 body.autosetting-modal-open {
@@ -4710,4 +5155,96 @@ body.autosetting-modal-open {
 
 .scan-mode-option-xl.is-selected strong {
   color: #f59e0b;
+}
+
+/* ── Tooltip informativi ─────────────────────────────────────────────── */
+/* Wrapper inline che mostra un'icona "i" affiancata a un label. Su hover */
+/* compare un riquadro con la spiegazione. Funziona senza JS (CSS-only).  */
+
+.info-tip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  cursor: help;
+}
+
+.info-tip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgba(148, 163, 184, 0.18);
+  color: #cbd5e1;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  font-style: normal;
+  user-select: none;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.info-tip:hover .info-tip-icon,
+.info-tip:focus-within .info-tip-icon {
+  background: rgba(96, 165, 250, 0.25);
+  color: #f1f5f9;
+  border-color: rgba(96, 165, 250, 0.55);
+}
+
+.info-tip-bubble {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 200px;
+  max-width: 280px;
+  padding: 8px 10px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.4;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 9999;
+  text-align: left;
+  white-space: normal;
+  font-family: "Aptos", "Segoe UI Variable", sans-serif;
+}
+
+.info-tip-bubble::after {
+  /* Freccia che punta verso l'icona */
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: #0f172a transparent transparent transparent;
+}
+
+.info-tip:hover .info-tip-bubble,
+.info-tip:focus-within .info-tip-bubble {
+  opacity: 1;
+}
+
+/* Variante "in basso" quando l'icona è in cima a un elemento e non c'è */
+/* spazio sopra: aggiungere class .info-tip-below al wrapper.            */
+.info-tip-below .info-tip-bubble {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+
+.info-tip-below .info-tip-bubble::after {
+  top: auto;
+  bottom: 100%;
+  border-color: transparent transparent #0f172a transparent;
 }

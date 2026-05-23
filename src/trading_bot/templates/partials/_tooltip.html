@@ -1,0 +1,12 @@
+{# Macro per renderizzare un tooltip informativo accanto a un elemento. Vedi reporting.METRIC_TOOLTIPS per le chiavi disponibili. Uso: info_tip("sharpe_ratio"), info_tip("sharpe_ratio", below=True), info_tip(None, text="Testo custom"). Non renderizza nulla se chiave sconosciuta e nessun testo. #}
+{% macro info_tip(key=None, text=None, below=False) -%}
+  {%- set body = text if text else METRIC_TOOLTIPS.get(key, "") -%}
+  {%- if body -%}
+    <span class="info-tip{% if below %} info-tip-below{% endif %}"
+          tabindex="0"
+          aria-label="{{ body }}">
+      <i class="info-tip-icon" aria-hidden="true">i</i>
+      <span class="info-tip-bubble" role="tooltip">{{ body }}</span>
+    </span>
+  {%- endif -%}
+{%- endmacro %}

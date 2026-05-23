@@ -1969,7 +1969,15 @@ function initChartModule(dataNode, rootEl) {
     rerenderChart();
   }
 
-  window.tradingBotChartTerminal = { applyPreview, clearPreview, setPreviewIndicatorFilter };
+  function setLayerVisible(key, visible) {
+    if (key in state.visible) {
+      state.visible[key] = Boolean(visible);
+      resetViewportLock();
+      rerenderChart();
+    }
+  }
+
+  window.tradingBotChartTerminal = { applyPreview, clearPreview, setPreviewIndicatorFilter, setLayerVisible };
 
   // ─── Clamp ────────────────────────────────────────────────────────────────────
   function clamp(reset = false) {

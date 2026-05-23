@@ -11,7 +11,9 @@ from trading_bot.strategies import (
     STRATEGY_SPECS,
     adx_components,
     commodity_channel_index,
+    money_flow_index,
     on_balance_volume,
+    parabolic_sar,
     relative_strength_index,
     williams_r_indicator,
 )
@@ -29,12 +31,14 @@ def build_chart_lab_state(metadata: Mapping[str, object]) -> dict[str, object]:
         or metadata.get("strategy")
         or "Setup iniziale del report"
     )
+    groups = [g for g in (metadata.get("groups") or []) if isinstance(g, dict)]
 
     return {
         "active_strategy_ids": active_strategy_ids,
         "rule_logic": rule_logic,
         "parameters_by_strategy": parameters_by_strategy,
         "baseline_label": baseline_label,
+        "groups": groups,
     }
 
 
@@ -57,6 +61,7 @@ def build_preview_request(
         "rule_logic": raw.get("rule_logic", chart_lab_state["rule_logic"]),
         "active_strategies": active_strategy_ids,
         "strategy": active_strategy_ids[0],
+        "groups": raw.get("groups", chart_lab_state["groups"]),
     }
 
     for strategy_id, parameters in chart_lab_state["parameters_by_strategy"].items():
@@ -368,6 +373,98 @@ def _indicator_payload_for_rule(
                 _indicator_series(f"{strategy_id}_obv", "OBV", "#a78bfa", obv),
                 _indicator_series(f"{strategy_id}_fast", f"Fast {fast}", "#f59e0b", fast_ma),
                 _indicator_series(f"{strategy_id}_slow", f"Slow {slow}", "#38bdf8", slow_ma),
+            ],
+            "thresholds": [],
+        }
+
+    if strategy_id == "roc_momentum":
+        period = int(parameters["period"])
+        threshold = float(parameters["threshold"])
+        prev_close = close.shift(period).replace(0.0, pd.NA)
+        roc = ((close - prev_close) / prev_close) * 100.0
+        return {
+            "key": strategy_id,
+            "label": label,
+            "description": f"Rate of Change a {period} barre con soglia ingresso {threshold:g}%.",
+            "placement": "panel",
+            "series": [
+                _indicator_series(f"{strategy_id}_roc", f"ROC {period}", "#34d399", roc),
+            ],
+            "thresholds": [
+                _indicator_threshold("Ingresso", threshold, "#22c55e"),
+                _indicator_threshold("Uscita", 0.0, "#ef4444", dash="dash"),
+            ],
+        }
+
+    if strategy_id == "keltner_reversion":
+        _require_columns_for_indicator(data, ("high", "low"))
+        period = int(parameters["period"])
+        multiplier = float(parameters["multiplier"])
+        high = data["high"].astype(float)
+        low = data["low"].astype(float)
+        middle = close.ewm(span=period, adjust=False, min_periods=period).mean()
+        prev_close = close.shift(1)
+        true_range = pd.concat(
+            [
+                high - low,
+                (high - prev_close).abs(),
+                (low - prev_close).abs(),
+            ],
+            axis=1,
+        ).max(axis=1)
+        atr = true_range.ewm(span=period, adjust=False, min_periods=period).mean()
+        upper = middle + multiplier * atr
+        lower = middle - multiplier * atr
+        return {
+            "key": strategy_id,
+            "label": label,
+            "description": f"Keltner Channel: EMA {period} ± {multiplier:g}×ATR.",
+            "placement": "overlay",
+            "series": [
+                _indicator_series(f"{strategy_id}_middle", f"EMA {period}", "#c084fc", middle),
+                _indicator_series(f"{strategy_id}_upper", "Upper band", "#60a5fa", upper, dash="dot"),
+                _indicator_series(f"{strategy_id}_lower", "Lower band", "#60a5fa", lower, dash="dot"),
+            ],
+            "thresholds": [],
+        }
+
+    if strategy_id == "mfi_reversion":
+        _require_columns_for_indicator(data, ("high", "low", "volume"))
+        period = int(parameters["period"])
+        lower = float(parameters["lower"])
+        upper = float(parameters["upper"])
+        mfi = money_flow_index(data, period=period)
+        return {
+            "key": strategy_id,
+            "label": label,
+            "description": f"Money Flow Index {period} con soglie {lower:g} / {upper:g}.",
+            "placement": "panel",
+            "series": [
+                _indicator_series(f"{strategy_id}_mfi", f"MFI {period}", "#f59e0b", mfi),
+            ],
+            "thresholds": [
+                _indicator_threshold("Ingresso (ipervenduto)", lower, "#ef4444"),
+                _indicator_threshold("Uscita (ipercomprato)", upper, "#22c55e"),
+            ],
+        }
+
+    if strategy_id == "parabolic_sar":
+        _require_columns_for_indicator(data, ("high", "low"))
+        step = float(parameters["step"])
+        max_step = float(parameters["max_step"])
+        # Calcola la posizione poi ricava il SAR come ultimo low/high a seconda
+        # del verso. Per il display semplificato sovrapponiamo high/low ai close.
+        sar_position = parabolic_sar(data, step=step, max_step=max_step)
+        # Marker punti dove la posizione è long (1) usando una serie sui low,
+        # e dove flat (0) usando i high — visualmente il "trail" del SAR.
+        sar_visual = data["low"].astype(float).where(sar_position > 0, data["high"].astype(float))
+        return {
+            "key": strategy_id,
+            "label": label,
+            "description": f"Parabolic SAR (step={step:g}, max={max_step:g}).",
+            "placement": "overlay",
+            "series": [
+                _indicator_series(f"{strategy_id}_sar", "SAR", "#f472b6", sar_visual, dash="dot"),
             ],
             "thresholds": [],
         }

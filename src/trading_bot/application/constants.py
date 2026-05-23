@@ -6,7 +6,7 @@ from trading_bot.strategies import strategy_options
 
 DEFAULT_REPORTS_DIR = Path("reports")
 INTERVAL_OPTIONS = ("1m", "2m", "5m", "15m", "30m", "1h", "90m", "1d", "1wk", "1mo")
-RUN_MODE_OPTIONS = ("single", "sweep")
+RUN_MODE_OPTIONS = ("single", "sweep", "walkforward")
 RULE_LOGIC_OPTIONS = {
     "all": "Devono valere tutte (AND)",
     "any": "Ne basta una (OR)",
@@ -19,3 +19,15 @@ SWEEP_SORT_OPTIONS = {
 }
 STRATEGY_OPTIONS = strategy_options()
 PRESETS_FILENAME = "strategy_presets.json"
+
+SIZING_OPTIONS = {
+    "full":       "Tutto il capitale (default)",
+    "fixed":      "Frazione fissa (%)",
+    "vol_target": "Target volatilità (%/anno)",
+}
+
+WALKFORWARD_SORT_OPTIONS = {
+    "sharpe_ratio":    "Sharpe ratio",
+    "total_return_pct": "Rendimento totale",
+    "max_drawdown_pct": "Max drawdown",
+}

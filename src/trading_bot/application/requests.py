@@ -14,6 +14,18 @@ def _text_value(raw: Mapping[str, object], name: str, default: str = "") -> str:
     return str(value).strip() if value is not None else default
 
 
+def _optional_positive_float(raw: Mapping[str, object], name: str) -> float | None:
+    """Legge un float positivo opzionale. Restituisce None se assente o vuoto."""
+    val = _text_value(raw, name, "")
+    if not val:
+        return None
+    try:
+        f = float(val)
+        return f if f > 0 else None
+    except ValueError:
+        return None
+
+
 def _list_values(raw: Mapping[str, object], name: str) -> list[str]:
     if hasattr(raw, "getlist"):
         values = raw.getlist(name)
@@ -71,6 +83,13 @@ class BacktestRequest:
     fee_bps: float = 5.0
     parameters: dict[str, int | float] = field(default_factory=dict)
     rules: tuple[StrategyRuleSelection, ...] = field(default_factory=tuple)
+    groups: tuple[dict[str, object], ...] = field(default_factory=tuple)
+    expression: dict[str, object] | None = None
+    # Gestione del rischio
+    sl_pct: float | None = None       # stop loss percentuale (None = disabilitato)
+    tp_pct: float | None = None       # take profit percentuale (None = disabilitato)
+    sizing_method: str = "full"       # metodo di position sizing
+    sizing_param: float = 100.0       # parametro del sizing (dipende dal metodo)
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, object]) -> "BacktestRequest":
@@ -128,6 +147,15 @@ class BacktestRequest:
             raw=raw,
             active_strategy_ids=active_strategy_ids,
         )
+        groups = tuple(_parse_groups(raw))
+        expression = _parse_expression(raw)
+
+        sl_pct = _optional_positive_float(raw, "sl_pct")
+        tp_pct = _optional_positive_float(raw, "tp_pct")
+        sizing_method = _text_value(raw, "sizing_method", "full")
+        if sizing_method not in {"full", "fixed", "vol_target"}:
+            sizing_method = "full"
+        sizing_param = float(_text_value(raw, "sizing_param", "100") or "100")
 
         return cls(
             symbol=symbol,
@@ -142,12 +170,37 @@ class BacktestRequest:
             fee_bps=float(_text_value(raw, "fee_bps", "5")),
             parameters=rules[0].parameters,
             rules=tuple(rules),
+            groups=groups,
+            expression=expression,
+            sl_pct=sl_pct,
+            tp_pct=tp_pct,
+            sizing_method=sizing_method,
+            sizing_param=sizing_param,
         )
 
     @property
     def strategy_label(self) -> str:
         if not self.is_composite:
             return STRATEGY_OPTIONS[self.strategy]["label"]
+        if self.groups:
+            default_op = "OR" if self.rule_logic == "any" else "AND"
+            parts: list[str] = []
+            for i, g in enumerate(self.groups):
+                strat_labels = [
+                    STRATEGY_OPTIONS.get(str(s), {}).get("label", str(s))
+                    for s in (g.get("strategies") or [])
+                ]
+                inner_logic = "OR" if str(g.get("logic", "all")) == "any" else "AND"
+                if len(strat_labels) > 1:
+                    parts.append(f"({f' {inner_logic} '.join(strat_labels)})")
+                elif strat_labels:
+                    parts.append(strat_labels[0])
+                # Inserisce l'operatore inter-gruppo prima di ogni parte tranne la prima
+                if i > 0 and len(parts) >= 2:
+                    op = "OR" if str(g.get("op_before", self.rule_logic)) == "any" else "AND"
+                    parts.insert(-1, op)
+            if parts:
+                return " ".join(parts)
         return f"Regole combinate ({self.rule_logic.upper()})"
 
     @property
@@ -187,10 +240,59 @@ class BacktestRequest:
             "rule_logic_label": self.rule_logic_label,
             "is_composite": self.is_composite,
             "active_rules": [rule.metadata() for rule in self.rules],
+            "groups": [dict(g) for g in self.groups],
             "initial_capital": self.initial_capital,
             "fee_bps": self.fee_bps,
+            "sl_pct": self.sl_pct,
+            "tp_pct": self.tp_pct,
+            "sizing_method": self.sizing_method,
+            "sizing_param": self.sizing_param,
             "parameters": self.strategy_parameters(),
         }
+
+
+def _parse_expression(raw: Mapping[str, object]) -> dict[str, object] | None:
+    """Estrae e valida il campo ``expression`` (albero di espressione con precedenza).
+
+    Restituisce None se assente o non è un dict valido.
+    """
+    expr = raw.get("expression")
+    if isinstance(expr, str):
+        import json as _json
+        try:
+            expr = _json.loads(expr)
+        except Exception:
+            return None
+    if not isinstance(expr, dict):
+        return None
+    return expr
+
+
+def _parse_groups(raw: Mapping[str, object]) -> list[dict[str, object]]:
+    """Valida e normalizza la lista dei gruppi dal payload.
+
+    Restituisce lista vuota se non ci sono ≥2 gruppi validi (logica piatta).
+    """
+    raw_groups = raw.get("groups")
+    if not isinstance(raw_groups, list) or len(raw_groups) < 2:
+        return []
+    validated: list[dict[str, object]] = []
+    for g in raw_groups:
+        if not isinstance(g, dict):
+            continue
+        strategies = [str(s).strip() for s in (g.get("strategies") or []) if str(s).strip()]
+        logic = str(g.get("logic") or "all").strip()
+        if logic not in {"all", "any"}:
+            logic = "all"
+        op_before = str(g.get("op_before") or "all").strip()
+        if op_before not in {"all", "any"}:
+            op_before = "all"
+        if strategies:
+            entry: dict[str, object] = {"strategies": strategies, "logic": logic}
+            if validated:  # op_before rilevante solo da gn=2 in poi
+                entry["op_before"] = op_before
+            validated.append(entry)
+    return validated if len(validated) >= 2 else []
 
 
 def _parse_rule_selections(
@@ -251,6 +353,17 @@ class IntegerRange:
 
 @dataclass(frozen=True)
 class SweepRequest:
+    """Sweep parametrico generico.
+
+    Conserva un mapping ``parameter_ranges`` ``{nome_parametro → IntegerRange}``
+    invece di hardcodare fast/slow: questo permette di estendere lo sweep a
+    strategie con altri nomi parametro (entry_period/exit_period, ecc.) e a
+    qualsiasi numero di dimensioni nel grid search.
+
+    Per retro-compatibilità ``fast_range`` e ``slow_range`` restano accessibili
+    come proprietà che attingono al mapping.
+    """
+
     symbol: str
     data_symbol: str
     start: str
@@ -259,9 +372,18 @@ class SweepRequest:
     strategy: str = "sma_cross"
     initial_capital: float = 10_000.0
     fee_bps: float = 5.0
-    fast_range: IntegerRange = IntegerRange(10, 40, 10)
-    slow_range: IntegerRange = IntegerRange(80, 200, 20)
+    parameter_ranges: dict[str, IntegerRange] = field(
+        default_factory=lambda: {
+            "fast": IntegerRange(10, 40, 10),
+            "slow": IntegerRange(80, 200, 20),
+        }
+    )
     sort_by: str = "total_return_pct"
+    # Gestione del rischio (propagata dal BacktestRequest)
+    sl_pct: float | None = None
+    tp_pct: float | None = None
+    sizing_method: str = "full"
+    sizing_param: float = 100.0
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, object]) -> "SweepRequest":
@@ -280,6 +402,8 @@ class SweepRequest:
                 display_field="active_strategies",
             )
 
+        parameter_ranges = _parse_parameter_ranges(raw=raw, spec=strategy_spec)
+
         return cls(
             symbol=base_request.symbol,
             data_symbol=base_request.data_symbol,
@@ -289,24 +413,35 @@ class SweepRequest:
             strategy=base_request.strategy,
             initial_capital=base_request.initial_capital,
             fee_bps=base_request.fee_bps,
-            fast_range=IntegerRange(
-                start=int(_text_value(raw, "fast_start", "10")),
-                end=int(_text_value(raw, "fast_end", "40")),
-                step=int(_text_value(raw, "fast_step", "10")),
-            ),
-            slow_range=IntegerRange(
-                start=int(_text_value(raw, "slow_start", "80")),
-                end=int(_text_value(raw, "slow_end", "200")),
-                step=int(_text_value(raw, "slow_step", "20")),
-            ),
+            parameter_ranges=parameter_ranges,
             sort_by=_text_value(raw, "sort_by", "total_return_pct"),
+            sl_pct=base_request.sl_pct,
+            tp_pct=base_request.tp_pct,
+            sizing_method=base_request.sizing_method,
+            sizing_param=base_request.sizing_param,
         )
 
     @property
     def strategy_label(self) -> str:
         return STRATEGY_OPTIONS[self.strategy]["label"]
 
+    @property
+    def parameter_names(self) -> tuple[str, ...]:
+        return tuple(self.parameter_ranges.keys())
+
+    @property
+    def fast_range(self) -> IntegerRange:
+        """Retro-compat: prima dimensione dello sweep."""
+        return next(iter(self.parameter_ranges.values()))
+
+    @property
+    def slow_range(self) -> IntegerRange:
+        """Retro-compat: seconda dimensione dello sweep (se presente)."""
+        values = list(self.parameter_ranges.values())
+        return values[1] if len(values) > 1 else values[0]
+
     def metadata(self) -> dict[str, object]:
+        param_map = STRATEGY_SPECS[self.strategy].parameter_map()
         return {
             "symbol": self.symbol,
             "data_symbol": self.data_symbol,
@@ -318,16 +453,64 @@ class SweepRequest:
             "strategy_label": self.strategy_label,
             "initial_capital": self.initial_capital,
             "fee_bps": self.fee_bps,
-            "parameter_space": {
-                "fast": self.fast_range.as_dict(),
-                "slow": self.slow_range.as_dict(),
-            },
+            "sl_pct": self.sl_pct,
+            "tp_pct": self.tp_pct,
+            "sizing_method": self.sizing_method,
+            "sizing_param": self.sizing_param,
+            "parameter_space": {name: rng.as_dict() for name, rng in self.parameter_ranges.items()},
             "parameter_labels": {
-                "fast": STRATEGY_SPECS[self.strategy].parameter_map()["fast"].label,
-                "slow": STRATEGY_SPECS[self.strategy].parameter_map()["slow"].label,
+                name: (param_map[name].label if name in param_map else name)
+                for name in self.parameter_ranges
             },
             "sort_by": self.sort_by,
         }
 
-    def iter_parameter_combinations(self) -> list[tuple[int, int]]:
-        return [(fast, slow) for fast in self.fast_range.values() for slow in self.slow_range.values()]
+    def iter_parameter_combinations(self) -> list[dict[str, int]]:
+        """Produce dict di parametri (chiave→valore) per ogni combinazione del grid."""
+        import itertools
+
+        names = list(self.parameter_ranges.keys())
+        value_lists = [self.parameter_ranges[name].values() for name in names]
+        return [dict(zip(names, combo)) for combo in itertools.product(*value_lists)]
+
+
+def _parse_parameter_ranges(
+    *,
+    raw: Mapping[str, object],
+    spec,
+) -> dict[str, IntegerRange]:
+    """Costruisce i range per il sweep leggendoli dal form.
+
+    Convenzione campi form: ``<param>_start``, ``<param>_end``, ``<param>_step``.
+    Per retro-compatibilità con i form esistenti che usano ``fast_*`` / ``slow_*``,
+    se la strategia ha esattamente i parametri "fast" e "slow" useremo quei nomi;
+    per le altre strategie ``supports_sweep`` prendiamo i primi due parametri
+    interi dello spec.
+    """
+    sweep_param_names = _sweep_param_names_for(spec)
+
+    parameter_ranges: dict[str, IntegerRange] = {}
+    for name in sweep_param_names:
+        start_key = f"{name}_start"
+        end_key = f"{name}_end"
+        step_key = f"{name}_step"
+        # Fallback ai default dello spec se i campi non sono nel form
+        param_spec = spec.parameter_map().get(name)
+        default = int(param_spec.default) if param_spec else 1
+        start = int(float(_text_value(raw, start_key, str(default))))
+        end = int(float(_text_value(raw, end_key, str(default * 2))))
+        step = int(float(_text_value(raw, step_key, "1")))
+        parameter_ranges[name] = IntegerRange(start=start, end=end, step=max(1, step))
+    return parameter_ranges
+
+
+def _sweep_param_names_for(spec) -> list[str]:
+    """Restituisce i nomi dei parametri da sweep per una strategia.
+
+    Logica: prende i parametri interi dello spec, massimo 2 dimensioni (per non
+    far esplodere il numero di combinazioni e per la compatibilità col layout
+    form fast/slow). Le strategie con parametri non interi non sono mai marcate
+    ``supports_sweep=True`` quindi non finiscono qui.
+    """
+    int_params = [p.name for p in spec.parameters if p.value_type == "int"]
+    return int_params[:2] if int_params else [spec.parameters[0].name]

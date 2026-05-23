@@ -403,7 +403,7 @@ def test_chart_window_uses_clear_labels_and_simplified_default_view(tmp_path: Pa
     assert ">Reset<" in body
     assert ">Esporta<" in body
     assert ">Schermo<" in body
-    assert "Pronto" in body
+    assert 'data-live-preview-status' in body
     assert "Layout standard del chart." in body
     assert 'data-chart-indicator-open' in body
     assert 'data-chart-indicator-modal' in body

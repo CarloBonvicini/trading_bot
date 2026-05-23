@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_tooltip.html" import info_tip %}
 {% block title %}{{ chart.title }} - Chart Terminal{% endblock %}
 {% block body_class %}chart-terminal-body{% endblock %}
 {% block head_extra %}{% endblock %}
@@ -347,16 +348,30 @@
     </section>
 
     <section class="chart-terminal-live-grid">
-      <article class="panel chart-terminal-live-lab">
+      <article class="panel chart-terminal-live-lab" style="position:relative;">
+        <span class="chart-lab-spinner-anchor" data-live-preview-status></span>
         <div class="panel-header chart-terminal-panel-header">
           <div>
             <p class="eyebrow">chart lab</p>
             <h3>Attiva strategie live sul grafico</h3>
           </div>
-          <div style="display:flex;gap:0.5rem;align-items:center;">
+          <div style="display:flex;gap:0.5rem;align-items:center;position:relative;">
+            <div class="chart-save-popover" data-chart-save-popover hidden>
+              <input type="text" class="chart-save-name-input" placeholder="Nome preset…" data-chart-save-name maxlength="60">
+              <div class="chart-save-popover-row">
+                <button type="button" class="chart-save-confirm-btn" data-chart-save-confirm>Salva</button>
+                <button type="button" class="ghost-link chart-action-link" data-chart-save-cancel>Annulla</button>
+              </div>
+              <p class="chart-save-popover-msg" data-chart-save-msg hidden></p>
+            </div>
+            <button type="button" class="ghost-link chart-action-link" data-chart-save-btn
+                    title="Salva la configurazione corrente come preset riutilizzabile.">Salva</button>
             <div class="scan-split" data-scan-split>
-              <button type="button" class="ghost-link chart-action-link scan-split-run" data-scan-all-btn>Scansione</button>
-              <button type="button" class="ghost-link chart-action-link scan-split-arrow" data-scan-mode-toggle aria-label="Tipo di scansione" aria-expanded="false">▾</button>
+              <button type="button" class="ghost-link chart-action-link scan-split-run" data-scan-all-btn
+                      title="{{ 'autosetting' | tooltip }}">Scansione</button>
+              <button type="button" class="ghost-link chart-action-link scan-split-arrow" data-scan-mode-toggle
+                      aria-label="Tipo di scansione" aria-expanded="false"
+                      title="{{ 'scan_modes' | tooltip }}">▾</button>
               <div class="scan-mode-menu" data-scan-mode-menu hidden>
                 <button type="button" class="scan-mode-option is-selected" data-scan-mode="rapida">
                   <strong>Rapida</strong>
@@ -376,24 +391,19 @@
                 </button>
               </div>
             </div>
-            <button type="button" class="ghost-link chart-action-link" data-correlation-btn>Correlazione</button>
-            <button type="button" class="ghost-link chart-action-link" data-chart-preview-reset>Ripristina</button>
+            <button type="button" class="ghost-link chart-action-link" data-correlation-btn
+                    title="{{ 'correlation' | tooltip }}">Correlazione</button>
+            <button type="button" class="ghost-link chart-action-link" data-chart-preview-reset
+                    title="Annulla tutte le modifiche e torna alla configurazione originale del report.">Ripristina</button>
           </div>
         </div>
 
-        <div class="chart-live-toolbar">
-          <label class="terminal-select-field">
-            <span>Combina le regole</span>
-            <select data-chart-rule-logic>
-              {% for key, label in chart.chart_lab.rule_logic_options.items() %}
-                <option value="{{ key }}" {% if chart.chart_lab.rule_logic == key %}selected{% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <div class="chart-live-status">
-            <strong data-live-preview-status>Pronto</strong>
-          </div>
-        </div>
+        {# Selettore nascosto — la logica inter-gruppo si sceglie dal toggle AND/OR inline nella sezione DnD #}
+        <select data-chart-rule-logic hidden>
+          {% for key, label in chart.chart_lab.rule_logic_options.items() %}
+            <option value="{{ key }}" {% if chart.chart_lab.rule_logic == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
 
         <div class="chart-live-toggle-grid">
           {% for strategy_id, strategy in chart.chart_lab.strategies.items() %}
@@ -401,6 +411,7 @@
               class="chart-live-toggle-card {% if strategy_id in chart.chart_lab.active_strategy_ids %}is-active{% endif %}"
               data-chart-strategy-card="{{ strategy_id }}"
               title="{{ strategy.description }}"
+              draggable="true"
             >
               <input
                 type="checkbox"
@@ -414,9 +425,75 @@
                 <span>{{ strategy.description }}</span>
               </div>
               <span class="strategy-scan-badge" data-strategy-score="{{ strategy_id }}" hidden></span>
+              <button
+                type="button"
+                class="group-badge-btn"
+                data-group-badge="{{ strategy_id }}"
+                title="Gruppo — clicca per cambiare"
+                tabindex="-1"
+              >1</button>
             </label>
           {% endfor %}
         </div>
+
+        <div class="group-dnd-section" data-group-dnd-section></div>
+
+        <details class="risk-details chart-lab-risk-details" id="chart-lab-risk">
+          <summary class="risk-summary">Gestione del rischio <span class="eyebrow">(opzionale)</span></summary>
+          <div class="risk-body">
+            <div class="input-grid">
+              <div class="field-block">
+                <label>
+                  <span>Stop Loss (%){{ info_tip("sl_pct") }}</span>
+                  <input type="number" id="chart-lab-sl" name="sl_pct" min="0.1" max="50" step="0.1" placeholder="es. 5"
+                         data-chart-risk-input data-no-expand="true">
+                </label>
+                <span class="field-hint">Lascia vuoto per disabilitare</span>
+              </div>
+              <div class="field-block">
+                <label>
+                  <span>Take Profit (%){{ info_tip("tp_pct") }}</span>
+                  <input type="number" id="chart-lab-tp" name="tp_pct" min="0.1" max="200" step="0.1" placeholder="es. 10"
+                         data-chart-risk-input data-no-expand="true">
+                </label>
+                <span class="field-hint">Lascia vuoto per disabilitare</span>
+              </div>
+              <div class="field-block">
+                <label>
+                  <span>Sizing{{ info_tip("sizing_full") }}</span>
+                  <select id="chart-lab-sizing-method" name="sizing_method" data-chart-risk-input data-no-expand="true">
+                    <option value="full" title="{{ 'sizing_full' | tooltip }}">Tutto il capitale</option>
+                    <option value="fixed" title="{{ 'sizing_fixed' | tooltip }}">Frazione fissa (%)</option>
+                    <option value="vol_target" title="{{ 'sizing_vol_target' | tooltip }}">Target volatilità (%/anno)</option>
+                  </select>
+                </label>
+              </div>
+              <div class="field-block" id="chart-lab-sizing-param-block" hidden>
+                <label>
+                  <span id="chart-lab-sizing-param-label">Parametro (%)</span>
+                  <input type="number" id="chart-lab-sizing-param" name="sizing_param" min="1" max="500" step="1" value="100"
+                         data-chart-risk-input data-no-expand="true">
+                </label>
+                <span class="field-hint" id="chart-lab-sizing-param-hint"></span>
+              </div>
+            </div>
+          </div>
+        </details>
+        <script>
+          (function () {
+            const sel = document.getElementById("chart-lab-sizing-method");
+            const block = document.getElementById("chart-lab-sizing-param-block");
+            const lbl = document.getElementById("chart-lab-sizing-param-label");
+            const hint = document.getElementById("chart-lab-sizing-param-hint");
+            function update() {
+              const v = sel.value;
+              block.hidden = (v === "full");
+              if (v === "fixed") { lbl.textContent = "Frazione (%)"; hint.textContent = "es. 50 → investe il 50% del capitale"; }
+              if (v === "vol_target") { lbl.textContent = "Target vol (%/anno)"; hint.textContent = "es. 15 → dimensiona per 15% vol annua"; }
+            }
+            sel.addEventListener("change", update);
+          })();
+        </script>
 
         <div class="chart-live-parameters-grid">
           {% for strategy_id, strategy in chart.chart_lab.strategies.items() %}
@@ -469,12 +546,15 @@
             <p class="eyebrow">confronto live</p>
             <h3>Confronto con il buy &amp; hold</h3>
           </div>
-          <span class="strategy-chip strategy-chip-accent" data-live-preview-badge>{{ chart.chart_lab.baseline_label }}</span>
+          <span class="preview-status-badge" data-live-preview-badge></span>
         </div>
         <p class="inline-note" data-live-rule-summary>
           Config: {{ chart.chart_lab.baseline_label }}.
         </p>
-        <div class="terminal-metric-grid chart-live-comparison-grid" data-live-comparison-grid>
+        <div class="chart-comparison-placeholder" data-comparison-placeholder>
+          <p>Attiva una strategia per vedere il confronto live con il buy &amp; hold.</p>
+        </div>
+        <div class="terminal-metric-grid chart-live-comparison-grid" data-live-comparison-grid hidden>
           {% for card in chart.chart_lab.comparison_cards %}
             <article class="terminal-metric-card report-tone-{{ card.tone or 'neutral' }}">
               <p>{{ card.label }}</p>

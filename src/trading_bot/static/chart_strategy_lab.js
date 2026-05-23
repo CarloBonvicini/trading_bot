@@ -20,6 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const badgeNode = document.querySelector("[data-live-preview-badge]");
   const ruleSummaryNode = document.querySelector("[data-live-rule-summary]");
   const comparisonGrid = document.querySelector("[data-live-comparison-grid]");
+  const comparisonPlaceholder = document.querySelector("[data-comparison-placeholder]");
   const validationGrid = document.querySelector("[data-live-validation-grid]");
   const validationChecksNode = document.querySelector("[data-live-validation-checks]");
   const tradePreviewNode = document.querySelector("[data-live-trade-preview]");
@@ -35,8 +36,48 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentIndicatorLabel = config.baseline_label || "Setup iniziale del report";
   let currentChartPayload = initialChartPayload;
 
+  // ── Stato gruppi ──────────────────────────────────────────────────
+  // strategyGroupState:   { strategyId → groupNumber (1-based) }
+  // groupLogicState:      { groupNumber → "all" | "any" }  — logica interna al gruppo
+  // interGroupLogics:     { groupNumber → "all" | "any" }  — op PRIMA di questo gruppo (gn >= 2)
+  // topLevelLogic:        default fallback per nuovi inter-op
+  const strategyGroupState = {};
+  const groupLogicState = {};
+  const interGroupLogics = {};
+  const boundPairs = new Set(); // gn in boundPairs → gn e il gruppo precedente formano un sotto-nodo (parentesi)
+  let topLevelLogic = ruleLogicSelect?.value || config.rule_logic || "all";
+  let isDraggingCard = false; // true mentre si trascina una carta dalla griglia
+
+  const groupDndSection = document.querySelector("[data-group-dnd-section]");
+  const ruleLogicLabelNode = document.querySelector("[data-rule-logic-label]");
+
+  function _initGroupsFromConfig(groups) {
+    if (!Array.isArray(groups) || groups.length < 2) return;
+    // Se ogni gruppo contiene esattamente 1 strategia, è equivalente a flat mode: ignoriamo.
+    const allSingles = groups.every((g) => (g.strategies || []).length === 1);
+    if (allSingles) return;
+    groups.forEach((group, idx) => {
+      const gn = idx + 1;
+      groupLogicState[gn] = group.logic || "all";
+      if (gn >= 2) interGroupLogics[gn] = group.op_before || topLevelLogic;
+      (group.strategies || []).forEach((sid) => {
+        strategyGroupState[sid] = gn;
+      });
+    });
+  }
+  _initGroupsFromConfig(config.groups || []);
+
+  // Palette colori per i gruppi (si ripete ciclicamente oltre il sesto)
+  const GROUP_COLORS = ["#10b981", "#38bdf8", "#fb923c", "#a78bfa", "#f472b6", "#facc15"];
+  function groupColor(gn) {
+    return GROUP_COLORS[(gn - 1) % GROUP_COLORS.length];
+  }
+
   const initialState = captureState();
-  renderComparisonCards(config.comparison_cards || []);
+  setComparisonState(false);          // nessuna preview attiva al caricamento
+  // Nasconde i marker di ingresso/uscita del report originale: il grafico parte pulito
+  window.tradingBotChartTerminal?.setLayerVisible("entry", false);
+  window.tradingBotChartTerminal?.setLayerVisible("exit", false);
   renderValidationCards(config.validation_cards || []);
   renderValidationChecks(config.validation_checks || []);
   renderTradePreview(config.trade_preview || []);
@@ -46,6 +87,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
   strategyToggles.forEach((toggle) => {
     toggle.addEventListener("change", () => {
+      // Se la strategia è stata appena attivata e la scansione ha trovato parametri ottimali, applicali
+      // prima di avviare la preview — così i numeri nel pannello confronto corrispondono al badge.
+      if (toggle.checked) {
+        const sid = toggle.value;
+        const best = scanBestParams[sid];
+        if (best) {
+          Object.entries(best).forEach(([paramName, value]) => {
+            const fieldName = `${sid}__${paramName}`;
+            const input = parameterInputs.find((el) => el.name === fieldName);
+            if (input) input.value = value;
+          });
+        }
+      }
       syncSections();
       schedulePreview();
     });
@@ -68,15 +122,274 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  ruleLogicSelect?.addEventListener("change", schedulePreview);
+  // Il selettore ruleLogicSelect nel toolbar è ora nascosto — la logica inter-gruppo
+  // si sceglie tramite il toggle AND/OR inline nella sezione DnD.
+  // Teniamo il listener per retrocompatibilità con ripristini esterni.
+  ruleLogicSelect?.addEventListener("change", () => {
+    topLevelLogic = ruleLogicSelect.value;
+    renderGroupDndSection();
+    schedulePreview();
+  });
+
+  // Previene che il click sul badge-indicatore attivi/disattivi la card
+  document.addEventListener("click", (e) => {
+    if (e.target.closest("[data-group-badge]")) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  });
+
+  // ── Drag dalle carte nella griglia ───────────────────────────────
+  // Le carte sono draggable; il drop avviene nella sezione DnD sotto.
+  const strategyCardGrid = document.querySelector(".chart-live-toggle-grid");
+
+  strategyCardGrid?.addEventListener("dragstart", (e) => {
+    const card = e.target.closest("[data-chart-strategy-card]");
+    if (!card) return;
+    const sid = card.dataset.chartStrategyCard;
+    isDraggingCard = true;
+    _dragSid = sid;
+    e.dataTransfer.setData("text/plain", sid);
+    e.dataTransfer.effectAllowed = "move";
+    card.classList.add("is-card-dragging");
+    // Mostra la sezione DnD anche se c'è solo 1 strategia attiva
+    renderGroupDndSection();
+  });
+
+  strategyCardGrid?.addEventListener("dragend", (e) => {
+    const card = e.target.closest("[data-chart-strategy-card]");
+    if (card) card.classList.remove("is-card-dragging");
+    isDraggingCard = false;
+    _dragSid = null;
+    renderGroupDndSection();
+  });
+
+  // ── Drag & drop per i gruppi ─────────────────────────────────────
+  let _dragSid = null;
+
+  if (groupDndSection) {
+    groupDndSection.addEventListener("dragstart", (e) => {
+      const chip = e.target.closest("[data-chip-strategy]");
+      if (!chip) return;
+      _dragSid = chip.dataset.chipStrategy;
+      e.dataTransfer.setData("text/plain", _dragSid);
+      e.dataTransfer.effectAllowed = "move";
+      chip.classList.add("is-dragging");
+      // Mostra la zona "nuovo gruppo" anche quando si trascina un chip già in un bucket
+      isDraggingCard = true;
+      renderGroupDndSection();
+    });
+
+    groupDndSection.addEventListener("dragend", (e) => {
+      const chip = e.target.closest("[data-chip-strategy]");
+      if (chip) chip.classList.remove("is-dragging");
+      _dragSid = null;
+      isDraggingCard = false;
+      renderGroupDndSection();
+    });
+
+    groupDndSection.addEventListener("dragover", (e) => {
+      const bucket = e.target.closest("[data-group-bucket]");
+      if (bucket) e.preventDefault();
+    });
+
+    groupDndSection.addEventListener("dragenter", (e) => {
+      const bucket = e.target.closest("[data-group-bucket]");
+      if (bucket) bucket.classList.add("drag-over");
+    });
+
+    groupDndSection.addEventListener("dragleave", (e) => {
+      const bucket = e.target.closest("[data-group-bucket]");
+      if (bucket && !bucket.contains(e.relatedTarget)) {
+        bucket.classList.remove("drag-over");
+      }
+    });
+
+    groupDndSection.addEventListener("drop", (e) => {
+      const bucket = e.target.closest("[data-group-bucket]");
+      if (!bucket) return;
+      e.preventDefault();
+      bucket.classList.remove("drag-over");
+      const sid = e.dataTransfer.getData("text/plain") || _dragSid;
+      if (!sid) return;
+
+      const rawGn = bucket.dataset.groupBucket;
+      let targetGn;
+
+      if (rawGn === "new") {
+        // Nuovo gruppo = massimo corrente + 1 (nessun tetto fisso)
+        const active = activeStrategyIds();
+        const occupied = active.map((s) => strategyGroupState[s] ?? 1);
+        const maxGn = occupied.length > 0 ? Math.max(...occupied) : 1;
+        targetGn = maxGn + 1;
+        // Inizializza l'operatore inter-gruppo con il default corrente
+        if (!(targetGn in interGroupLogics)) {
+          interGroupLogics[targetGn] = topLevelLogic;
+        }
+      } else {
+        targetGn = parseInt(rawGn, 10);
+        if (isNaN(targetGn)) return;
+      }
+
+      // Attiva la strategia se era inattiva (drag da carta inattiva)
+      const toggle = strategyToggles.find((t) => t.value === sid);
+      if (toggle && !toggle.checked) {
+        toggle.checked = true;
+      }
+
+      strategyGroupState[sid] = targetGn;
+      syncSections();
+      syncRuleSummary();
+      schedulePreview();
+    });
+
+    groupDndSection.addEventListener("change", (e) => {
+      // Selettore logica interna di un gruppo
+      const sel = e.target.closest("[data-group-logic-select]");
+      if (sel) {
+        const gn = parseInt(sel.dataset.groupLogicSelect, 10);
+        groupLogicState[gn] = sel.value;
+        syncRuleSummary();
+        schedulePreview();
+      }
+    });
+
+    // Toggle AND/OR tra gruppi + reset gruppi (click inline)
+    groupDndSection.addEventListener("click", (e) => {
+      const interOpBtn = e.target.closest("[data-inter-op-gn]");
+      if (interOpBtn) {
+        const gn = parseInt(interOpBtn.dataset.interOpGn, 10);
+        interGroupLogics[gn] = (interGroupLogics[gn] ?? topLevelLogic) === "all" ? "any" : "all";
+        renderGroupDndSection();
+        syncRuleSummary();
+        schedulePreview();
+        return;
+      }
+      const boundToggle = e.target.closest("[data-bound-toggle]");
+      if (boundToggle) {
+        const gn = parseInt(boundToggle.dataset.boundToggle, 10);
+        if (boundPairs.has(gn)) boundPairs.delete(gn);
+        else boundPairs.add(gn);
+        renderGroupDndSection();
+        syncRuleSummary();
+        schedulePreview();
+        return;
+      }
+      if (e.target.closest("[data-group-reset]")) {
+        // Riporta tutte le strategie al gruppo 1
+        Object.keys(strategyGroupState).forEach((k) => delete strategyGroupState[k]);
+        Object.keys(groupLogicState).forEach((k) => delete groupLogicState[k]);
+        Object.keys(interGroupLogics).forEach((k) => delete interGroupLogics[k]);
+        boundPairs.clear();
+        renderGroupDndSection();
+        updateGroupBadges();
+        syncRuleSummary();
+        schedulePreview();
+      }
+    });
+  }
+
   parameterInputs.forEach((input) => {
     input.addEventListener("input", schedulePreview);
     input.addEventListener("change", schedulePreview);
   });
 
+  // I campi rischio aggiornano la preview al cambio
+  document.querySelectorAll("[data-chart-risk-input]").forEach((el) => {
+    el.addEventListener("input", schedulePreview);
+    el.addEventListener("change", schedulePreview);
+  });
+
   resetButton?.addEventListener("click", (event) => {
     event.preventDefault();
     restoreInitialState();
+  });
+
+  // ── Salva preset ──────────────────────────────────────────────────
+  const saveBtn = document.querySelector("[data-chart-save-btn]");
+  const savePopover = document.querySelector("[data-chart-save-popover]");
+  const saveNameInput = document.querySelector("[data-chart-save-name]");
+  const saveConfirmBtn = document.querySelector("[data-chart-save-confirm]");
+  const saveCancelBtn = document.querySelector("[data-chart-save-cancel]");
+  const saveMsgNode = document.querySelector("[data-chart-save-msg]");
+
+  function openSavePopover() {
+    if (!savePopover) return;
+    if (saveMsgNode) { saveMsgNode.hidden = true; saveMsgNode.textContent = ""; }
+    savePopover.hidden = false;
+    saveNameInput?.focus();
+  }
+
+  function closeSavePopover() {
+    if (savePopover) savePopover.hidden = true;
+  }
+
+  async function confirmSave() {
+    if (!config.save_endpoint) return;
+    const name = (saveNameInput?.value || "").trim();
+    if (!name) {
+      if (saveMsgNode) { saveMsgNode.textContent = "Inserisci un nome."; saveMsgNode.hidden = false; }
+      saveNameInput?.focus();
+      return;
+    }
+
+    if (saveConfirmBtn) saveConfirmBtn.disabled = true;
+
+    const payload = buildPayload();
+    const body = {
+      name,
+      symbol: config.report_symbol || "",
+      start: config.report_start || "",
+      end: config.report_end || "",
+      interval: config.report_interval || "1d",
+      active_strategies: payload.active_strategies || [],
+      rule_logic: payload.rule_logic || "all",
+    };
+    // Aggiunge i parametri per strategia (chiavi con __)
+    for (const [k, v] of Object.entries(payload)) {
+      if (k.includes("__")) body[k] = v;
+    }
+
+    try {
+      const resp = await fetch(config.save_endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || "Errore salvataggio");
+      if (saveMsgNode) {
+        saveMsgNode.textContent = `✓ Preset "${data.name}" salvato.`;
+        saveMsgNode.className = "chart-save-popover-msg chart-save-popover-msg-ok";
+        saveMsgNode.hidden = false;
+      }
+      if (saveNameInput) saveNameInput.value = "";
+      setTimeout(closeSavePopover, 1800);
+    } catch (err) {
+      if (saveMsgNode) {
+        saveMsgNode.textContent = err.message || "Errore.";
+        saveMsgNode.className = "chart-save-popover-msg chart-save-popover-msg-err";
+        saveMsgNode.hidden = false;
+      }
+    } finally {
+      if (saveConfirmBtn) saveConfirmBtn.disabled = false;
+    }
+  }
+
+  saveBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    savePopover?.hidden ? openSavePopover() : closeSavePopover();
+  });
+  saveCancelBtn?.addEventListener("click", closeSavePopover);
+  saveConfirmBtn?.addEventListener("click", confirmSave);
+  saveNameInput?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); confirmSave(); }
+    if (e.key === "Escape") closeSavePopover();
+  });
+  document.addEventListener("click", (e) => {
+    if (savePopover && !savePopover.hidden && !savePopover.contains(e.target) && e.target !== saveBtn) {
+      closeSavePopover();
+    }
   });
 
   // ── Autosetting modal setup ──────────────────────────────────────
@@ -272,6 +585,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const scanModeMenu = document.querySelector("[data-scan-mode-menu]");
   const scanModeOptions = Array.from(document.querySelectorAll("[data-scan-mode]"));
   let currentScanMode = "rapida";
+  // Parametri ottimali trovati dalla scansione, per strategia: { strategyId → best_params }
+  const scanBestParams = {};
 
   // Apre/chiude il menu di selezione modalità
   scanModeToggle?.addEventListener("click", (e) => {
@@ -341,7 +656,7 @@ document.addEventListener("DOMContentLoaded", () => {
         badge.className = "strategy-scan-badge scan-loading";
       }
       if (statusNode) {
-        statusNode.textContent = `Scansione ${i + 1}/${strategyIds.length}: ${config.strategies[strategyId]?.label || strategyId}…`;
+        statusNode.innerHTML = `<span class="preview-spinner"></span>`;
       }
 
       try {
@@ -358,6 +673,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const sharpe = data.sharpe_in_sample;
         const ret = typeof data.total_return_pct === "number" ? data.total_return_pct : null;
+        // Salva i parametri ottimali trovati: verranno applicati quando l'utente attiva la strategia
+        if (data.best_params) scanBestParams[strategyId] = data.best_params;
         if (badge) {
           const sharpeSign = sharpe >= 0 ? "+" : "";
           const retSign = ret !== null && ret >= 0 ? "+" : "";
@@ -377,7 +694,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     scanAllBtn.disabled = false;
     scanAllBtn.textContent = "Scansione";
-    if (statusNode) statusNode.textContent = "Scansione completata.";
+    if (statusNode) statusNode.innerHTML = "";
   }
 
   function _scanTone(sharpe) {
@@ -416,20 +733,72 @@ document.addEventListener("DOMContentLoaded", () => {
         field.disabled = !isActive;
       });
     });
+    updateGroupBadges();
+    renderGroupDndSection();
     syncRuleSummary();
   }
 
   function syncRuleSummary(previewLabel = config.baseline_label || "Setup iniziale del report") {
+    if (!ruleSummaryNode) return;
+    const topLogicLabel = topLevelLogic === "any" ? "OR" : "AND";
+
+    // Descrizione testuale dell'espressione corrente (con parentesi se presenti)
+    function exprDescription() {
+      const active = activeStrategyIds();
+      const byGroup = {};
+      for (const sid of active) {
+        const gn = strategyGroupState[sid] ?? 1;
+        (byGroup[gn] = byGroup[gn] || []).push(sid);
+      }
+      const gnList = Object.keys(byGroup).map(Number).sort((a, b) => a - b);
+      if (gnList.length <= 1) return null;
+
+      // Cluster (come nel rendering)
+      const clusters = [];
+      let cur = [gnList[0]];
+      for (let i = 1; i < gnList.length; i++) {
+        if (boundPairs.has(gnList[i])) cur.push(gnList[i]);
+        else { clusters.push(cur); cur = [gnList[i]]; }
+      }
+      clusters.push(cur);
+
+      function gnLabel(gn) {
+        const members = byGroup[gn] || [];
+        const logic = groupLogicState[gn] === "any" ? "OR" : "AND";
+        const labels = members.map((sid) => config.strategies?.[sid]?.label || sid);
+        return labels.length > 1 ? `(${labels.join(` ${logic} `)})` : labels[0] || "?";
+      }
+
+      function clusterLabel(cluster) {
+        if (cluster.length === 1) return gnLabel(cluster[0]);
+        const parts = [gnLabel(cluster[0])];
+        for (let i = 1; i < cluster.length; i++) {
+          parts.push((interGroupLogics[cluster[i]] ?? topLevelLogic) === "any" ? "OR" : "AND");
+          parts.push(gnLabel(cluster[i]));
+        }
+        return `(${parts.join(" ")})`;
+      }
+
+      const clusterParts = [clusterLabel(clusters[0])];
+      for (let i = 1; i < clusters.length; i++) {
+        clusterParts.push((interGroupLogics[clusters[i][0]] ?? topLevelLogic) === "any" ? "OR" : "AND");
+        clusterParts.push(clusterLabel(clusters[i]));
+      }
+      return clusterParts.join(" ");
+    }
+
+    const desc = exprDescription();
+    if (desc) {
+      const origin = config.baseline_label || "Setup iniziale del report";
+      ruleSummaryNode.textContent = origin !== desc ? `Config: ${origin} · ${desc}` : `Config: ${desc}`;
+      return;
+    }
+
     const labels = activeStrategyIds()
       .map((strategyId) => config.strategies?.[strategyId]?.label)
       .filter(Boolean);
-    const ruleLogic = ruleLogicSelect?.value || config.rule_logic || "all";
-    const descriptor = ruleLogic === "any" ? "OR" : "AND";
-    if (!ruleSummaryNode) {
-      return;
-    }
     if (labels.length > 1) {
-      ruleSummaryNode.textContent = `Config: ${previewLabel} · ${labels.join(" + ")} (${descriptor})`;
+      ruleSummaryNode.textContent = `Config: ${previewLabel} · ${labels.join(" + ")} (${topLogicLabel})`;
       return;
     }
     ruleSummaryNode.textContent = `Config: ${previewLabel} · ${labels[0] || "nessuna"}`;
@@ -437,7 +806,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function schedulePreview() {
     if (statusNode) {
-      statusNode.textContent = "Aggiornamento preview...";
+      statusNode.innerHTML = '<span class="preview-spinner"></span>';
     }
     window.clearTimeout(debounceTimer);
     debounceTimer = window.setTimeout(runPreview, 260);
@@ -445,7 +814,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function runPreview() {
     if (activeStrategyIds().length === 0) {
-      if (statusNode) statusNode.textContent = "Nessuna regola attiva — disattiva o seleziona una strategia.";
+      if (statusNode) statusNode.innerHTML = "";
+      // Nessuna strategia attiva: nascondi il confronto e riporta il grafico allo stato pulito
+      setComparisonState(false);
+      window.tradingBotChartTerminal?.clearPreview();
+      window.tradingBotChartTerminal?.setLayerVisible("entry", false);
+      window.tradingBotChartTerminal?.setLayerVisible("exit", false);
       return;
     }
 
@@ -476,7 +850,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (statusNode) {
         const httpStatus = response ? ` (HTTP ${response.status})` : "";
         const msg = error instanceof Error ? error.message : "Preview non disponibile.";
-        statusNode.textContent = `Errore preview${httpStatus}: ${msg}`;
+        statusNode.innerHTML = `<span class="preview-error-text">Errore preview${httpStatus}: ${msg}</span>`;
       }
     }
   }
@@ -484,18 +858,243 @@ document.addEventListener("DOMContentLoaded", () => {
   function buildPayload() {
     const payload = {
       active_strategies: activeStrategyIds(),
-      rule_logic: ruleLogicSelect?.value || config.rule_logic || "all",
+      rule_logic: topLevelLogic,
     };
+    // Se ci sono parentesi usa l'albero di espressione, altrimenti la lista gruppi piatta
+    if (boundPairs.size > 0) {
+      const expr = buildExpressionPayload();
+      if (expr) payload.expression = expr;
+    } else {
+      const groups = buildGroupsPayload();
+      if (groups) payload.groups = groups;
+    }
     parameterInputs.forEach((input) => {
       payload[input.name] = input.value;
     });
+    // Parametri di gestione del rischio (SL/TP, sizing)
+    const riskInputs = Array.from(document.querySelectorAll("[data-chart-risk-input]"));
+    riskInputs.forEach((input) => {
+      const val = input.value;
+      if (input.name === "sizing_method") {
+        payload.sizing_method = val;
+      } else if (input.name === "sizing_param") {
+        payload.sizing_param = val ? parseFloat(val) : 100.0;
+      } else if (input.name === "sl_pct") {
+        payload.sl_pct = val ? parseFloat(val) : null;
+      } else if (input.name === "tp_pct") {
+        payload.tp_pct = val ? parseFloat(val) : null;
+      }
+    });
     return payload;
+  }
+
+  // Costruisce un albero di espressione ricorsivo (per gestire la precedenza via parentesi).
+  // Ogni nodo è { strategies, logic } (foglia) oppure { op, children } (nodo composito).
+  function buildExpressionPayload() {
+    const active = activeStrategyIds();
+    if (active.length === 0) return null;
+    const byGroup = {};
+    for (const sid of active) {
+      const gn = strategyGroupState[sid] ?? 1;
+      (byGroup[gn] = byGroup[gn] || []).push(sid);
+    }
+    const gnList = Object.keys(byGroup).map(Number).sort((a, b) => a - b);
+    if (gnList.length <= 1) return null;
+
+    // Stessa logica di cluster usata nel rendering
+    const clusters = [];
+    let cur = [gnList[0]];
+    for (let i = 1; i < gnList.length; i++) {
+      if (boundPairs.has(gnList[i])) cur.push(gnList[i]);
+      else { clusters.push(cur); cur = [gnList[i]]; }
+    }
+    clusters.push(cur);
+
+    const gnToLeaf = (gn) => ({ strategies: byGroup[gn], logic: groupLogicState[gn] ?? "all" });
+
+    function clusterToNode(cluster) {
+      if (cluster.length === 1) return gnToLeaf(cluster[0]);
+      let node = gnToLeaf(cluster[0]);
+      for (let i = 1; i < cluster.length; i++) {
+        node = { op: interGroupLogics[cluster[i]] ?? topLevelLogic, children: [node, gnToLeaf(cluster[i])] };
+      }
+      return node;
+    }
+
+    if (clusters.length === 1) return clusterToNode(clusters[0]);
+    let result = clusterToNode(clusters[0]);
+    for (let i = 1; i < clusters.length; i++) {
+      result = { op: interGroupLogics[clusters[i][0]] ?? topLevelLogic, children: [result, clusterToNode(clusters[i])] };
+    }
+    return result;
+  }
+
+  function buildGroupsPayload() {
+    const active = activeStrategyIds();
+    if (active.length === 0) return null;
+    const byGroup = {};
+    for (const sid of active) {
+      const gn = strategyGroupState[sid] ?? 1;
+      if (!byGroup[gn]) byGroup[gn] = [];
+      byGroup[gn].push(sid);
+    }
+    const groupNums = Object.keys(byGroup).map(Number).sort((a, b) => a - b);
+    if (groupNums.length <= 1) return null;
+    return groupNums.map((gn, i) => {
+      const entry = {
+        strategies: byGroup[gn],
+        logic: groupLogicState[gn] ?? "all",
+      };
+      // op_before: operatore tra il gruppo precedente e questo (solo da gn >= 2)
+      if (i > 0) entry.op_before = interGroupLogics[gn] ?? topLevelLogic;
+      return entry;
+    });
+  }
+
+  function updateGroupBadges() {
+    const active = new Set(activeStrategyIds());
+    document.querySelectorAll("[data-group-badge]").forEach((badge) => {
+      const sid = badge.dataset.groupBadge;
+      const gn = strategyGroupState[sid] ?? 1;
+      const color = groupColor(gn);
+      badge.textContent = String(gn);
+      badge.dataset.group = String(gn);
+      badge.style.visibility = active.has(sid) ? "" : "hidden";
+      // Colore dinamico da palette: G1 resta neutro, G2+ si colorano
+      if (gn > 1) {
+        badge.style.borderColor = color + "99";
+        badge.style.background = color + "22";
+        badge.style.color = color;
+        badge.style.opacity = "1";
+      } else {
+        badge.style.borderColor = "";
+        badge.style.background = "";
+        badge.style.color = "";
+        badge.style.opacity = "";
+      }
+    });
+  }
+
+  function renderGroupDndSection() {
+    if (!groupDndSection) return;
+
+    const active = activeStrategyIds();
+    const byGroup = {};
+    for (const sid of active) {
+      const gn = strategyGroupState[sid] ?? 1;
+      (byGroup[gn] = byGroup[gn] || []).push(sid);
+    }
+
+    const occupiedNums = Object.keys(byGroup).map(Number).sort((a, b) => a - b);
+    const hasMultipleGroups = occupiedNums.length > 1;
+
+    if (active.length < 2 && !isDraggingCard) {
+      groupDndSection.innerHTML = "";
+      if (ruleLogicLabelNode) ruleLogicLabelNode.textContent = "Combina le regole";
+      return;
+    }
+
+    const maxGn = occupiedNums.length > 0 ? Math.max(...occupiedNums) : 1;
+    const canAddGroup = occupiedNums.length < active.length;
+
+    const headerHtml = hasMultipleGroups
+      ? `<button class="group-reset-btn" data-group-reset title="Rimuovi tutti i gruppi">✕ Azzera gruppi</button>`
+      : "";
+
+    // ── Helper: singolo bucket ──────────────────────────────────────
+    function renderBucket(gn) {
+      const members = byGroup[gn] || [];
+      const color = groupColor(gn);
+      const currentLogic = groupLogicState[gn] ?? "all";
+      const chips = members.map((sid) => {
+        const label = escapeHtml(config.strategies?.[sid]?.label || sid);
+        return `<div class="group-dnd-chip" draggable="true" data-chip-strategy="${escapeHtml(sid)}"
+                    style="border-color:${color}55;background:${color}12;">${label}</div>`;
+      }).join("");
+      const logicSel = members.length > 1
+        ? `<select class="group-dnd-logic-sel" data-group-logic-select="${gn}">
+             <option value="all"${currentLogic === "all" ? " selected" : ""}>AND</option>
+             <option value="any"${currentLogic === "any" ? " selected" : ""}>OR</option>
+           </select>`
+        : `<span class="group-dnd-single-hint">+ trascina</span>`;
+      return `<div class="group-dnd-bucket" data-group-bucket="${gn}" style="--gcolor:${color}">
+        <div class="group-dnd-bucket-head">
+          <span class="group-dnd-bucket-label" style="color:${color}">G${gn}</span>
+          ${logicSel}
+        </div>
+        <div class="group-dnd-chips">${chips}</div>
+      </div>`;
+    }
+
+    // ── Helper: operatore inter-gruppo con bottone () ───────────────
+    // isBound: il bottone serve a "sbindare" (siamo dentro un cluster)
+    function renderInterOp(rightGn, isBound) {
+      const op = interGroupLogics[rightGn] ?? topLevelLogic;
+      const opLabel = op === "any" ? "OR" : "AND";
+      const boundClass = isBound ? " is-bound" : "";
+      const boundTitle = isBound ? "Rimuovi parentesi" : "Aggiungi parentesi";
+      return `<div class="group-inter-op-wrapper">
+        <button class="group-inter-op-inline" data-inter-op-gn="${rightGn}">${opLabel}</button>
+        <button class="group-bound-toggle${boundClass}" data-bound-toggle="${rightGn}" title="${boundTitle}">()</button>
+      </div>`;
+    }
+
+    // ── Costruisce i cluster da boundPairs ──────────────────────────
+    // Un cluster è una sequenza consecutiva di gn dove ogni gn (tranne il primo) è in boundPairs.
+    const clusters = [];
+    let currentCluster = [occupiedNums[0]];
+    for (let i = 1; i < occupiedNums.length; i++) {
+      const gn = occupiedNums[i];
+      if (boundPairs.has(gn)) {
+        currentCluster.push(gn);
+      } else {
+        clusters.push(currentCluster);
+        currentCluster = [gn];
+      }
+    }
+    clusters.push(currentCluster);
+
+    // ── Render di un cluster ────────────────────────────────────────
+    function renderCluster(cluster) {
+      if (cluster.length === 1) return renderBucket(cluster[0]);
+      // Più gruppi parentesizzati insieme
+      let inner = renderBucket(cluster[0]);
+      for (let i = 1; i < cluster.length; i++) {
+        inner += renderInterOp(cluster[i], true);   // isBound=true: mostra "sbinda"
+        inner += renderBucket(cluster[i]);
+      }
+      return `<div class="group-bound-cluster">${inner}</div>`;
+    }
+
+    // ── Track completo: cluster separati da inter-op con () ─────────
+    let trackHtml = renderCluster(clusters[0]);
+    for (let i = 1; i < clusters.length; i++) {
+      trackHtml += renderInterOp(clusters[i][0], false);   // isBound=false: mostra "binda"
+      trackHtml += renderCluster(clusters[i]);
+    }
+
+    // Zona "Nuovo gruppo" (solo durante drag)
+    const newGn = maxGn + 1;
+    const newColor = groupColor(newGn);
+    const newGroupHtml = canAddGroup && isDraggingCard
+      ? `<div class="group-dnd-bucket is-new-group" data-group-bucket="new" style="--gcolor:${newColor}">
+           <div class="group-dnd-bucket-head">
+             <span class="group-dnd-bucket-label" style="color:${newColor}">+ G${newGn}</span>
+           </div>
+           <div class="group-dnd-chips"><div class="group-dnd-empty">nuovo gruppo</div></div>
+         </div>`
+      : "";
+
+    groupDndSection.innerHTML = `
+      <div class="group-dnd-header">${headerHtml}</div>
+      <div class="group-dnd-track">${trackHtml}${newGroupHtml}</div>`;
   }
 
   function applyPreviewResponse(data) {
     currentIndicatorPayload = data.indicator_payload || data.chart_payload?.indicators || [];
     currentIndicatorLabel = data.preview_label || "Configurazione attuale";
     currentChartPayload = data.chart_payload || initialChartPayload;
+    setComparisonState(true);
     renderComparisonCards(data.comparison_cards || []);
     renderValidationCards(data.validation_cards || []);
     renderValidationChecks(data.validation_checks || []);
@@ -506,10 +1105,10 @@ document.addEventListener("DOMContentLoaded", () => {
       currentChartPayload,
     );
     if (badgeNode) {
-      badgeNode.textContent = data.preview_label || "Configurazione attuale";
+      badgeNode.innerHTML = "";
     }
     if (statusNode) {
-      statusNode.textContent = `Preview: ${data.preview_label || "configurazione attuale"}`;
+      statusNode.innerHTML = "";
     }
     syncRuleSummary(data.preview_label || "Configurazione attuale");
     try {
@@ -523,19 +1122,33 @@ document.addEventListener("DOMContentLoaded", () => {
     strategyToggles.forEach((toggle) => {
       toggle.checked = initialState.activeStrategyIds.includes(toggle.value);
     });
-    if (ruleLogicSelect) {
-      ruleLogicSelect.value = initialState.ruleLogic;
-    }
+    topLevelLogic = initialState.ruleLogic || "all";
+    if (ruleLogicSelect) ruleLogicSelect.value = topLevelLogic;
     parameterInputs.forEach((input) => {
       if (Object.prototype.hasOwnProperty.call(initialState.parameters, input.name)) {
         input.value = initialState.parameters[input.name];
       }
     });
+    // Ripristina campi di gestione del rischio
+    Array.from(document.querySelectorAll("[data-chart-risk-input]")).forEach((el) => {
+      if (Object.prototype.hasOwnProperty.call(initialState.riskValues || {}, el.name)) {
+        el.value = initialState.riskValues[el.name];
+        el.dispatchEvent(new Event("change"));
+      }
+    });
+    // Ripristina stato gruppi
+    Object.keys(strategyGroupState).forEach((k) => delete strategyGroupState[k]);
+    Object.keys(groupLogicState).forEach((k) => delete groupLogicState[k]);
+    Object.assign(strategyGroupState, initialState.strategyGroups || {});
+    Object.assign(groupLogicState, initialState.groupLogics || {});
+    Object.assign(interGroupLogics, initialState.interGroupLogics || {});
+    boundPairs.clear();
+    (initialState.boundPairsSnapshot || []).forEach((gn) => boundPairs.add(gn));
     currentIndicatorPayload = Array.isArray(config.indicator_payload) ? config.indicator_payload : [];
     currentIndicatorLabel = config.baseline_label || "Setup iniziale del report";
     currentChartPayload = initialChartPayload;
     syncSections();
-    renderComparisonCards(config.comparison_cards || []);
+    setComparisonState(false);
     renderValidationCards(config.validation_cards || []);
     renderValidationChecks(config.validation_checks || []);
     renderTradePreview(config.trade_preview || []);
@@ -545,13 +1158,16 @@ document.addEventListener("DOMContentLoaded", () => {
       currentChartPayload,
     );
     if (badgeNode) {
-      badgeNode.textContent = config.baseline_label || "Setup iniziale del report";
+      badgeNode.innerHTML = "";
     }
     if (statusNode) {
-      statusNode.textContent = "Setup iniziale ripristinato.";
+      statusNode.innerHTML = "";
     }
     syncRuleSummary(config.baseline_label || "Setup iniziale del report");
     window.tradingBotChartTerminal?.clearPreview();
+    // Mantiene i marker del report originale nascosti anche dopo il reset
+    window.tradingBotChartTerminal?.setLayerVisible("entry", false);
+    window.tradingBotChartTerminal?.setLayerVisible("exit", false);
   }
 
   function captureState() {
@@ -559,11 +1175,25 @@ document.addEventListener("DOMContentLoaded", () => {
     parameterInputs.forEach((input) => {
       parameters[input.name] = input.value;
     });
+    const riskValues = {};
+    Array.from(document.querySelectorAll("[data-chart-risk-input]")).forEach((el) => {
+      riskValues[el.name] = el.value;
+    });
     return {
       activeStrategyIds: activeStrategyIds(),
-      ruleLogic: ruleLogicSelect?.value || "all",
+      ruleLogic: topLevelLogic,
       parameters,
+      riskValues,
+      strategyGroups: { ...strategyGroupState },
+      groupLogics: { ...groupLogicState },
+      interGroupLogics: { ...interGroupLogics },
+      boundPairsSnapshot: [...boundPairs],
     };
+  }
+
+  function setComparisonState(hasPreview) {
+    if (comparisonPlaceholder) comparisonPlaceholder.hidden = hasPreview;
+    if (comparisonGrid) comparisonGrid.hidden = !hasPreview;
   }
 
   function renderComparisonCards(cards) {
@@ -836,7 +1466,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   async function fetchAutosettingData(strategyId) {
-    if (statusNode) statusNode.textContent = "Analisi parametri in corso...";
+    if (statusNode) statusNode.innerHTML = '<span class="preview-spinner"></span>';
 
     try {
       const feeInput = parameterInputs.find((input) => input.name === "fee_bps");
@@ -872,14 +1502,14 @@ document.addEventListener("DOMContentLoaded", () => {
       const isStr = typeof data.sharpe_in_sample === "number" ? data.sharpe_in_sample.toFixed(2) : "—";
       const oosStr = typeof data.sharpe_out_of_sample === "number" ? data.sharpe_out_of_sample.toFixed(2) : "—";
       if (statusNode) {
-        statusNode.textContent = `Analisi: Sharpe IS ${isStr} · OOS ${oosStr} · ${data.combinations_tested} combinazioni`;
+        statusNode.innerHTML = "";
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Analisi non disponibile.";
       if (autosettingLoadingNode) {
         autosettingLoadingNode.innerHTML = `<span style="color:#ef4444">Errore: ${escapeHtml(msg)}</span>`;
       }
-      if (statusNode) statusNode.textContent = `Errore analisi: ${msg}`;
+      if (statusNode) statusNode.innerHTML = `<span class="preview-error-text">Errore analisi: ${escapeHtml(msg)}</span>`;
     }
   }
 
@@ -1175,7 +1805,7 @@ document.addEventListener("DOMContentLoaded", () => {
     window.clearTimeout(debounceTimer);
     runPreview();
     if (statusNode) {
-      statusNode.textContent = `Parametri applicati: ${formatParams(params)}`;
+      statusNode.innerHTML = '<span class="preview-spinner"></span>';
     }
   }
 

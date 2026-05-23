@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% from "partials/_tooltip.html" import info_tip %}
+{% block title %}Walk-Forward · {{ strategy_label }} · {{ req.symbol }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <p class="eyebrow">Walk-Forward Validation {{ info_tip("walkforward", below=True) }}</p>
+  <h1>{{ strategy_label }} su {{ req.symbol }}</h1>
+  <p class="inline-note">
+    Finestre IS {{ is_days }} barre / OOS {{ oos_days }} barre &middot;
+    Ottimizzato per: <strong>{{ optimize_by_label }}</strong> &middot;
+    {{ wf.windows | length }} finestre completate
+  </p>
+</div>
+
+{# Metriche aggregate #}
+<section class="terminal-metric-grid wf-summary-grid">
+  <article class="terminal-metric-card {% if wf.avg_oos_sharpe >= 0.3 %}report-tone-positive{% elif wf.avg_oos_sharpe >= 0 %}report-tone-neutral{% else %}report-tone-negative{% endif %}">
+    <p>Sharpe OOS medio {{ info_tip("sharpe_ratio", below=True) }}</p>
+    <strong>{{ wf.avg_oos_sharpe }}</strong>
+  </article>
+  <article class="terminal-metric-card {% if wf.avg_is_sharpe >= 0.3 %}report-tone-positive{% elif wf.avg_is_sharpe >= 0 %}report-tone-neutral{% else %}report-tone-negative{% endif %}">
+    <p>Sharpe IS medio {{ info_tip(None, text="Sharpe in-sample medio sulle finestre di addestramento. Punto di riferimento per misurare la perdita su OOS.", below=True) }}</p>
+    <strong>{{ wf.avg_is_sharpe }}</strong>
+  </article>
+  <article class="terminal-metric-card {% if wf.wf_efficiency >= 0.7 %}report-tone-positive{% elif wf.wf_efficiency >= 0.3 %}report-tone-neutral{% else %}report-tone-negative{% endif %}">
+    <p>WF Efficiency {{ info_tip(None, text="Rapporto Sharpe OOS / Sharpe IS. >0.7 buono, 0.3-0.7 fragile, <0.3 probabile overfitting.", below=True) }}</p>
+    <span>OOS Sharpe / IS Sharpe</span>
+    <strong>{{ "%.2f"|format(wf.wf_efficiency) }}</strong>
+  </article>
+  <article class="terminal-metric-card {% if wf.avg_oos_return_pct >= 0 %}report-tone-positive{% else %}report-tone-negative{% endif %}">
+    <p>Rendimento OOS medio {{ info_tip(None, text="Rendimento percentuale medio sulle finestre out-of-sample: la performance non gonfiata dall'ottimizzazione.", below=True) }}</p>
+    <strong>{{ wf.avg_oos_return_pct }}%</strong>
+  </article>
+</section>
+
+<div class="inline-note wf-efficiency-note">
+  {% if wf.wf_efficiency >= 0.7 %}
+    <strong>Efficienza buona.</strong> I parametri ottimizzati in-sample reggono out-of-sample.
+  {% elif wf.wf_efficiency >= 0.3 %}
+    <strong>Efficienza moderata.</strong> Parte del vantaggio è dovuto all'ottimizzazione. Procedere con cautela.
+  {% else %}
+    <strong>Efficienza bassa.</strong> I parametri ottimali in-sample non si generalizzano bene. Probabile overfitting.
+  {% endif %}
+</div>
+
+{# Tabella finestre #}
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <p class="eyebrow">dettaglio finestre</p>
+      <h3>Risultati per finestra</h3>
+    </div>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>IS</th>
+          <th>OOS</th>
+          <th>Parametri migliori</th>
+          <th>Sharpe IS</th>
+          <th>Sharpe OOS</th>
+          <th>Rendimento OOS</th>
+          <th>Max DD OOS</th>
+          <th>Trade OOS</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for w in wf.windows %}
+        <tr>
+          <td>{{ w.window_index }}</td>
+          <td class="muted-text">{{ w.is_start }} → {{ w.is_end }}</td>
+          <td class="muted-text">{{ w.oos_start }} → {{ w.oos_end }}</td>
+          <td>
+            {% for k, v in w.best_params.items() %}
+              <span class="strategy-chip">{{ k }}={{ v }}</span>
+            {% endfor %}
+          </td>
+          <td class="{% if w.is_sharpe >= 0.3 %}tone-positive{% elif w.is_sharpe >= 0 %}tone-neutral{% else %}tone-negative{% endif %}">
+            {{ w.is_sharpe }}
+          </td>
+          <td class="{% if w.oos_sharpe >= 0.3 %}tone-positive{% elif w.oos_sharpe >= 0 %}tone-neutral{% else %}tone-negative{% endif %}">
+            {{ w.oos_sharpe }}
+          </td>
+          <td class="{% if w.oos_return_pct >= 0 %}tone-positive{% else %}tone-negative{% endif %}">
+            {{ w.oos_return_pct }}%
+          </td>
+          <td class="tone-negative">{{ w.oos_max_drawdown_pct }}%</td>
+          <td>{{ w.oos_trades }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<div class="button-row">
+  <a class="ghost-button" href="{{ url_for('index') }}">← Torna alla home</a>
+</div>
+{% endblock %}

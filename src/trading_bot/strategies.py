@@ -651,18 +651,32 @@ def parse_strategy_parameters(strategy_id: str, raw: Mapping[str, object]) -> di
     return parameters
 
 
+# ── Registry vincoli ────────────────────────────────────────────────────────
+# Ogni voce è un dict {strategy_id → list di (left, right, errore)} dove la
+# regola impone ``parameters[left] < parameters[right]``. Aggiungere un vincolo
+# nuovo significa estendere questo dict, senza toccare la funzione di
+# validazione (open/closed principle, più scalabile).
+_LESS_THAN_CONSTRAINTS: dict[str, list[tuple[str, str, str]]] = {
+    "sma_cross":            [("fast", "slow", "Il parametro fast deve essere minore del parametro slow.")],
+    "ema_cross":            [("fast", "slow", "Il parametro fast deve essere minore del parametro slow.")],
+    "obv_trend":            [("fast", "slow", "Il parametro fast deve essere minore del parametro slow.")],
+    "macd_trend":           [("fast", "slow", "MACD fast deve essere minore di MACD slow.")],
+    "rsi_mean_reversion":   [("lower", "upper", "Il parametro lower deve essere minore del parametro upper.")],
+    "stochastic_reversion": [("lower", "upper", "Il parametro lower deve essere minore del parametro upper.")],
+    "cci_reversion":        [("lower", "upper", "Il parametro lower deve essere minore del parametro upper.")],
+    "williams_r_reversion": [("lower", "upper", "Il parametro lower deve essere minore del parametro upper.")],
+    "mfi_reversion":        [("lower", "upper", "Il parametro lower deve essere minore del parametro upper.")],
+    "donchian_breakout":    [("exit_period", "entry_period", "Donchian exit period deve essere minore di entry period.")],
+    "parabolic_sar":        [("step", "max_step", "Parabolic SAR max_step deve essere maggiore di step.")],
+}
+
+
 def validate_strategy_parameters(strategy_id: str, parameters: Mapping[str, int | float]) -> None:
+    """Applica i vincoli relazionali dichiarati nel registry."""
     numeric = {key: float(value) for key, value in parameters.items()}
-    if strategy_id in {"sma_cross", "ema_cross", "obv_trend"} and numeric["fast"] >= numeric["slow"]:
-        raise ValueError("Il parametro fast deve essere minore del parametro slow.")
-    if strategy_id == "macd_trend" and numeric["fast"] >= numeric["slow"]:
-        raise ValueError("MACD fast deve essere minore di MACD slow.")
-    if strategy_id in {"rsi_mean_reversion", "stochastic_reversion", "cci_reversion", "williams_r_reversion", "mfi_reversion"} and numeric["lower"] >= numeric["upper"]:
-        raise ValueError("Il parametro lower deve essere minore del parametro upper.")
-    if strategy_id == "donchian_breakout" and numeric["exit_period"] >= numeric["entry_period"]:
-        raise ValueError("Donchian exit period deve essere minore di entry period.")
-    if strategy_id == "parabolic_sar" and numeric["max_step"] <= numeric["step"]:
-        raise ValueError("Parabolic SAR max_step deve essere maggiore di step.")
+    for left, right, message in _LESS_THAN_CONSTRAINTS.get(strategy_id, ()):
+        if left in numeric and right in numeric and numeric[left] >= numeric[right]:
+            raise ValueError(message)
 
 
 def build_strategy_signal(strategy_id: str, data: pd.DataFrame, parameters: Mapping[str, int | float]) -> pd.Series:
@@ -672,19 +686,119 @@ def build_strategy_signal(strategy_id: str, data: pd.DataFrame, parameters: Mapp
     return STRATEGY_FUNCTIONS[strategy_id](data, **parameters)
 
 
+def _eval_expression(node: dict, signals_by_id: dict[str, "pd.Series"]) -> "pd.Series":
+    """Valuta ricorsivamente un nodo dell'albero di espressione.
+
+    Foglia: { strategies: [...], logic: "all"|"any" }
+    Nodo composito: { op: "all"|"any", children: [...] }
+    """
+    import pandas as _pd  # import locale per evitare circolarità
+
+    if not node or not isinstance(node, dict):
+        if signals_by_id:
+            idx = next(iter(signals_by_id.values())).index
+        else:
+            idx = _pd.RangeIndex(1)
+        return _pd.Series(0.0, index=idx)
+
+    if "strategies" in node:
+        # Foglia: gruppo di strategie
+        member_ids = [str(s) for s in (node.get("strategies") or []) if str(s) in signals_by_id]
+        if not member_ids:
+            idx = next(iter(signals_by_id.values())).index if signals_by_id else _pd.RangeIndex(1)
+            return _pd.Series(0.0, index=idx)
+        series = [signals_by_id[s] for s in member_ids]
+        if len(series) == 1:
+            return series[0]
+        frame = _pd.concat(series, axis=1).fillna(0.0)
+        if str(node.get("logic", "all")) == "any":
+            return (frame.max(axis=1) > 0.0).astype(float)
+        return (frame.min(axis=1) > 0.0).astype(float)
+
+    if "children" in node:
+        # Nodo composito: combina i figli
+        children = [_eval_expression(c, signals_by_id) for c in (node["children"] or [])]
+        if not children:
+            return _pd.Series(0.0)
+        if len(children) == 1:
+            return children[0]
+        frame = _pd.concat(children, axis=1).fillna(0.0)
+        if str(node.get("op", "all")) == "any":
+            return (frame.max(axis=1) > 0.0).astype(float)
+        return (frame.min(axis=1) > 0.0).astype(float)
+
+    return _pd.Series(0.0)
+
+
 def build_combined_signal(
     data: pd.DataFrame,
     rules: list[tuple[str, Mapping[str, int | float]]],
     *,
     combination_mode: str = "all",
+    groups: list[dict[str, object]] | None = None,
+    expression: dict[str, object] | None = None,
 ) -> pd.Series:
+    """Costruisce il segnale combinato da più regole.
+
+    Se ``groups`` è fornito (lista di ≥2 gruppi), il segnale è calcolato in due livelli:
+    1. Ogni gruppo combina le sue strategie con la logica interna del gruppo.
+    2. I segnali dei gruppi vengono combinati con ``combination_mode`` (AND/OR top-level).
+
+    Se ``groups`` è assente o ha un solo gruppo, si usa la logica piatta ``combination_mode``.
+    """
     if not rules:
         raise ValueError("Serve almeno una regola per costruire il segnale.")
 
-    signals = [
-        build_strategy_signal(strategy_id=strategy_id, data=data, parameters=parameters).fillna(0.0).clip(lower=0.0, upper=1.0)
-        for strategy_id, parameters in rules
-    ]
+    # Costruisce i segnali per ogni strategia
+    signals_by_id: dict[str, pd.Series] = {}
+    for strategy_id, parameters in rules:
+        signals_by_id[strategy_id] = (
+            build_strategy_signal(strategy_id=strategy_id, data=data, parameters=parameters)
+            .fillna(0.0)
+            .clip(lower=0.0, upper=1.0)
+        )
+
+    # Albero di espressione con precedenza esplicita (parentesi)
+    if expression and isinstance(expression, dict):
+        return _eval_expression(expression, signals_by_id).rename("position")
+
+    # Logica a gruppi (≥2 gruppi con strategie diverse)
+    if groups and len(groups) > 1:
+        group_signals: list[tuple[pd.Series, str]] = []  # (segnale, op_before)
+        for group in groups:
+            member_ids = [str(s) for s in (group.get("strategies") or []) if str(s) in signals_by_id]
+            if not member_ids:
+                continue
+            member_series = [signals_by_id[s] for s in member_ids]
+            if len(member_series) == 1:
+                gsig = member_series[0]
+            else:
+                frame = pd.concat(member_series, axis=1).fillna(0.0)
+                if str(group.get("logic", "all")) == "any":
+                    gsig = (frame.max(axis=1) > 0.0).astype(float)
+                else:
+                    gsig = (frame.min(axis=1) > 0.0).astype(float)
+            # op_before: operatore con cui questo gruppo si combina al precedente
+            op_before = str(group.get("op_before", combination_mode))
+            group_signals.append((gsig, op_before))
+
+        if not group_signals:
+            return pd.Series(0.0, index=data.index, name="position")
+        if len(group_signals) == 1:
+            return group_signals[0][0].rename("position")
+
+        # Valutazione sinistra→destra con operatori per-coppia
+        result = group_signals[0][0].fillna(0.0)
+        for gsig, op in group_signals[1:]:
+            right = gsig.fillna(0.0)
+            if op == "any":
+                result = (result + right).clip(upper=1.0)
+            else:
+                result = (result * right)
+        return (result > 0.0).astype(float).rename("position")
+
+    # Logica piatta (comportamento originale)
+    signals = list(signals_by_id.values())
     if len(signals) == 1:
         return signals[0].rename("position")
 

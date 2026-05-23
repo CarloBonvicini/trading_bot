@@ -6,9 +6,19 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 TRADING_DAYS_PER_YEAR = 252
+
+# ── Metodi di position sizing ────────────────────────────────────────────────
+SIZING_FULL = "full"        # 100% del capitale (default)
+SIZING_FIXED = "fixed"      # Frazione fissa del capitale
+SIZING_VOL_TARGET = "vol_target"  # Target di volatilità annualizzata
+
+# Soglia sotto la quale due frazioni di posizione sono considerate uguali
+# (evita di marcare microvariazioni di sizing come trade reali).
+_POSITION_EQ_TOL = 1e-9
 
 
 @dataclass
@@ -18,11 +28,137 @@ class BacktestResult:
     trades: pd.DataFrame
 
 
+def apply_sl_tp(
+    data: pd.DataFrame,
+    position: pd.Series,
+    sl_pct: float | None,
+    tp_pct: float | None,
+) -> tuple[pd.Series, pd.Series]:
+    """Applica stop loss e take profit alla serie di posizione già shiftata.
+
+    Restituisce ``(posizione modificata, maschera_uscite_sl_tp)`` dove la
+    maschera è True nelle barre in cui è scattato lo SL o il TP.
+
+    Convenzione: la ``position`` in ingresso è già stata shiftata di una barra
+    in ``run_backtest``, quindi ``position[i] > 0`` significa che siamo entrati
+    al close della barra ``i-1`` (l'entry price è ``close[i-1]``). Nella stessa
+    barra ``i`` controlliamo se ``low[i] <= entry*(1-sl)`` o
+    ``high[i] >= entry*(1+tp)`` per chiudere subito la posizione.
+
+    Quando entrambi SL e TP sono colpiti nella stessa candela non possiamo
+    sapere quale è scattato per primo: in questo caso assumiamo
+    conservativamente che sia stato lo SL (worst case per il trader).
+    """
+    if sl_pct is None and tp_pct is None:
+        return position, pd.Series(False, index=position.index)
+
+    close = data["close"].to_numpy(dtype=float)
+    high = data["high"].to_numpy(dtype=float) if "high" in data.columns else close
+    low = data["low"].to_numpy(dtype=float) if "low" in data.columns else close
+
+    pos = position.to_numpy(dtype=float).copy()
+    sl_tp_exit = np.zeros(len(pos), dtype=bool)
+    n = len(pos)
+    entry_price = 0.0
+    in_trade = False
+
+    for i in range(n):
+        if not in_trade and pos[i] > 0:
+            # Nuova entry: prezzo entrata = close della barra precedente
+            # (coerente con lo shift di 1 applicato in run_backtest).
+            entry_price = close[i - 1] if i > 0 else close[i]
+            in_trade = True
+            # Controllo SL/TP anche nello stesso bar di entry: il low/high
+            # corrente potrebbe già aver toccato la soglia.
+            if _check_sl_tp_hit(
+                entry_price=entry_price,
+                low=low[i],
+                high=high[i],
+                sl_pct=sl_pct,
+                tp_pct=tp_pct,
+            ):
+                pos[i] = 0.0
+                sl_tp_exit[i] = True
+                in_trade = False
+                entry_price = 0.0
+        elif in_trade:
+            if pos[i] == 0:
+                in_trade = False
+                entry_price = 0.0
+            elif _check_sl_tp_hit(
+                entry_price=entry_price,
+                low=low[i],
+                high=high[i],
+                sl_pct=sl_pct,
+                tp_pct=tp_pct,
+            ):
+                pos[i] = 0.0
+                sl_tp_exit[i] = True
+                in_trade = False
+                entry_price = 0.0
+
+    return pd.Series(pos, index=position.index, name=position.name), pd.Series(
+        sl_tp_exit, index=position.index
+    )
+
+
+def _check_sl_tp_hit(
+    *,
+    entry_price: float,
+    low: float,
+    high: float,
+    sl_pct: float | None,
+    tp_pct: float | None,
+) -> bool:
+    """True se nel bar corrente è stato colpito SL o TP."""
+    if sl_pct is not None and low <= entry_price * (1.0 - sl_pct / 100.0):
+        return True
+    if tp_pct is not None and high >= entry_price * (1.0 + tp_pct / 100.0):
+        return True
+    return False
+
+
+def compute_position_size(
+    data: pd.DataFrame,
+    position: pd.Series,
+    method: str = SIZING_FULL,
+    param: float = 1.0,
+) -> pd.Series:
+    """Calcola la dimensione della posizione in base al metodo di sizing scelto.
+
+    - ``full``:       100% del capitale quando in posizione (default).
+    - ``fixed``:      ``param``% del capitale (es. param=50 → 50%).
+    - ``vol_target``: dimensione inversamente proporzionale alla volatilità
+                      realizzata (20 barre), calibrata per targetare ``param``%
+                      di volatilità annualizzata. Massimo 2× l'investimento.
+    """
+    if method == SIZING_FIXED:
+        frac = max(0.0, min(1.0, param / 100.0))
+        return position * frac
+
+    if method == SIZING_VOL_TARGET:
+        if param <= 0:
+            return position  # protezione: target nullo → ignora
+        target = param / 100.0
+        returns = data["close"].pct_change()
+        realized_vol = returns.rolling(20, min_periods=5).std() * math.sqrt(TRADING_DAYS_PER_YEAR)
+        realized_vol = realized_vol.replace(0.0, np.nan).ffill().bfill().fillna(target)
+        size = (target / realized_vol).clip(upper=2.0)
+        return position * size
+
+    # SIZING_FULL (default)
+    return position
+
+
 def run_backtest(
     data: pd.DataFrame,
     signal: pd.Series,
     initial_capital: float = 10_000.0,
     fee_bps: float = 5.0,
+    sl_pct: float | None = None,
+    tp_pct: float | None = None,
+    sizing_method: str = SIZING_FULL,
+    sizing_param: float = 100.0,
 ) -> BacktestResult:
     if "close" not in data.columns:
         raise ValueError("The input data must contain a 'close' column.")
@@ -33,7 +169,20 @@ def run_backtest(
 
     close = data["close"].astype(float)
     position = signal.reindex(data.index).fillna(0.0).clip(lower=0.0, upper=1.0)
+    # Shift di 1 barra: il segnale generato dalla barra t è eseguibile dalla t+1.
+    # Questo è il presidio chiave contro il lookahead bias — non rimuovere.
     executed_position = position.shift(1).fillna(0.0)
+
+    # Stop loss / take profit (path-dependent, applicato dopo lo shift).
+    # IMPORTANT: SL/TP lavora sulla posizione binaria 0/1 PRIMA del sizing,
+    # così possiamo distinguere chiaramente trade reali (binari) da variazioni
+    # di sizing (vol_target ecc.) ai fini del tracking trade.
+    executed_position, sl_tp_mask = apply_sl_tp(data, executed_position, sl_pct, tp_pct)
+    binary_position = executed_position.copy()
+
+    # Position sizing (può creare frazioni 0..2 della posizione binaria)
+    executed_position = compute_position_size(data, executed_position, sizing_method, sizing_param)
+
     daily_returns = close.pct_change().fillna(0.0)
     position_change = executed_position.diff().abs().fillna(executed_position.abs())
     transaction_cost = position_change * (fee_bps / 10_000.0)
@@ -60,6 +209,8 @@ def run_backtest(
             **market_columns,
             "signal": position,
             "position": executed_position,
+            "binary_position": binary_position,
+            "sl_tp_exit": sl_tp_mask.astype(int),
             "market_return": daily_returns,
             "gross_strategy_return": gross_strategy_return,
             "strategy_return": strategy_returns,
@@ -72,7 +223,9 @@ def run_backtest(
         }
     )
 
-    trades = _build_trades(close=close, position=executed_position)
+    # Trade tracking basato sulla posizione binaria (0/1): le variazioni di
+    # sizing intra-trade non vengono contate come ingressi/uscite separati.
+    trades = _build_trades(close=close, binary_position=binary_position, sl_tp_mask=sl_tp_mask)
     summary = _build_summary(
         equity_curve=equity_curve,
         trades=trades,
@@ -113,13 +266,21 @@ def _build_summary(
     benchmark_return = (benchmark_final_equity / initial_capital) - 1
     periods = len(equity_curve)
     years = periods / TRADING_DAYS_PER_YEAR if periods else 0.0
-    annual_return = (final_equity / initial_capital) ** (1 / years) - 1 if years > 0 else 0.0
+
+    # CAGR: rendimento annualizzato composto. Se la serie è più corta di un
+    # anno restituiamo il rendimento totale per evitare amplificazioni assurde.
+    if years >= 1.0 and initial_capital > 0:
+        annual_return = (final_equity / initial_capital) ** (1 / years) - 1
+    else:
+        annual_return = total_return
+
     annual_volatility = strategy_returns.std(ddof=0) * math.sqrt(TRADING_DAYS_PER_YEAR)
-    sharpe_ratio = (
-        strategy_returns.mean() / strategy_returns.std(ddof=0) * math.sqrt(TRADING_DAYS_PER_YEAR)
-        if annual_volatility > 0
-        else 0.0
-    )
+    sharpe_ratio = _compute_sharpe(strategy_returns)
+    sortino_ratio = _compute_sortino(strategy_returns)
+    calmar_ratio = _compute_calmar(annual_return=annual_return, drawdown=equity_curve["drawdown"])
+
+    # Statistiche trade (richiedono pnl_pct numerico sui trade chiusi)
+    trade_stats = _compute_trade_stats(trades)
 
     return {
         "initial_capital": round(initial_capital, 2),
@@ -134,26 +295,165 @@ def _build_summary(
         "annual_return_pct": round(annual_return * 100, 2),
         "annual_volatility_pct": round(annual_volatility * 100, 2),
         "sharpe_ratio": round(float(sharpe_ratio), 3),
+        "sortino_ratio": round(float(sortino_ratio), 3),
+        "calmar_ratio": round(float(calmar_ratio), 3),
         "max_drawdown_pct": round(float(equity_curve["drawdown"].min()) * 100, 2),
-        "trade_count": int(len(trades)),
+        "trade_count": int(trade_stats["trade_count"]),
+        "win_rate_pct": trade_stats["win_rate_pct"],
+        "profit_factor": trade_stats["profit_factor"],
+        "avg_win_pct": trade_stats["avg_win_pct"],
+        "avg_loss_pct": trade_stats["avg_loss_pct"],
+        "expectancy_pct": trade_stats["expectancy_pct"],
+        "sl_tp_exit_count": int(equity_curve["sl_tp_exit"].sum()) if "sl_tp_exit" in equity_curve.columns else 0,
         "exposure_pct": round(float(equity_curve["position"].mean()) * 100, 2),
         "benchmark_return_pct": round(benchmark_return * 100, 2),
     }
 
 
-def _build_trades(close: pd.Series, position: pd.Series) -> pd.DataFrame:
-    position_change = position.diff().fillna(position)
-    entries = position_change[position_change > 0]
-    exits = position_change[position_change < 0]
-    exit_dates = list(exits.index)
-    trades: list[dict[str, object]] = []
+def _compute_sharpe(returns: pd.Series) -> float:
+    """Sharpe ratio annualizzato con risk-free rate = 0.
 
-    for index, entry_date in enumerate(entries.index):
-        exit_date = exit_dates[index] if index < len(exit_dates) else None
+    Convenzione: ``std(ddof=0)`` (deviazione di popolazione) per coerenza con
+    annual_volatility_pct. Differenza vs ddof=1 trascurabile su N>30.
+    """
+    if returns.empty:
+        return 0.0
+    std = returns.std(ddof=0)
+    if std <= 0:
+        return 0.0
+    return float(returns.mean() / std * math.sqrt(TRADING_DAYS_PER_YEAR))
+
+
+def _compute_sortino(returns: pd.Series) -> float:
+    """Sortino ratio: come Sharpe ma usa solo la volatilità dei rendimenti negativi.
+
+    Premia le strategie che hanno bassa volatilità al ribasso anche se la
+    volatilità totale è alta (es. forti rialzi seguiti da fasi piatte).
+    """
+    if returns.empty:
+        return 0.0
+    downside = returns[returns < 0]
+    if downside.empty:
+        # Nessun giorno negativo: ritorno infinito → cap a 999 per leggibilità.
+        return 999.0 if returns.mean() > 0 else 0.0
+    downside_std = downside.std(ddof=0)
+    if downside_std <= 0:
+        return 0.0
+    return float(returns.mean() / downside_std * math.sqrt(TRADING_DAYS_PER_YEAR))
+
+
+def _compute_calmar(*, annual_return: float, drawdown: pd.Series) -> float:
+    """Calmar ratio: CAGR / |max drawdown|.
+
+    Indica quante volte il rendimento annuo copre il peggior calo storico.
+    """
+    if drawdown.empty:
+        return 0.0
+    max_dd = float(drawdown.min())  # è negativo (es. -0.25)
+    if max_dd >= 0:
+        return 999.0 if annual_return > 0 else 0.0
+    return float(annual_return / abs(max_dd))
+
+
+def _compute_trade_stats(trades: pd.DataFrame) -> dict[str, float | int | None]:
+    """Statistiche aggregate sui trade.
+
+    Convenzione: ``trade_count`` è il numero totale di operazioni aperte
+    (incluse quelle ancora in corso a fine serie). Le statistiche di
+    profittabilità (win rate, profit factor, expectancy) sono invece calcolate
+    solo sui trade chiusi, perché per quelli aperti il PnL non è ancora
+    definito.
+    """
+    if trades.empty:
+        return {
+            "trade_count": 0,
+            "win_rate_pct": None,
+            "profit_factor": None,
+            "avg_win_pct": None,
+            "avg_loss_pct": None,
+            "expectancy_pct": None,
+        }
+
+    total_count = int(len(trades))
+    pnl_series = (
+        pd.to_numeric(trades["pnl_pct"], errors="coerce").dropna()
+        if "pnl_pct" in trades.columns
+        else pd.Series(dtype=float)
+    )
+
+    if pnl_series.empty:
+        return {
+            "trade_count": total_count,
+            "win_rate_pct": None,
+            "profit_factor": None,
+            "avg_win_pct": None,
+            "avg_loss_pct": None,
+            "expectancy_pct": None,
+        }
+
+    wins = pnl_series[pnl_series > 0]
+    losses = pnl_series[pnl_series < 0]
+    win_count = int(len(wins))
+    loss_count = int(len(losses))
+    closed = int(len(pnl_series))
+
+    win_rate = round(win_count / closed * 100, 2) if closed else None
+    avg_win = round(float(wins.mean()), 2) if win_count else None
+    avg_loss = round(float(losses.mean()), 2) if loss_count else None
+
+    # Profit factor: somma vincite / |somma perdite|. Cappato a 999 se non
+    # ci sono perdite ma ci sono vincite. None se non c'è nulla da calcolare.
+    sum_wins = float(wins.sum()) if win_count else 0.0
+    sum_losses = abs(float(losses.sum())) if loss_count else 0.0
+    if win_count == 0 and loss_count == 0:
+        profit_factor = None
+    elif sum_losses <= 0:
+        profit_factor = 999.0 if sum_wins > 0 else None
+    else:
+        profit_factor = round(sum_wins / sum_losses, 3)
+
+    # Expectancy: PnL medio per trade chiuso in punti percentuali.
+    expectancy = round(float(pnl_series.mean()), 2)
+
+    return {
+        "trade_count": total_count,
+        "win_rate_pct": win_rate,
+        "profit_factor": profit_factor,
+        "avg_win_pct": avg_win,
+        "avg_loss_pct": avg_loss,
+        "expectancy_pct": expectancy,
+    }
+
+
+def _build_trades(
+    close: pd.Series,
+    binary_position: pd.Series,
+    sl_tp_mask: pd.Series | None = None,
+) -> pd.DataFrame:
+    """Estrae la lista trade dalla posizione binaria 0/1.
+
+    Lavoriamo sulla posizione binaria (prima del sizing) così le variazioni
+    di frazione introdotte da ``vol_target`` non generano trade fittizi.
+    Un trade è la sequenza ``0 → 1 → … → 1 → 0`` (l'ultimo può essere ancora
+    aperto se la serie termina con ``1``).
+    """
+    binary = binary_position.fillna(0.0).round().clip(lower=0, upper=1)
+    diff = binary.diff().fillna(binary)
+    entries = list(diff[diff > 0].index)
+    exits = list(diff[diff < 0].index)
+
+    sl_tp_set: set = set()
+    if sl_tp_mask is not None:
+        sl_tp_set = set(sl_tp_mask[sl_tp_mask].index)
+
+    trades: list[dict[str, object]] = []
+    for index, entry_date in enumerate(entries):
+        exit_date = exits[index] if index < len(exits) else None
         entry_price = float(close.loc[entry_date])
         exit_price = float(close.loc[exit_date]) if exit_date is not None else None
         pnl_pct = ((exit_price / entry_price) - 1) * 100 if exit_price is not None else None
         holding_days = int((exit_date - entry_date).days) if exit_date is not None else None
+        exit_reason = "sl_tp" if exit_date in sl_tp_set else "segnale"
         trades.append(
             {
                 "entry_date": _format_trade_timestamp(entry_date),
@@ -162,6 +462,7 @@ def _build_trades(close: pd.Series, position: pd.Series) -> pd.DataFrame:
                 "exit_price": round(exit_price, 4) if exit_price is not None else "",
                 "pnl_pct": round(pnl_pct, 2) if pnl_pct is not None else "",
                 "holding_days": holding_days if holding_days is not None else "",
+                "exit_reason": exit_reason if exit_date is not None else "",
             }
         )
 

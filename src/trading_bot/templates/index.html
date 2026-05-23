@@ -372,6 +372,91 @@
                 </div>
               </div>
 
+              {# ── Gestione del rischio ────────────────────────────────────── #}
+              <details class="risk-details">
+                <summary class="risk-summary">Gestione del rischio <span class="eyebrow">(opzionale)</span></summary>
+                <div class="risk-body">
+                  <div class="input-grid">
+                    <div class="field-block">
+                      <label>
+                        <span>Stop Loss (%)</span>
+                        <input type="number" step="0.1" min="0.1" name="sl_pct"
+                               placeholder="es. 5" value="{{ form_values.sl_pct or '' }}">
+                      </label>
+                      <p class="field-hint">Uscita forzata se il prezzo scende di questa % dall'entrata.</p>
+                    </div>
+                    <div class="field-block">
+                      <label>
+                        <span>Take Profit (%)</span>
+                        <input type="number" step="0.1" min="0.1" name="tp_pct"
+                               placeholder="es. 15" value="{{ form_values.tp_pct or '' }}">
+                      </label>
+                      <p class="field-hint">Uscita forzata se il prezzo sale di questa % dall'entrata.</p>
+                    </div>
+                  </div>
+                  <div class="input-grid">
+                    <div class="field-block">
+                      <label>
+                        <span>Position sizing</span>
+                        <select name="sizing_method" id="sizing-method-select">
+                          <option value="full" {% if not form_values.sizing_method or form_values.sizing_method == 'full' %}selected{% endif %}>Tutto il capitale</option>
+                          <option value="fixed" {% if form_values.sizing_method == 'fixed' %}selected{% endif %}>Frazione fissa (%)</option>
+                          <option value="vol_target" {% if form_values.sizing_method == 'vol_target' %}selected{% endif %}>Target volatilità (%/anno)</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div class="field-block" id="sizing-param-block" {% if not form_values.sizing_method or form_values.sizing_method == 'full' %}hidden{% endif %}>
+                      <label>
+                        <span id="sizing-param-label">Parametro sizing</span>
+                        <input type="number" step="1" min="1" max="200" name="sizing_param"
+                               value="{{ form_values.sizing_param or 50 }}">
+                      </label>
+                      <p class="field-hint" id="sizing-param-hint"></p>
+                    </div>
+                  </div>
+                </div>
+              </details>
+
+              {# ── Walk-Forward ──────────────────────────────────────────────── #}
+              <details class="risk-details" id="wf-details" {% if form_values.run_mode != 'walkforward' %}{% endif %}>
+                <summary class="risk-summary">Walk-Forward Validation <span class="eyebrow">(solo strategia singola con sweep)</span></summary>
+                <div class="risk-body">
+                  <div class="input-grid">
+                    <div class="field-block">
+                      <label>
+                        <span>Finestra In-Sample (barre)</span>
+                        <input type="number" step="1" min="60" name="wf_is_days" value="{{ form_values.wf_is_days or 252 }}">
+                      </label>
+                      <p class="field-hint">Numero di barre usate per ottimizzare i parametri (es. 252 = 1 anno).</p>
+                    </div>
+                    <div class="field-block">
+                      <label>
+                        <span>Finestra Out-of-Sample (barre)</span>
+                        <input type="number" step="1" min="20" name="wf_oos_days" value="{{ form_values.wf_oos_days or 63 }}">
+                      </label>
+                      <p class="field-hint">Numero di barre testate fuori campione (es. 63 = 1 trimestre).</p>
+                    </div>
+                  </div>
+                  <div class="input-grid">
+                    <div class="field-block">
+                      <label>
+                        <span>Ottimizza per</span>
+                        <select name="wf_optimize_by">
+                          <option value="sharpe_ratio" {% if not form_values.wf_optimize_by or form_values.wf_optimize_by == 'sharpe_ratio' %}selected{% endif %}>Sharpe ratio</option>
+                          <option value="total_return_pct" {% if form_values.wf_optimize_by == 'total_return_pct' %}selected{% endif %}>Rendimento totale</option>
+                          <option value="max_drawdown_pct" {% if form_values.wf_optimize_by == 'max_drawdown_pct' %}selected{% endif %}>Max drawdown</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                  <div class="button-row" style="margin-top:0.75rem">
+                    <button class="ghost-button" type="submit" name="run_mode" value="walkforward">
+                      Avvia Walk-Forward →
+                    </button>
+                  </div>
+                </div>
+              </details>
+
               <div class="strategy-hidden-inputs" hidden aria-hidden="true">
                 {% set strategy_badge_prefix = "form" %}
                 {% include "partials/_strategy_sections.html" %}
@@ -623,4 +708,27 @@
     {{ {"currentHomeView": current_home_view, "homeRoutes": home_routes, "strategies": strategies, "strategyPresets": strategy_presets, "intervalHints": interval_hints, "intervalLookbackDays": interval_lookback_days, "sessionItems": session_items, "selectedSessionName": selected_session.name if selected_session else ""} | tojson }}
   </script>
   <script src="{{ url_for('static', filename='index.js') }}"></script>
+  <script>
+    // Mostra/nasconde il parametro di sizing in base al metodo scelto
+    (function () {
+      const sel = document.getElementById("sizing-method-select");
+      const block = document.getElementById("sizing-param-block");
+      const label = document.getElementById("sizing-param-label");
+      const hint  = document.getElementById("sizing-param-hint");
+      if (!sel || !block) return;
+      function update() {
+        const v = sel.value;
+        block.hidden = (v === "full");
+        if (v === "fixed") {
+          label.textContent = "Percentuale capitale (%)";
+          hint.textContent  = "Es. 50 = investi il 50% del capitale per ogni trade.";
+        } else if (v === "vol_target") {
+          label.textContent = "Target volatilità (% annua)";
+          hint.textContent  = "Es. 10 = calibra la dimensione per ottenere ~10% vol annualizzata.";
+        }
+      }
+      sel.addEventListener("change", update);
+      update();
+    })();
+  </script>
 {% endblock %}

@@ -26,8 +26,16 @@ SUMMARY_LABELS = {
     "annual_return_pct": "Rendimento annuo",
     "annual_volatility_pct": "Volatilita' annua",
     "sharpe_ratio": "Sharpe",
+    "sortino_ratio": "Sortino",
+    "calmar_ratio": "Calmar",
     "max_drawdown_pct": "Max drawdown",
     "trade_count": "Numero trade",
+    "win_rate_pct": "Win rate",
+    "profit_factor": "Profit factor",
+    "avg_win_pct": "Vincita media",
+    "avg_loss_pct": "Perdita media",
+    "expectancy_pct": "Attesa per trade",
+    "sl_tp_exit_count": "Uscite SL/TP",
     "exposure_pct": "Esposizione",
     "benchmark_return_pct": "Buy & hold",
     "benchmark_max_drawdown_pct": "Max drawdown buy & hold",
@@ -36,6 +44,57 @@ SUMMARY_LABELS = {
     "fees_paid_pct_initial_capital": "Spese su capitale",
     "fee_drag_equity": "Impatto fee",
 }
+
+# Glossario tooltip per le metriche e gli strumenti: testo conciso (1-2 frasi)
+# mostrato in hover/info-icon nei template. Le chiavi corrispondono a chiavi
+# di SUMMARY_LABELS o a id di strumenti UI (es. "autosetting", "walkforward").
+METRIC_TOOLTIPS: dict[str, str] = {
+    # ── Rendimento ────────────────────────────────────────────────────
+    "total_return_pct":      "Variazione percentuale dell'equity dall'inizio alla fine. Non considera la durata del periodo.",
+    "annual_return_pct":     "Rendimento annualizzato composto (CAGR): tasso medio annuo che porta dal capitale iniziale a quello finale.",
+    "benchmark_return_pct":  "Rendimento del semplice buy & hold dello strumento sullo stesso periodo: il riferimento da battere.",
+    "excess_return_pct":     "Differenza tra rendimento strategia e buy & hold. Positivo = la strategia aggiunge valore.",
+    "final_equity":          "Capitale finale al netto delle commissioni.",
+    "gross_final_equity":    "Capitale finale che avresti ottenuto senza pagare alcuna commissione.",
+    "benchmark_final_equity": "Capitale finale di chi avesse semplicemente tenuto lo strumento per tutto il periodo.",
+    # ── Rischio ───────────────────────────────────────────────────────
+    "annual_volatility_pct": "Deviazione standard annualizzata dei rendimenti giornalieri. Quanto oscilla il portafoglio.",
+    "max_drawdown_pct":      "Peggior perdita dal massimo storico precedente. Indica quanto è stato profondo il momento peggiore.",
+    "sharpe_ratio":          "Rendimento per unità di rischio (risk-free = 0). >1 buono, >1.5 ottimo, >2 eccellente.",
+    "sortino_ratio":         "Come Sharpe ma penalizza solo la volatilità al ribasso. Più realistico per strategie long-only.",
+    "calmar_ratio":          "CAGR diviso il |max drawdown|. Misura quante volte il rendimento annuo copre la peggior discesa storica.",
+    # ── Trade ─────────────────────────────────────────────────────────
+    "trade_count":           "Numero totale di operazioni chiuse nel periodo.",
+    "win_rate_pct":          "Percentuale di trade chiusi in profitto. Da solo non basta: contano anche dimensioni di win e loss.",
+    "profit_factor":         "Somma delle vincite / somma delle perdite. >1 il sistema guadagna, >1.5 è solido.",
+    "avg_win_pct":           "Guadagno medio per ogni trade vincente.",
+    "avg_loss_pct":          "Perdita media per ogni trade in loss (valore negativo).",
+    "expectancy_pct":        "Guadagno medio atteso per trade. È il vero indicatore di edge: positivo = strategia profittevole nel lungo periodo.",
+    # ── Costi ─────────────────────────────────────────────────────────
+    "fees_paid":             "Totale commissioni pagate (basate sulla fee in basis points).",
+    "fees_paid_pct_initial_capital": "Peso delle fee sul capitale iniziale: utile per capire se i costi erodono la strategia.",
+    "fee_drag_equity":       "Differenza in euro tra equity lorda (senza fee) e netta. Quanto ti sono costate operativamente le commissioni.",
+    # ── Posizione ─────────────────────────────────────────────────────
+    "exposure_pct":          "Percentuale di tempo in cui la strategia era in posizione (long). Più bassa = strategia selettiva.",
+    "sl_tp_exit_count":      "Numero di uscite forzate da stop loss o take profit. Indica quanto i protettori intervengono.",
+    # ── Strumenti UI ──────────────────────────────────────────────────
+    "autosetting":           "Scansiona una griglia di parametri sul training set (70%) e valida i migliori sull'out-of-sample. Evidenzia overfitting.",
+    "walkforward":           "Ottimizza i parametri su finestre IS scorrevoli e li testa subito dopo su OOS. Più realistico dell'autosetting singolo.",
+    "scan_modes":            "Rapida: griglia base. Media: 2× più densa. Lunga: 4×. XL: 8× (può richiedere minuti).",
+    "sl_pct":                "Stop loss: percentuale di perdita massima per trade prima della chiusura forzata. Vuoto = disabilitato.",
+    "tp_pct":                "Take profit: percentuale di guadagno per chiudere automaticamente il trade. Vuoto = disabilitato.",
+    "sizing_full":           "Tutto il capitale in posizione quando attiva (default). Massimo rendimento ma anche massimo rischio.",
+    "sizing_fixed":          "Frazione fissa del capitale (es. 50%). Riduce l'esposizione in modo uniforme.",
+    "sizing_vol_target":     "Adatta la dimensione alla volatilità: posizione grande in mercati calmi, piccola in mercati nervosi.",
+    "rule_logic_all":        "AND: il segnale è long solo quando TUTTE le regole sono long. Selettivo, pochi trade.",
+    "rule_logic_any":        "OR: il segnale è long quando almeno UNA regola è long. Permissivo, molti trade.",
+    "correlation":           "Calcola la correlazione tra i segnali generati da tutte le strategie sui dati attuali. Strategie poco correlate sono più efficaci se combinate.",
+}
+
+
+def metric_tooltip(key: str) -> str:
+    """Restituisce il testo del tooltip per una metrica/strumento, o '' se sconosciuto."""
+    return METRIC_TOOLTIPS.get(key, "")
 
 REPORT_NAME_PATTERN = re.compile(r"^(?P<symbol>.+)-(?P<strategy>[a-z_]+)-(?P<timestamp>\d{8}-\d{6})$")
 EMPTY_TRADE_COLUMNS = (
@@ -146,6 +205,24 @@ def load_sweep(output_dir: str | Path, sweep_name: str) -> dict[str, object]:
         padding=24,
     )
 
+    # Parametri ottimali: nuovo formato (best_parameters dict) o legacy fast/slow
+    best_parameters = summary.get("best_parameters")
+    if not isinstance(best_parameters, dict) or not best_parameters:
+        best_parameters = {
+            name: summary.get(f"best_{name}", "")
+            for name in ("fast", "slow")
+            if f"best_{name}" in summary
+        }
+
+    # Colonne della top table: rank, tutti i parametri della strategia, poi metriche
+    param_columns = [name for name in best_parameters.keys() if name in results.columns]
+    metric_columns = [
+        col for col in (
+            "total_return_pct", "benchmark_return_pct", "excess_return_pct",
+            "sharpe_ratio", "max_drawdown_pct", "fees_paid",
+        ) if col in results.columns
+    ]
+
     return {
         "artifact_type": "sweep",
         "name": sweep_name,
@@ -154,10 +231,7 @@ def load_sweep(output_dir: str | Path, sweep_name: str) -> dict[str, object]:
         "summary": summary,
         "summary_cards": build_sweep_summary_cards(summary),
         "best_summary_cards": build_summary_cards(best_summary),
-        "best_parameters": {
-            "fast": summary.get("best_fast", ""),
-            "slow": summary.get("best_slow", ""),
-        },
+        "best_parameters": best_parameters,
         "best_comparison": build_comparison(best_summary),
         "best_equity_chart": build_line_chart(
             {
@@ -172,17 +246,7 @@ def load_sweep(output_dir: str | Path, sweep_name: str) -> dict[str, object]:
         ),
         "ranking_chart": ranking_chart,
         "top_results": top_results.to_dict(orient="records"),
-        "top_results_columns": [
-            "rank",
-            "fast",
-            "slow",
-            "total_return_pct",
-            "benchmark_return_pct",
-            "excess_return_pct",
-            "sharpe_ratio",
-            "max_drawdown_pct",
-            "fees_paid",
-        ],
+        "top_results_columns": ["rank", *param_columns, *metric_columns],
         "best_trade_preview": build_trade_preview(best_trades, limit=20),
     }
 
@@ -231,6 +295,21 @@ def load_sweep_chart_window(output_dir: str | Path, sweep_name: str, focus: str 
     parameter_labels = metadata.get("parameter_labels", {"fast": "Fast", "slow": "Slow"})
     marker_metadata = _sweep_signal_context(metadata=metadata, summary=summary)
 
+    # Costruisce in modo generico la stringa "Best <param> N / <param> M" per
+    # qualsiasi numero di parametri ottimizzati.
+    best_parameters = summary.get("best_parameters")
+    if not isinstance(best_parameters, dict) or not best_parameters:
+        best_parameters = {
+            name: summary.get(f"best_{name}")
+            for name in ("fast", "slow")
+            if f"best_{name}" in summary
+        }
+    best_params_label = " / ".join(
+        f"{parameter_labels.get(name, name.title())} {value}"
+        for name, value in best_parameters.items()
+        if value is not None and value != ""
+    ) or "parametri n/a"
+
     return _build_chart_window_context(
         artifact_type="sweep",
         artifact_name=sweep_name,
@@ -241,8 +320,7 @@ def load_sweep_chart_window(output_dir: str | Path, sweep_name: str, focus: str 
         focus=focus,
         title=f"{metadata.get('symbol') or sweep_name} - Best {metadata.get('strategy_label') or metadata.get('strategy') or 'Sweep'}",
         subtitle=(
-            f"Best {parameter_labels.get('fast', 'Fast')} {summary.get('best_fast', 'n/a')} / "
-            f"{parameter_labels.get('slow', 'Slow')} {summary.get('best_slow', 'n/a')} - "
+            f"Best {best_params_label} - "
             f"Periodo {metadata.get('start', 'n/a')} -> {metadata.get('end', 'n/a')} - "
             f"Intervallo {metadata.get('interval', 'n/a')}"
             f"{_market_feed_suffix(metadata)}"
@@ -266,10 +344,16 @@ def _sweep_signal_context(*, metadata: dict[str, object], summary: dict[str, obj
 
     default_parameters = STRATEGY_SPECS[strategy_id].defaults()
     best_parameters = dict(default_parameters)
-    if "best_fast" in summary:
-        best_parameters["fast"] = summary.get("best_fast")
-    if "best_slow" in summary:
-        best_parameters["slow"] = summary.get("best_slow")
+    # Nuovo formato: best_parameters dict completo
+    summary_best = summary.get("best_parameters")
+    if isinstance(summary_best, dict):
+        for name, value in summary_best.items():
+            if name in best_parameters:
+                best_parameters[name] = value
+    # Retro-compat con i sweep vecchi che salvavano best_fast/best_slow
+    for legacy_key, param_name in (("best_fast", "fast"), ("best_slow", "slow")):
+        if legacy_key in summary and param_name in best_parameters:
+            best_parameters[param_name] = summary.get(legacy_key)
 
     strategy_label = str(
         metadata.get("strategy_label")
@@ -601,26 +685,29 @@ def build_chart_snapshot_cards(summary: dict[str, object]) -> list[dict[str, str
 
 
 def build_sweep_summary_cards(summary: dict[str, object]) -> list[dict[str, object]]:
-    labels = {
-        "run_count": "Combinazioni valide",
-        "invalid_combinations": "Combinazioni scartate",
-        "best_fast": "Best fast",
-        "best_slow": "Best slow",
-        "best_total_return_pct": "Best rendimento",
-        "best_sharpe_ratio": "Best Sharpe",
-        "best_max_drawdown_pct": "Best max drawdown",
-        "best_fees_paid": "Best spese",
-    }
-    cards: list[dict[str, object]] = []
-    for key in (
-        "run_count",
-        "invalid_combinations",
-        "best_fast",
-        "best_slow",
-        "best_total_return_pct",
-        "best_sharpe_ratio",
-        "best_max_drawdown_pct",
-        "best_fees_paid",
+    """Card di riepilogo per uno sweep, dinamiche rispetto ai parametri ottimizzati."""
+    cards: list[dict[str, object]] = [
+        {"label": "Combinazioni valide", "value": str(summary.get("run_count", ""))},
+        {"label": "Combinazioni scartate", "value": str(summary.get("invalid_combinations", ""))},
+    ]
+
+    # Mostra le card "Best <param>" per ciascun parametro ottimizzato, leggendo
+    # da ``best_parameters`` (nuovo formato) oppure dai vecchi campi best_fast/
+    # best_slow per i sweep storici.
+    best_params = summary.get("best_parameters")
+    if isinstance(best_params, dict) and best_params:
+        for name, value in best_params.items():
+            cards.append({"label": f"Best {name}", "value": str(value)})
+    else:
+        for legacy_key, label in (("best_fast", "Best fast"), ("best_slow", "Best slow")):
+            if legacy_key in summary:
+                cards.append({"label": label, "value": str(summary.get(legacy_key, ""))})
+
+    for key, label in (
+        ("best_total_return_pct", "Best rendimento"),
+        ("best_sharpe_ratio", "Best Sharpe"),
+        ("best_max_drawdown_pct", "Best max drawdown"),
+        ("best_fees_paid", "Best spese"),
     ):
         value = summary.get(key, "")
         if key.endswith("_pct"):
@@ -629,7 +716,7 @@ def build_sweep_summary_cards(summary: dict[str, object]) -> list[dict[str, obje
             display_value = f"{value:,.2f}" if isinstance(value, (int, float)) else str(value)
         else:
             display_value = str(value)
-        cards.append({"label": labels[key], "value": display_value})
+        cards.append({"label": label, "value": display_value})
     return cards
 
 
@@ -1506,12 +1593,17 @@ def _build_trade_marker_context(
         rule_logic = "all"
 
     rule_states = [_build_rule_state(rule, market_data) for rule in active_rules]
+    groups_raw = signal_context.get("groups") or []
+    signal_groups = [g for g in groups_raw if isinstance(g, dict)] if len(groups_raw) > 1 else None
+    signal_expression = signal_context.get("expression") if isinstance(signal_context.get("expression"), dict) else None
     combined_signal = None
     if rule_states:
         combined_signal = build_combined_signal(
             data=market_data,
             rules=[(state["strategy_id"], state["parameters"]) for state in rule_states],
             combination_mode=rule_logic,
+            groups=signal_groups,
+            expression=signal_expression,
         ).reset_index(drop=True)
 
     date_lookup: dict[str, int] = {}

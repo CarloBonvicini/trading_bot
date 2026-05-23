@@ -29,8 +29,10 @@ def test_run_sma_sweep_request_generates_all_valid_combinations(monkeypatch, tmp
         start="2024-01-01",
         end="2024-01-12",
         interval="1d",
-        fast_range=IntegerRange(2, 4, 1),
-        slow_range=IntegerRange(4, 6, 1),
+        parameter_ranges={
+            "fast": IntegerRange(2, 4, 1),
+            "slow": IntegerRange(4, 6, 1),
+        },
         fee_bps=0.0,
     )
 
@@ -59,8 +61,10 @@ def test_run_sma_sweep_request_supports_ema_crossover(monkeypatch, tmp_path: Pat
         end="2024-01-12",
         interval="1d",
         strategy="ema_cross",
-        fast_range=IntegerRange(2, 4, 1),
-        slow_range=IntegerRange(5, 7, 1),
+        parameter_ranges={
+            "fast": IntegerRange(2, 4, 1),
+            "slow": IntegerRange(5, 7, 1),
+        },
         fee_bps=0.0,
     )
 
@@ -70,6 +74,47 @@ def test_run_sma_sweep_request_supports_ema_crossover(monkeypatch, tmp_path: Pat
     assert completed.summary["run_count"] == 9
     assert completed.summary["best_fast"] >= 2
     assert completed.summary["best_slow"] >= 5
+
+
+def test_run_sma_sweep_request_supports_donchian_breakout(monkeypatch, tmp_path: Path) -> None:
+    """Regressione: lo sweep deve funzionare anche su strategie con parametri
+    diversi da fast/slow (es. entry_period/exit_period per Donchian)."""
+    # Serie con qualche breakout per evitare zero trade
+    closes = [100.0, 99.0, 101.0, 100.0, 98.0, 102.0, 105.0, 107.0, 106.0, 108.0,
+              110.0, 109.0, 107.0, 105.0, 103.0, 101.0, 100.0, 99.0, 98.0, 96.0]
+    data = pd.DataFrame(
+        {
+            "close": closes,
+            "high":  [c + 1.0 for c in closes],
+            "low":   [c - 1.0 for c in closes],
+        },
+        index=pd.date_range("2024-01-01", periods=len(closes), freq="D"),
+    )
+    monkeypatch.setattr("trading_bot.application.execution.download_price_data", lambda **_: data)
+
+    sweep_request = SweepRequest(
+        symbol="SPY",
+        data_symbol="SPY",
+        start="2024-01-01",
+        end="2024-01-20",
+        interval="1d",
+        strategy="donchian_breakout",
+        parameter_ranges={
+            # Per Donchian, i primi due parametri interi sono entry_period e exit_period
+            "entry_period": IntegerRange(5, 10, 5),
+            "exit_period":  IntegerRange(2, 4, 2),
+        },
+        fee_bps=0.0,
+    )
+
+    completed = run_sma_sweep_request(sweep_request=sweep_request, output_dir=tmp_path)
+
+    assert completed.summary["run_count"] >= 1
+    # I parametri ottimali devono includere entry_period e exit_period
+    best = completed.summary.get("best_parameters", {})
+    assert "entry_period" in best and "exit_period" in best
+    # File generati
+    assert (tmp_path / completed.sweep_dir.name / "results.csv").exists()
 
 
 def test_strategy_catalog_and_presets_cover_extended_setup(tmp_path: Path) -> None:
