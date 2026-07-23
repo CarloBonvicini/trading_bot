@@ -615,7 +615,16 @@ function setupStrategyWorkspace(pageConfig) {
     });
 
     Object.entries(preset.sweep_settings || {}).forEach(([fieldName, fieldValue]) => {
-      setNamedFieldValue(fieldName, fieldValue);
+      if (namedFields(fieldName).length > 0) {
+        setNamedFieldValue(fieldName, fieldValue);
+        return;
+      }
+      // Preset salvati prima del namespacing dei campi sweep: le chiavi globali
+      // (es. fast_start) vengono mappate sul campo della strategia del preset
+      // (es. sma_cross__fast_start).
+      if (presetStrategyIds[0]) {
+        setNamedFieldValue(`${presetStrategyIds[0]}__${fieldName}`, fieldValue);
+      }
     });
 
     syncIntervalDateWindow({ announce: true });

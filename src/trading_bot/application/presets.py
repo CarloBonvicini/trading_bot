@@ -79,11 +79,11 @@ def save_strategy_preset(raw: Mapping[str, object], output_dir: str | Path = DEF
 def _sweep_settings_from_form(*, raw: Mapping[str, object], strategy_id: str) -> dict[str, object]:
     """Estrae dal form i campi range sweep della strategia selezionata.
 
-    I campi seguono la convenzione ``<parametro>_start/_end/_step`` (stessa dei
-    template e di ``_parse_parameter_ranges``). Vengono salvati solo i campi
-    presenti e non vuoti: al ripristino quelli mancanti restano sui default del
-    form. I preset vecchi con ``fast_*``/``slow_*`` continuano a funzionare
-    perché il ripristino via JS imposta i campi per nome.
+    I campi seguono la convenzione ``<strategia>__<parametro>_start/_end/_step``
+    (stessa dei template e di ``_parse_parameter_ranges``), con fallback sulla
+    forma globale ``<parametro>_start`` per i form pre-namespacing. Vengono
+    salvati solo i campi presenti e non vuoti: al ripristino quelli mancanti
+    restano sui default del form.
     """
     settings: dict[str, object] = {"sort_by": str(raw.get("sort_by", "total_return_pct"))}
     spec = STRATEGY_SPECS[strategy_id]
@@ -94,8 +94,10 @@ def _sweep_settings_from_form(*, raw: Mapping[str, object], strategy_id: str) ->
     for name in sweep_parameter_names(strategy_id):
         value_type = parameter_map[name].value_type
         for suffisso in ("start", "end", "step"):
-            key = f"{name}_{suffisso}"
+            key = f"{strategy_id}__{name}_{suffisso}"
             text = str(raw.get(key, "") or "").strip()
+            if not text:
+                text = str(raw.get(f"{name}_{suffisso}", "") or "").strip()
             if not text:
                 continue
             try:

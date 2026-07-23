@@ -44,10 +44,6 @@ body.panel-expanded {
   overflow: hidden;
 }
 
-body.strategy-modal-open {
-  overflow: hidden;
-}
-
 body.chart-indicator-modal-open {
   overflow: hidden;
 }
@@ -1498,135 +1494,6 @@ td {
 
 .chart-trades-panel {
   margin-top: 1.2rem;
-}
-
-.strategy-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 220;
-  display: grid;
-  place-items: center;
-  padding: 1.25rem;
-}
-
-.strategy-modal[hidden] {
-  display: none;
-}
-
-.strategy-modal-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(27, 27, 24, 0.4);
-  backdrop-filter: blur(14px);
-}
-
-.strategy-modal-dialog {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  gap: 1rem;
-  width: min(760px, calc(100vw - 2rem));
-  max-height: calc(100vh - 2.5rem);
-  overflow: auto;
-  padding: 1.15rem;
-  border-radius: var(--radius-xl);
-  background: rgba(255, 249, 240, 0.97);
-  border: 1px solid rgba(255, 255, 255, 0.75);
-  box-shadow: 0 34px 110px rgba(27, 27, 24, 0.3);
-}
-
-.strategy-modal-dialog-compact {
-  scrollbar-gutter: stable;
-}
-
-.strategy-modal-header,
-.strategy-modal-footer,
-.strategy-modal-status-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: center;
-}
-
-.strategy-modal-copy {
-  max-width: 34rem;
-}
-
-.strategy-modal-header-copy {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.strategy-modal-status-row {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-}
-
-.strategy-detail-panel {
-  display: none;
-  gap: 0.85rem;
-}
-
-.strategy-detail-panel.is-active {
-  display: grid;
-}
-
-.strategy-modal-panel-card {
-  display: grid;
-  gap: 0.9rem;
-  padding: 0.9rem;
-}
-
-.strategy-modal-parameter-grid {
-  display: grid;
-  gap: 0.8rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.strategy-modal-field {
-  display: grid;
-  gap: 0.42rem;
-}
-
-.strategy-modal-field small {
-  display: block;
-}
-
-.strategy-modal-sweep-card {
-  gap: 0.8rem;
-}
-
-.strategy-modal-sweep-grid {
-  display: grid;
-  gap: 0.8rem;
-}
-
-.strategy-modal-sweep-box {
-  display: grid;
-  gap: 0.7rem;
-  padding: 0.85rem;
-  border-radius: var(--radius-md);
-  border: 1px solid rgba(27, 27, 24, 0.08);
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.parameter-hint {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.4;
-}
-
-.strategy-modal-footer {
-  padding-top: 0.25rem;
-  border-top: 1px solid rgba(27, 27, 24, 0.08);
-}
-
-.strategy-modal-footer .inline-note {
-  max-width: 28rem;
-}
-
-.strategy-modal-footer .button-row {
-  justify-content: flex-end;
 }
 
 .chart-terminal-body {
@@ -4227,16 +4094,6 @@ td {
   color: #93c5fd;
 }
 
-.home-dashboard-body .strategy-modal-sweep-box {
-  border-color: rgba(163, 177, 204, 0.1);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.home-dashboard-body .strategy-modal-dialog {
-  background: rgba(11, 15, 23, 0.98);
-  border-color: rgba(163, 177, 204, 0.1);
-}
-
 .home-dashboard-body .home-session-option,
 .home-dashboard-body .home-session-metric {
   border-color: rgba(163, 177, 204, 0.1);
@@ -4281,10 +4138,7 @@ td {
   .chart-terminal-topbar,
   .chart-preview-indicators-head,
   .strategy-picker-top,
-  .strategy-modal-header,
-  .chart-indicator-header,
-  .strategy-modal-status-row,
-  .strategy-modal-footer {
+  .chart-indicator-header {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -4299,9 +4153,7 @@ td {
   .report-overview-cards,
   .report-metric-grid,
   .report-card-metrics,
-  .comparison-grid,
-  .strategy-modal-parameter-grid,
-  .strategy-modal-sweep-grid {
+  .comparison-grid {
     grid-template-columns: 1fr;
   }
 
@@ -4312,15 +4164,6 @@ td {
 
   .report-file-links {
     justify-content: flex-start;
-  }
-
-  .strategy-modal {
-    padding: 0.75rem;
-  }
-
-  .strategy-modal-dialog {
-    width: min(100vw - 0.75rem, 100%);
-    max-height: calc(100vh - 1.5rem);
   }
 
   .panel-expandable.is-expanded {

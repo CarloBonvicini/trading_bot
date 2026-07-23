@@ -275,9 +275,9 @@ def test_sweep_request_keeps_display_symbol_and_resolves_data_symbol() -> None:
     assert request.metadata()["data_symbol"] == "GC=F"
 
 
-def test_sweep_request_reads_named_parameter_ranges_for_donchian() -> None:
-    """I campi ``<parametro>_start/_end/_step`` devono pilotare lo sweep anche
-    per strategie con parametri diversi da fast/slow."""
+def test_sweep_request_reads_namespaced_parameter_ranges_for_donchian() -> None:
+    """I campi ``<strategia>__<parametro>_start/_end/_step`` devono pilotare lo
+    sweep anche per strategie con parametri diversi da fast/slow."""
     request = SweepRequest.from_mapping(
         {
             "symbol": "SPY",
@@ -289,12 +289,12 @@ def test_sweep_request_reads_named_parameter_ranges_for_donchian() -> None:
             "rule_logic": "all",
             "initial_capital": "10000",
             "fee_bps": "5",
-            "entry_period_start": "10",
-            "entry_period_end": "40",
-            "entry_period_step": "10",
-            "exit_period_start": "5",
-            "exit_period_end": "15",
-            "exit_period_step": "5",
+            "donchian_breakout__entry_period_start": "10",
+            "donchian_breakout__entry_period_end": "40",
+            "donchian_breakout__entry_period_step": "10",
+            "donchian_breakout__exit_period_start": "5",
+            "donchian_breakout__exit_period_end": "15",
+            "donchian_breakout__exit_period_step": "5",
         }
     )
 
@@ -303,7 +303,39 @@ def test_sweep_request_reads_named_parameter_ranges_for_donchian() -> None:
     assert request.parameter_ranges["exit_period"].values() == [5, 10, 15]
 
 
+def test_sweep_request_prefers_namespaced_fields_over_global() -> None:
+    """A parità di campo, la forma namespaced vince su quella globale
+    retro-compat."""
+    request = SweepRequest.from_mapping(
+        {
+            "symbol": "SPY",
+            "start": "2024-01-01",
+            "end": "2024-12-31",
+            "interval": "1d",
+            "run_mode": "sweep",
+            "active_strategies": ["ema_cross"],
+            "rule_logic": "all",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "ema_cross__fast_start": "6",
+            "ema_cross__fast_end": "12",
+            "ema_cross__fast_step": "3",
+            "fast_start": "10",
+            "fast_end": "40",
+            "fast_step": "10",
+            "slow_start": "20",
+            "slow_end": "40",
+            "slow_step": "10",
+        }
+    )
+
+    assert request.parameter_ranges["fast"].values() == [6, 9, 12]
+    # slow non ha la forma namespaced: si usa quella globale
+    assert request.parameter_ranges["slow"].values() == [20, 30, 40]
+
+
 def test_sweep_request_reads_float_ranges_for_parabolic_sar() -> None:
+    """Copre anche la forma globale retro-compat (senza namespace strategia)."""
     request = SweepRequest.from_mapping(
         {
             "symbol": "SPY",
@@ -369,6 +401,7 @@ def test_sweep_request_falls_back_to_spec_defaults_without_range_fields() -> Non
             "rule_logic": "all",
             "initial_capital": "10000",
             "fee_bps": "5",
+            "donchian_breakout__entry_period_start": "",
             "entry_period_start": "",
         }
     )
@@ -388,14 +421,15 @@ def test_new_backtest_form_renders_named_sweep_fields(tmp_path: Path) -> None:
     client = app.test_client()
     body = client.get("/backtests/new").get_data(as_text=True)
 
-    assert 'name="fast_start"' in body          # sma_cross / ema_cross / obv_trend
-    assert 'name="slow_end"' in body
-    assert 'name="entry_period_start"' in body  # donchian_breakout
-    assert 'name="exit_period_step"' in body
-    assert 'name="period_start"' in body        # roc_momentum
-    assert 'name="threshold_start"' in body     # roc_momentum (float)
-    assert 'name="step_start"' in body          # parabolic_sar (float)
-    assert 'name="max_step_end"' in body
+    assert 'name="sma_cross__fast_start"' in body
+    assert 'name="ema_cross__fast_start"' in body
+    assert 'name="obv_trend__slow_end"' in body
+    assert 'name="donchian_breakout__entry_period_start"' in body
+    assert 'name="donchian_breakout__exit_period_step"' in body
+    assert 'name="roc_momentum__period_start"' in body
+    assert 'name="roc_momentum__threshold_start"' in body   # float
+    assert 'name="parabolic_sar__step_start"' in body       # float
+    assert 'name="parabolic_sar__max_step_end"' in body
 
 
 def test_index_lists_existing_reports(tmp_path: Path) -> None:

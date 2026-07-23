@@ -9,12 +9,12 @@ from trading_bot.strategies import STRATEGY_SPECS, default_parameter_values, str
 
 
 def _sweep_range_defaults() -> dict[str, object]:
-    """Default dei campi range sweep (``<parametro>_start/_end/_step``).
+    """Default dei campi range sweep (``<strategia>__<parametro>_start/_end/_step``).
 
     Copre ogni strategia ``supports_sweep`` con un range centrato sul default
-    dello spec (metà → doppio, passo ≈ un sesto dell'ampiezza). I campi storici
-    ``fast_*``/``slow_*`` vengono poi sovrascritti dai valori espliciti in
-    ``default_form_values``.
+    dello spec (metà → doppio, passo ≈ un sesto dell'ampiezza). Il namespace
+    strategia evita collisioni tra strategie che condividono i nomi parametro
+    (es. fast/slow di sma_cross, ema_cross e obv_trend).
     """
     defaults: dict[str, object] = {}
     for spec in STRATEGY_SPECS.values():
@@ -35,9 +35,9 @@ def _sweep_range_defaults() -> dict[str, object]:
                     start = max(float(parameter.minimum), start)
                 end = float(parameter.default) * 2
                 step = round((end - start) / 6, 4) or float(parameter.step or 1.0)
-            defaults[f"{name}_start"] = start
-            defaults[f"{name}_end"] = end
-            defaults[f"{name}_step"] = step
+            defaults[f"{spec.key}__{name}_start"] = start
+            defaults[f"{spec.key}__{name}_end"] = end
+            defaults[f"{spec.key}__{name}_step"] = step
     return defaults
 
 
@@ -64,12 +64,6 @@ def default_form_values() -> dict[str, object]:
         "wf_oos_days": 63,
         "wf_optimize_by": "sharpe_ratio",
         **_sweep_range_defaults(),
-        "fast_start": 10,
-        "fast_end": 40,
-        "fast_step": 10,
-        "slow_start": 80,
-        "slow_end": 200,
-        "slow_step": 20,
         **default_parameter_values(),
     }
 

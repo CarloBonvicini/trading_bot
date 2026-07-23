@@ -502,19 +502,21 @@ def _parse_parameter_ranges(
 ) -> dict[str, IntegerRange | FloatRange]:
     """Costruisce i range per il sweep leggendoli dal form.
 
-    Convenzione campi form: ``<param>_start``, ``<param>_end``, ``<param>_step``
-    (es. ``fast_start`` per sma_cross, ``entry_period_start`` per Donchian).
-    Campi assenti o vuoti ricadono sui default dello spec. Il tipo di range
-    (``IntegerRange``/``FloatRange``) segue il ``value_type`` del parametro.
+    Convenzione campi form: ``<strategia>__<parametro>_start/_end/_step``
+    (es. ``sma_cross__fast_start``, ``donchian_breakout__entry_period_start``),
+    con fallback sulla forma globale ``<parametro>_start`` per retro-compat con
+    form e preset salvati prima del namespacing. Campi assenti o vuoti ricadono
+    sui default dello spec. Il tipo di range (``IntegerRange``/``FloatRange``)
+    segue il ``value_type`` del parametro.
     """
     parameter_map = spec.parameter_map()
 
     parameter_ranges: dict[str, IntegerRange | FloatRange] = {}
     for name in _sweep_param_names_for(spec):
         param_spec = parameter_map.get(name)
-        raw_start = _text_value(raw, f"{name}_start", "")
-        raw_end = _text_value(raw, f"{name}_end", "")
-        raw_step = _text_value(raw, f"{name}_step", "")
+        raw_start = _sweep_field_value(raw, spec.key, name, "start")
+        raw_end = _sweep_field_value(raw, spec.key, name, "end")
+        raw_step = _sweep_field_value(raw, spec.key, name, "step")
         if param_spec is not None and param_spec.value_type == "float":
             default = float(param_spec.default)
             default_step = float(param_spec.step) if param_spec.step else 1.0
@@ -533,6 +535,19 @@ def _parse_parameter_ranges(
                 step=max(1, step),
             )
     return parameter_ranges
+
+
+def _sweep_field_value(raw: Mapping[str, object], strategy_id: str, name: str, suffisso: str) -> str:
+    """Legge un campo range sweep dal form.
+
+    Prova prima la forma con namespace strategia (``<strategia>__<parametro>_<suffisso>``,
+    stessa convenzione dei campi parametro), poi la forma globale
+    ``<parametro>_<suffisso>`` per retro-compatibilità con form e preset vecchi.
+    """
+    namespaced = _text_value(raw, f"{strategy_id}__{name}_{suffisso}", "")
+    if namespaced:
+        return namespaced
+    return _text_value(raw, f"{name}_{suffisso}", "")
 
 
 def _sweep_param_names_for(spec) -> list[str]:

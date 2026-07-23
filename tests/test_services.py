@@ -156,7 +156,9 @@ def test_run_sma_sweep_request_supports_parabolic_sar_float_ranges(monkeypatch, 
     assert (tmp_path / completed.sweep_dir.name / "results.csv").exists()
 
 
-def test_save_strategy_preset_saves_named_sweep_settings(tmp_path: Path) -> None:
+def test_save_strategy_preset_saves_namespaced_sweep_settings(tmp_path: Path) -> None:
+    """Le impostazioni sweep vengono salvate con chiavi namespaced; i campi in
+    forma globale (form pre-namespacing) vengono normalizzati."""
     saved = save_strategy_preset(
         raw={
             "preset_name": "Donchian sweep",
@@ -169,9 +171,10 @@ def test_save_strategy_preset_saves_named_sweep_settings(tmp_path: Path) -> None
             "fee_bps": "5",
             "run_mode": "sweep",
             "sort_by": "sharpe_ratio",
-            "entry_period_start": "10",
-            "entry_period_end": "40",
-            "entry_period_step": "10",
+            "donchian_breakout__entry_period_start": "10",
+            "donchian_breakout__entry_period_end": "40",
+            "donchian_breakout__entry_period_step": "10",
+            # exit_period in forma globale: deve essere normalizzato
             "exit_period_start": "5",
             "exit_period_end": "15",
             "exit_period_step": "5",
@@ -182,12 +185,12 @@ def test_save_strategy_preset_saves_named_sweep_settings(tmp_path: Path) -> None
     assert saved["run_mode"] == "sweep"
     assert saved["sweep_settings"] == {
         "sort_by": "sharpe_ratio",
-        "entry_period_start": 10,
-        "entry_period_end": 40,
-        "entry_period_step": 10,
-        "exit_period_start": 5,
-        "exit_period_end": 15,
-        "exit_period_step": 5,
+        "donchian_breakout__entry_period_start": 10,
+        "donchian_breakout__entry_period_end": 40,
+        "donchian_breakout__entry_period_step": 10,
+        "donchian_breakout__exit_period_start": 5,
+        "donchian_breakout__exit_period_end": 15,
+        "donchian_breakout__exit_period_step": 5,
     }
 
 

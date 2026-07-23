@@ -44,7 +44,11 @@
     {% if strategy.supports_sweep %}
       <div class="mode-fields mode-fields-stack" data-sweep-block="true">
         <div class="range-grid">
+          {# I campi range usano il namespace strategia (<strategia>__<parametro>_start)
+             come i campi parametro, per evitare collisioni tra strategie che
+             condividono i nomi (es. fast/slow di sma_cross, ema_cross e obv_trend). #}
           {% for parameter in strategy.parameters[:2] %}
+            {% set range_field = strategy_id ~ '__' ~ parameter.name %}
             <article class="subsection-card">
               <p class="subsection-title">Range {{ parameter.label }}</p>
               <div class="triple-grid">
@@ -52,8 +56,8 @@
                   <span>Iniziale</span>
                   <input
                     type="number"
-                    name="{{ parameter.name }}_start"
-                    value="{{ form_values[parameter.name ~ '_start'] }}"
+                    name="{{ range_field }}_start"
+                    value="{{ form_values[range_field ~ '_start'] }}"
                     {% if parameter.minimum is not none %}min="{{ parameter.minimum }}"{% endif %}
                     {% if parameter.step is not none %}step="{{ parameter.step }}"{% endif %}
                   >
@@ -62,8 +66,8 @@
                   <span>Finale</span>
                   <input
                     type="number"
-                    name="{{ parameter.name }}_end"
-                    value="{{ form_values[parameter.name ~ '_end'] }}"
+                    name="{{ range_field }}_end"
+                    value="{{ form_values[range_field ~ '_end'] }}"
                     {% if parameter.minimum is not none %}min="{{ parameter.minimum }}"{% endif %}
                     {% if parameter.step is not none %}step="{{ parameter.step }}"{% endif %}
                   >
@@ -72,8 +76,8 @@
                   <span>Passo</span>
                   <input
                     type="number"
-                    name="{{ parameter.name }}_step"
-                    value="{{ form_values[parameter.name ~ '_step'] }}"
+                    name="{{ range_field }}_step"
+                    value="{{ form_values[range_field ~ '_step'] }}"
                     min="{{ parameter.step if parameter.step is not none else 1 }}"
                     {% if parameter.step is not none %}step="{{ parameter.step }}"{% endif %}
                   >
