@@ -44,41 +44,43 @@
     {% if strategy.supports_sweep %}
       <div class="mode-fields mode-fields-stack" data-sweep-block="true">
         <div class="range-grid">
-          <article class="subsection-card">
-            <p class="subsection-title">Range {{ strategy.parameters[0].label }}</p>
-            <div class="triple-grid">
-              <label>
-                <span>Iniziale</span>
-                <input type="number" min="1" name="fast_start" value="{{ form_values.fast_start }}">
-              </label>
-              <label>
-                <span>Finale</span>
-                <input type="number" min="1" name="fast_end" value="{{ form_values.fast_end }}">
-              </label>
-              <label>
-                <span>Passo</span>
-                <input type="number" min="1" name="fast_step" value="{{ form_values.fast_step }}">
-              </label>
-            </div>
-          </article>
-
-          <article class="subsection-card">
-            <p class="subsection-title">Range {{ strategy.parameters[1].label }}</p>
-            <div class="triple-grid">
-              <label>
-                <span>Iniziale</span>
-                <input type="number" min="2" name="slow_start" value="{{ form_values.slow_start }}">
-              </label>
-              <label>
-                <span>Finale</span>
-                <input type="number" min="2" name="slow_end" value="{{ form_values.slow_end }}">
-              </label>
-              <label>
-                <span>Passo</span>
-                <input type="number" min="1" name="slow_step" value="{{ form_values.slow_step }}">
-              </label>
-            </div>
-          </article>
+          {% for parameter in strategy.parameters[:2] %}
+            <article class="subsection-card">
+              <p class="subsection-title">Range {{ parameter.label }}</p>
+              <div class="triple-grid">
+                <label>
+                  <span>Iniziale</span>
+                  <input
+                    type="number"
+                    name="{{ parameter.name }}_start"
+                    value="{{ form_values[parameter.name ~ '_start'] }}"
+                    {% if parameter.minimum is not none %}min="{{ parameter.minimum }}"{% endif %}
+                    {% if parameter.step is not none %}step="{{ parameter.step }}"{% endif %}
+                  >
+                </label>
+                <label>
+                  <span>Finale</span>
+                  <input
+                    type="number"
+                    name="{{ parameter.name }}_end"
+                    value="{{ form_values[parameter.name ~ '_end'] }}"
+                    {% if parameter.minimum is not none %}min="{{ parameter.minimum }}"{% endif %}
+                    {% if parameter.step is not none %}step="{{ parameter.step }}"{% endif %}
+                  >
+                </label>
+                <label>
+                  <span>Passo</span>
+                  <input
+                    type="number"
+                    name="{{ parameter.name }}_step"
+                    value="{{ form_values[parameter.name ~ '_step'] }}"
+                    min="{{ parameter.step if parameter.step is not none else 1 }}"
+                    {% if parameter.step is not none %}step="{{ parameter.step }}"{% endif %}
+                  >
+                </label>
+              </div>
+            </article>
+          {% endfor %}
         </div>
 
         <label>

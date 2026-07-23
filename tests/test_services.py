@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from trading_bot.services import (
+    FloatRange,
     IntegerRange,
     STRATEGY_OPTIONS,
     SweepRequest,
@@ -115,6 +116,79 @@ def test_run_sma_sweep_request_supports_donchian_breakout(monkeypatch, tmp_path:
     assert "entry_period" in best and "exit_period" in best
     # File generati
     assert (tmp_path / completed.sweep_dir.name / "results.csv").exists()
+
+
+def test_run_sma_sweep_request_supports_parabolic_sar_float_ranges(monkeypatch, tmp_path: Path) -> None:
+    """Regressione: lo sweep deve funzionare anche con parametri float
+    (step/max_step di Parabolic SAR) tramite FloatRange."""
+    closes = [100.0, 101.0, 103.0, 102.0, 105.0, 107.0, 106.0, 110.0, 111.0, 113.0,
+              112.0, 116.0, 115.0, 118.0, 117.0, 114.0, 112.0, 110.0, 108.0, 106.0]
+    data = pd.DataFrame(
+        {
+            "close": closes,
+            "high":  [c + 1.0 for c in closes],
+            "low":   [c - 1.0 for c in closes],
+        },
+        index=pd.date_range("2024-01-01", periods=len(closes), freq="D"),
+    )
+    monkeypatch.setattr("trading_bot.application.execution.download_price_data", lambda **_: data)
+
+    sweep_request = SweepRequest(
+        symbol="SPY",
+        data_symbol="SPY",
+        start="2024-01-01",
+        end="2024-01-20",
+        interval="1d",
+        strategy="parabolic_sar",
+        parameter_ranges={
+            "step": FloatRange(0.01, 0.03, 0.01),
+            "max_step": FloatRange(0.1, 0.3, 0.1),
+        },
+        fee_bps=0.0,
+    )
+
+    completed = run_sma_sweep_request(sweep_request=sweep_request, output_dir=tmp_path)
+
+    # 3 valori di step x 3 di max_step, tutti validi (step < max_step)
+    assert completed.summary["run_count"] == 9
+    best = completed.summary.get("best_parameters", {})
+    assert "step" in best and "max_step" in best
+    assert (tmp_path / completed.sweep_dir.name / "results.csv").exists()
+
+
+def test_save_strategy_preset_saves_named_sweep_settings(tmp_path: Path) -> None:
+    saved = save_strategy_preset(
+        raw={
+            "preset_name": "Donchian sweep",
+            "symbol": "SPY",
+            "start": "2024-01-01",
+            "end": "2024-03-01",
+            "interval": "1d",
+            "strategy": "donchian_breakout",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "run_mode": "sweep",
+            "sort_by": "sharpe_ratio",
+            "entry_period_start": "10",
+            "entry_period_end": "40",
+            "entry_period_step": "10",
+            "exit_period_start": "5",
+            "exit_period_end": "15",
+            "exit_period_step": "5",
+        },
+        output_dir=tmp_path,
+    )
+
+    assert saved["run_mode"] == "sweep"
+    assert saved["sweep_settings"] == {
+        "sort_by": "sharpe_ratio",
+        "entry_period_start": 10,
+        "entry_period_end": 40,
+        "entry_period_step": 10,
+        "exit_period_start": 5,
+        "exit_period_end": 15,
+        "exit_period_step": 5,
+    }
 
 
 def test_strategy_catalog_and_presets_cover_extended_setup(tmp_path: Path) -> None:

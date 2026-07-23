@@ -64,41 +64,43 @@
             </div>
 
             <div class="strategy-modal-sweep-grid">
-              <article class="strategy-modal-sweep-box">
-                <p class="subsection-title">{{ strategy.parameters[0].label }}</p>
-                <div class="triple-grid">
-                  <label>
-                    <span>Iniziale</span>
-                    <input type="number" min="1" value="{{ form_values.fast_start }}" data-modal-input="fast_start">
-                  </label>
-                  <label>
-                    <span>Finale</span>
-                    <input type="number" min="1" value="{{ form_values.fast_end }}" data-modal-input="fast_end">
-                  </label>
-                  <label>
-                    <span>Passo</span>
-                    <input type="number" min="1" value="{{ form_values.fast_step }}" data-modal-input="fast_step">
-                  </label>
-                </div>
-              </article>
-
-              <article class="strategy-modal-sweep-box">
-                <p class="subsection-title">{{ strategy.parameters[1].label }}</p>
-                <div class="triple-grid">
-                  <label>
-                    <span>Iniziale</span>
-                    <input type="number" min="2" value="{{ form_values.slow_start }}" data-modal-input="slow_start">
-                  </label>
-                  <label>
-                    <span>Finale</span>
-                    <input type="number" min="2" value="{{ form_values.slow_end }}" data-modal-input="slow_end">
-                  </label>
-                  <label>
-                    <span>Passo</span>
-                    <input type="number" min="1" value="{{ form_values.slow_step }}" data-modal-input="slow_step">
-                  </label>
-                </div>
-              </article>
+              {% for parameter in strategy.parameters[:2] %}
+                <article class="strategy-modal-sweep-box">
+                  <p class="subsection-title">{{ parameter.label }}</p>
+                  <div class="triple-grid">
+                    <label>
+                      <span>Iniziale</span>
+                      <input
+                        type="number"
+                        value="{{ form_values[parameter.name ~ '_start'] }}"
+                        data-modal-input="{{ parameter.name }}_start"
+                        {% if parameter.minimum is not none %}min="{{ parameter.minimum }}"{% endif %}
+                        {% if parameter.step is not none %}step="{{ parameter.step }}"{% endif %}
+                      >
+                    </label>
+                    <label>
+                      <span>Finale</span>
+                      <input
+                        type="number"
+                        value="{{ form_values[parameter.name ~ '_end'] }}"
+                        data-modal-input="{{ parameter.name }}_end"
+                        {% if parameter.minimum is not none %}min="{{ parameter.minimum }}"{% endif %}
+                        {% if parameter.step is not none %}step="{{ parameter.step }}"{% endif %}
+                      >
+                    </label>
+                    <label>
+                      <span>Passo</span>
+                      <input
+                        type="number"
+                        value="{{ form_values[parameter.name ~ '_step'] }}"
+                        data-modal-input="{{ parameter.name }}_step"
+                        min="{{ parameter.step if parameter.step is not none else 1 }}"
+                        {% if parameter.step is not none %}step="{{ parameter.step }}"{% endif %}
+                      >
+                    </label>
+                  </div>
+                </article>
+              {% endfor %}
 
               <label class="strategy-modal-field">
                 <span>Ordina i risultati per</span>

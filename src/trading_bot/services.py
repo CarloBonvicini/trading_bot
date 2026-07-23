@@ -26,7 +26,7 @@ from trading_bot.application.execution import (
 )
 from trading_bot.application.forms import as_form_values, default_form_values, interval_helper_texts
 from trading_bot.application.presets import list_strategy_presets, preset_storage_path, save_strategy_preset
-from trading_bot.application.requests import BacktestRequest, IntegerRange, SweepRequest
+from trading_bot.application.requests import BacktestRequest, FloatRange, IntegerRange, SweepRequest
 from trading_bot.data import download_price_data
 from trading_bot.walkforward import WalkForwardResult, run_walk_forward
 
@@ -35,6 +35,7 @@ __all__ = [
     "CompletedBacktest",
     "CompletedSweep",
     "DEFAULT_REPORTS_DIR",
+    "FloatRange",
     "INTERVAL_OPTIONS",
     "IntegerRange",
     "RULE_LOGIC_OPTIONS",

@@ -275,6 +275,129 @@ def test_sweep_request_keeps_display_symbol_and_resolves_data_symbol() -> None:
     assert request.metadata()["data_symbol"] == "GC=F"
 
 
+def test_sweep_request_reads_named_parameter_ranges_for_donchian() -> None:
+    """I campi ``<parametro>_start/_end/_step`` devono pilotare lo sweep anche
+    per strategie con parametri diversi da fast/slow."""
+    request = SweepRequest.from_mapping(
+        {
+            "symbol": "SPY",
+            "start": "2024-01-01",
+            "end": "2024-12-31",
+            "interval": "1d",
+            "run_mode": "sweep",
+            "active_strategies": ["donchian_breakout"],
+            "rule_logic": "all",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "entry_period_start": "10",
+            "entry_period_end": "40",
+            "entry_period_step": "10",
+            "exit_period_start": "5",
+            "exit_period_end": "15",
+            "exit_period_step": "5",
+        }
+    )
+
+    assert request.parameter_names == ("entry_period", "exit_period")
+    assert request.parameter_ranges["entry_period"].values() == [10, 20, 30, 40]
+    assert request.parameter_ranges["exit_period"].values() == [5, 10, 15]
+
+
+def test_sweep_request_reads_float_ranges_for_parabolic_sar() -> None:
+    request = SweepRequest.from_mapping(
+        {
+            "symbol": "SPY",
+            "start": "2024-01-01",
+            "end": "2024-12-31",
+            "interval": "1d",
+            "run_mode": "sweep",
+            "active_strategies": ["parabolic_sar"],
+            "rule_logic": "all",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "step_start": "0.01",
+            "step_end": "0.03",
+            "step_step": "0.01",
+            "max_step_start": "0.1",
+            "max_step_end": "0.3",
+            "max_step_step": "0.1",
+        }
+    )
+
+    assert request.parameter_names == ("step", "max_step")
+    assert request.parameter_ranges["step"].values() == [0.01, 0.02, 0.03]
+    assert request.parameter_ranges["max_step"].values() == [0.1, 0.2, 0.3]
+
+
+def test_sweep_request_mixes_int_and_float_ranges_for_roc_momentum() -> None:
+    request = SweepRequest.from_mapping(
+        {
+            "symbol": "SPY",
+            "start": "2024-01-01",
+            "end": "2024-12-31",
+            "interval": "1d",
+            "run_mode": "sweep",
+            "active_strategies": ["roc_momentum"],
+            "rule_logic": "all",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "period_start": "5",
+            "period_end": "15",
+            "period_step": "5",
+            "threshold_start": "2",
+            "threshold_end": "6",
+            "threshold_step": "2",
+        }
+    )
+
+    assert request.parameter_names == ("period", "threshold")
+    assert request.parameter_ranges["period"].values() == [5, 10, 15]
+    assert request.parameter_ranges["threshold"].values() == [2.0, 4.0, 6.0]
+
+
+def test_sweep_request_falls_back_to_spec_defaults_without_range_fields() -> None:
+    """Campi assenti o vuoti non devono rompere il parsing: si ricade sui
+    default dello spec (start=default, end=default*2)."""
+    request = SweepRequest.from_mapping(
+        {
+            "symbol": "SPY",
+            "start": "2024-01-01",
+            "end": "2024-12-31",
+            "interval": "1d",
+            "run_mode": "sweep",
+            "active_strategies": ["donchian_breakout"],
+            "rule_logic": "all",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "entry_period_start": "",
+        }
+    )
+
+    entry_range = request.parameter_ranges["entry_period"]
+    assert entry_range.start == 20
+    assert entry_range.end == 40
+    assert entry_range.step == 1
+    exit_range = request.parameter_ranges["exit_period"]
+    assert exit_range.start == 10
+    assert exit_range.end == 20
+
+
+def test_new_backtest_form_renders_named_sweep_fields(tmp_path: Path) -> None:
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+
+    client = app.test_client()
+    body = client.get("/backtests/new").get_data(as_text=True)
+
+    assert 'name="fast_start"' in body          # sma_cross / ema_cross / obv_trend
+    assert 'name="slow_end"' in body
+    assert 'name="entry_period_start"' in body  # donchian_breakout
+    assert 'name="exit_period_step"' in body
+    assert 'name="period_start"' in body        # roc_momentum
+    assert 'name="threshold_start"' in body     # roc_momentum (float)
+    assert 'name="step_start"' in body          # parabolic_sar (float)
+    assert 'name="max_step_end"' in body
+
+
 def test_index_lists_existing_reports(tmp_path: Path) -> None:
     create_report_fixture(tmp_path / "SPY-sma_cross-20260403-090000")
     create_sweep_fixture(tmp_path / "SPY-sma_cross-sweep-20260403-100000")
