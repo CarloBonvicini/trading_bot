@@ -3436,6 +3436,25 @@ td {
   gap: 0.3rem;
 }
 
+.auto-search-cta {
+  margin-top: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--accent-border, rgba(59, 130, 246, 0.35));
+  border-radius: var(--radius-lg, 14px);
+  background: var(--accent-soft, rgba(59, 130, 246, 0.08));
+  display: grid;
+  gap: 0.5rem;
+}
+
+.auto-search-cta .inline-note {
+  margin: 0;
+}
+
+.auto-search-button {
+  width: 100%;
+  font-size: 1.02rem;
+}
+
 .home-step-actions {
   align-items: center;
   justify-content: flex-start;

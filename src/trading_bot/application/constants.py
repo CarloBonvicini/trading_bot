@@ -6,7 +6,7 @@ from trading_bot.strategies import strategy_options
 
 DEFAULT_REPORTS_DIR = Path("reports")
 INTERVAL_OPTIONS = ("1m", "2m", "5m", "15m", "30m", "1h", "90m", "1d", "1wk", "1mo")
-RUN_MODE_OPTIONS = ("single", "sweep", "walkforward")
+RUN_MODE_OPTIONS = ("single", "sweep", "walkforward", "auto_search")
 RULE_LOGIC_OPTIONS = {
     "all": "Devono valere tutte (AND)",
     "any": "Ne basta una (OR)",

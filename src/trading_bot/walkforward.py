@@ -69,12 +69,17 @@ def run_walk_forward(
     spec = STRATEGY_SPECS.get(strategy_id)
     if spec is None:
         raise ValueError(f"Strategia non trovata: {strategy_id}")
-    if not spec.supports_sweep:
-        raise ValueError(f"La strategia '{spec.label}' non supporta lo sweep parametri.")
 
+    # La walk-forward richiede una griglia di parametri candidati. Non serve che
+    # la strategia sia marcata ``supports_sweep`` (limite legato al form a due
+    # box fast/slow): basta che esista una griglia autosetting, disponibile per
+    # tutte le strategie. Così la validazione severa copre l'intero catalogo.
     param_grid = _build_param_grid(spec)
     if not param_grid:
-        raise ValueError(f"Nessuna combinazione di parametri disponibile per '{spec.label}'.")
+        raise ValueError(
+            f"Nessuna griglia di parametri disponibile per '{spec.label}': "
+            "walk-forward non applicabile."
+        )
 
     n = len(data)
     min_required = is_days + oos_days

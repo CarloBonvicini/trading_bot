@@ -419,7 +419,7 @@
 
               {# ── Walk-Forward ──────────────────────────────────────────────── #}
               <details class="risk-details" id="wf-details" {% if form_values.run_mode != 'walkforward' %}{% endif %}>
-                <summary class="risk-summary">Walk-Forward Validation <span class="eyebrow">(solo strategia singola con sweep)</span></summary>
+                <summary class="risk-summary">Walk-Forward Validation <span class="eyebrow">(solo strategia singola)</span></summary>
                 <div class="risk-body">
                   <div class="input-grid">
                     <div class="field-block">
@@ -462,8 +462,20 @@
                 {% include "partials/_strategy_sections.html" %}
               </div>
 
+              {# Ricerca automatica: dal solo contesto (simbolo/periodo/capitale)
+                 il sistema sceglie la strategia migliore con validazione severa. #}
+              <div class="auto-search-cta">
+                <button class="action-button auto-search-button" type="submit" formaction="{{ url_for('auto_search_backtest') }}">
+                  Trova la strategia migliore
+                </button>
+                <p class="inline-note">
+                  Non sai quale scegliere? Testa tutte le strategie in walk-forward e valida
+                  la vincente su dati mai usati nella selezione. Richiede qualche secondo.
+                </p>
+              </div>
+
               <div class="button-row home-step-actions">
-                <button class="action-button" type="submit" id="submit-button">Apri grafico →</button>
+                <button class="ghost-button" type="submit" id="submit-button">Oppure scegli tu: apri grafico →</button>
                 <button class="ghost-button" type="submit" formaction="{{ url_for('create_preset') }}">Salva preset</button>
               </div>
             </form>

@@ -71,12 +71,28 @@ def test_run_walk_forward_raises_if_data_too_short() -> None:
         )
 
 
-def test_run_walk_forward_rejects_non_sweep_strategy() -> None:
+def test_run_walk_forward_supports_non_sweep_strategy() -> None:
+    """La walk-forward gira su qualsiasi strategia con griglia autosetting,
+    non solo su quelle marcate supports_sweep (es. RSI mean reversion)."""
     data = _synth_data(n=500)
-    with pytest.raises(ValueError, match="sweep"):
+    wf = run_walk_forward(
+        data=data,
+        strategy_id="rsi_mean_reversion",
+        is_days=200,
+        oos_days=50,
+        fee_bps=0.0,
+    )
+    assert len(wf.windows) >= 1
+    for window in wf.windows:
+        assert "period" in window.best_params
+
+
+def test_run_walk_forward_raises_for_unknown_strategy() -> None:
+    data = _synth_data(n=500)
+    with pytest.raises(ValueError, match="non trovata"):
         run_walk_forward(
             data=data,
-            strategy_id="rsi_mean_reversion",  # supports_sweep=False
+            strategy_id="strategia_inesistente",
             is_days=200,
             oos_days=50,
             fee_bps=0.0,

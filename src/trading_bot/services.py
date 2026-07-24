@@ -27,6 +27,7 @@ from trading_bot.application.execution import (
 from trading_bot.application.forms import as_form_values, default_form_values, interval_helper_texts
 from trading_bot.application.presets import list_strategy_presets, preset_storage_path, save_strategy_preset
 from trading_bot.application.requests import BacktestRequest, FloatRange, IntegerRange, SweepRequest
+from trading_bot.application.strategy_search import StrategySearchResult, run_strategy_search
 from trading_bot.data import download_price_data
 from trading_bot.walkforward import WalkForwardResult, run_walk_forward
 
@@ -45,6 +46,7 @@ __all__ = [
     "SWEEP_SORT_OPTIONS",
     "WALKFORWARD_SORT_OPTIONS",
     "WalkForwardResult",
+    "StrategySearchResult",
     "SweepRequest",
     "as_form_values",
     "default_form_values",
@@ -54,6 +56,7 @@ __all__ = [
     "preset_storage_path",
     "run_backtest_request",
     "run_sma_sweep_request",
+    "run_strategy_search",
     "run_walk_forward",
     "save_strategy_preset",
 ]

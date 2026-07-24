@@ -50,6 +50,7 @@ from trading_bot.services import (
     list_strategy_presets,
     run_backtest_request,
     run_sma_sweep_request,
+    run_strategy_search,
     run_walk_forward,
     save_strategy_preset,
 )
@@ -136,6 +137,9 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             if run_mode == "walkforward":
                 return _run_walkforward_view(normalized_form)
 
+            if run_mode == "auto_search":
+                return _run_strategy_search_view(normalized_form)
+
             backtest_request = BacktestRequest.from_mapping(normalized_form)
             completed = run_backtest_request(
                 backtest_request=backtest_request,
@@ -162,6 +166,13 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
 
         flash(f"Backtest completato: {completed.report_dir.name}", "success")
         return redirect(url_for("report_detail", report_name=completed.report_dir.name))
+
+    @app.post("/backtests/auto")
+    def auto_search_backtest():
+        """Ricerca automatica della strategia migliore dal solo contesto del form."""
+        normalized_form = _normalize_intraday_form_window(request.form)
+        _store_home_draft(_resolve_home_form_values(normalized_form))
+        return _run_strategy_search_view(normalized_form)
 
     @app.post("/api/chart-lab/preset")
     def api_save_chart_lab_preset():
@@ -399,6 +410,55 @@ def _run_walkforward_view(form: dict[str, object]):
         optimize_by_label=WALKFORWARD_SORT_OPTIONS.get(wf.optimize_by, wf.optimize_by),
         is_days=is_days,
         oos_days=oos_days,
+    )
+
+
+def _run_strategy_search_view(form: dict[str, object]):
+    """Cerca automaticamente la strategia migliore per il contesto e la valida.
+
+    Usa il solo contesto (mercato, periodo, capitale, commissioni) del form: la
+    strategia selezionata è irrilevante qui perché la sceglie il sistema.
+    """
+    from trading_bot.data import download_price_data
+
+    try:
+        req = BacktestRequest.from_mapping(form)
+    except FormValidationError as exc:
+        flash(str(exc), "error")
+        return _render_home(
+            form_values=form,
+            field_errors=_field_errors(exc),
+            invalid_fields=exc.field_names,
+            view=HOME_VIEW_SETUP,
+            status=400,
+        )
+
+    try:
+        data = download_price_data(
+            symbol=req.data_symbol,
+            start=req.start,
+            end=req.end,
+            interval=req.interval,
+        )
+        search = run_strategy_search(
+            data=data,
+            symbol=req.symbol,
+            interval=req.interval,
+            initial_capital=req.initial_capital,
+            fee_bps=req.fee_bps,
+        )
+    except (FormValidationError, ValueError) as exc:
+        flash(str(exc), "error")
+        return _render_home(form_values=form, view=HOME_VIEW_SETUP, status=400)
+    except Exception as exc:
+        flash(f"Ricerca automatica non riuscita: {exc}", "error")
+        return _render_home(form_values=form, view=HOME_VIEW_SETUP, status=400)
+
+    return render_template(
+        "auto_search.html",
+        search=search,
+        req=req,
+        strategies=STRATEGY_OPTIONS,
     )
 
 
