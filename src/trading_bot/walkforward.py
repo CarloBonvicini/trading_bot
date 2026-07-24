@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from trading_bot.application.autosetting import AUTOSETTING_GRIDS
+from trading_bot.application.autosetting import AUTOSETTING_GRIDS, AUTOSETTING_GRIDS_BY_MODE
 from trading_bot.backtest import SIZING_FULL, run_backtest
 from trading_bot.strategies import STRATEGY_SPECS, build_strategy_signal, validate_strategy_parameters
 
@@ -60,11 +60,12 @@ def run_walk_forward(
     sizing_method: str = SIZING_FULL,
     sizing_param: float = 100.0,
     initial_capital: float = 10_000.0,
+    scan_mode: str = "rapida",
 ) -> WalkForwardResult:
     """Esegue la walk-forward validation su ``data`` per la strategia indicata.
 
-    I parametri di sweep vengono letti dallo ``StrategySpec`` della strategia.
-    Richiede ``supports_sweep=True`` sulla strategia.
+    ``scan_mode`` seleziona la densità della griglia parametri (rapida → xl):
+    profondità maggiori provano molte più combinazioni ma sono più lente.
     """
     spec = STRATEGY_SPECS.get(strategy_id)
     if spec is None:
@@ -74,7 +75,7 @@ def run_walk_forward(
     # la strategia sia marcata ``supports_sweep`` (limite legato al form a due
     # box fast/slow): basta che esista una griglia autosetting, disponibile per
     # tutte le strategie. Così la validazione severa copre l'intero catalogo.
-    param_grid = _build_param_grid(spec)
+    param_grid = _build_param_grid(spec, scan_mode=scan_mode)
     if not param_grid:
         raise ValueError(
             f"Nessuna griglia di parametri disponibile per '{spec.label}': "
@@ -177,15 +178,16 @@ def run_walk_forward(
 
 # ── Helpers interni ──────────────────────────────────────────────────────────
 
-def _build_param_grid(spec) -> list[dict[str, int | float]]:
+def _build_param_grid(spec, scan_mode: str = "rapida") -> list[dict[str, int | float]]:
     """Costruisce la griglia di parametri da testare per la strategia.
 
-    Usa le stesse griglie del modulo ``autosetting`` (modalità "rapida") così
-    walk-forward e autosetting condividono la fonte di verità sui parametri
-    candidati. Filtra le combinazioni che violano i vincoli di validazione
-    (es. fast < slow, exit < entry).
+    Usa le griglie del modulo ``autosetting`` alla densità ``scan_mode``
+    (rapida/media/lunga/xl), così walk-forward e autosetting condividono la
+    fonte di verità sui parametri candidati. Filtra le combinazioni che violano
+    i vincoli di validazione (es. fast < slow, exit < entry).
     """
-    grid = AUTOSETTING_GRIDS.get(spec.key)
+    grids = AUTOSETTING_GRIDS_BY_MODE.get(scan_mode, AUTOSETTING_GRIDS)
+    grid = grids.get(spec.key)
     if not grid:
         return []
 

@@ -234,19 +234,24 @@ def test_run_strategy_search_ranks_and_validates_on_holdout() -> None:
     # Il campione è una delle strategie testate e ha parametri di produzione.
     assert result.champion_id in {"sma_cross", "ema_cross"}
     assert result.champion_params  # non vuoto
-    assert result.verdict in {"confermata", "debole", "insufficiente"}
+    assert result.reliability in {"alta", "media", "bassa", "insufficiente"}
+    assert result.verdict_note  # frase in lingua semplice
 
     # La classifica è ordinata per Sharpe OOS medio (valutabili prima degli errori).
     valid = [r for r in result.ranking if r.error is None]
     sharpes = [r.avg_oos_sharpe for r in valid]
     assert sharpes == sorted(sharpes, reverse=True)
+    # Ogni riga valutabile porta con sé la prova su dati nuovi e il semaforo.
+    for row in valid:
+        assert row.reliability in {"alta", "media", "bassa", "insufficiente"}
+        assert row.params  # parametri di produzione
 
     # Lo split sviluppo/holdout copre tutte le barre e il holdout è ~20%.
     span = result.data_span
     assert span["dev_bars"] + span["holdout_bars"] == 340
     assert span["holdout_bars"] == round(340 * 0.20)
 
-    # Il verdetto sul holdout riporta metriche misurate fuori campione.
+    # La prova sul holdout riporta metriche misurate fuori campione.
     assert set(result.holdout) >= {"sharpe_ratio", "total_return_pct", "trade_count"}
 
 

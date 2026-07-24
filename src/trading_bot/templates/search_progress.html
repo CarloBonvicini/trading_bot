@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Ricerca in corso…{% endblock %}
+
+{% block content %}
+{% set depth_labels = {'rapida': 'Rapida', 'media': 'Media', 'lunga': 'Approfondita', 'xl': 'Massima'} %}
+<div class="page-header">
+  <p class="eyebrow">ricerca automatica</p>
+  <h1>Sto cercando la strategia migliore…</h1>
+  <p class="inline-note">
+    Mercati: <strong>{{ job.symbols | join(', ') }}</strong> &middot;
+    profondità: <strong>{{ depth_labels.get(job.scan_mode, job.scan_mode) }}</strong>
+  </p>
+</div>
+
+<section class="panel">
+  <p class="inline-note">
+    Puoi lasciare questa pagina aperta: il test gira in background. Con più mercati e
+    profondità alta può durare a lungo — l'avanzamento qui sotto si aggiorna da solo.
+  </p>
+
+  <div style="margin:1rem 0 0.5rem;height:14px;border-radius:999px;background:rgba(27,27,24,0.08);overflow:hidden;">
+    <div id="search-bar-fill" style="height:100%;width:0%;border-radius:999px;background:var(--accent, #3b82f6);transition:width 0.4s ease;"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:baseline;gap:1rem;">
+    <p class="inline-note" id="search-msg">{{ job.message }}</p>
+    <strong id="search-pct">0%</strong>
+  </div>
+</section>
+
+<div class="button-row" style="margin-top:1rem">
+  <a class="ghost-button" href="{{ url_for('new_backtest_home') }}">← Annulla e torna indietro</a>
+</div>
+
+<script>
+  (function () {
+    var jobId = "{{ job_id }}";
+    var bar = document.getElementById('search-bar-fill');
+    var msg = document.getElementById('search-msg');
+    var pct = document.getElementById('search-pct');
+    function poll() {
+      fetch('/searches/' + jobId + '/status')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (s) {
+          if (!s) { setTimeout(poll, 2500); return; }
+          var p = s.total ? Math.round(s.progress / s.total * 100) : 0;
+          if (bar) bar.style.width = p + '%';
+          if (pct) pct.textContent = p + '%';
+          if (msg) msg.textContent = s.message || '';
+          if (s.status === 'done') { window.location.reload(); return; }
+          if (s.status === 'error') { if (msg) msg.textContent = 'Errore: ' + (s.error || 'ricerca non riuscita'); return; }
+          setTimeout(poll, 1500);
+        })
+        .catch(function () { setTimeout(poll, 2500); });
+    }
+    poll();
+  })();
+</script>
+{% endblock %}

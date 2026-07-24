@@ -3436,23 +3436,36 @@ td {
   gap: 0.3rem;
 }
 
-.auto-search-cta {
-  margin-top: 1rem;
-  padding: 1rem 1.1rem;
+.auto-hero-panel {
   border: 1px solid var(--accent-border, rgba(59, 130, 246, 0.35));
-  border-radius: var(--radius-lg, 14px);
-  background: var(--accent-soft, rgba(59, 130, 246, 0.08));
-  display: grid;
-  gap: 0.5rem;
-}
-
-.auto-search-cta .inline-note {
-  margin: 0;
+  box-shadow: 0 8px 30px rgba(59, 130, 246, 0.08);
 }
 
 .auto-search-button {
   width: 100%;
   font-size: 1.02rem;
+}
+
+.advanced-manual {
+  margin-top: 0.25rem;
+}
+
+.advanced-manual > summary {
+  cursor: pointer;
+  padding: 0.75rem 1rem;
+  border: 1px dashed var(--border, rgba(27, 27, 24, 0.18));
+  border-radius: var(--radius-md, 12px);
+  color: var(--muted);
+  font-size: 0.92rem;
+  list-style: none;
+}
+
+.advanced-manual > summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-manual[open] > summary {
+  margin-bottom: 0.75rem;
 }
 
 .home-step-actions {

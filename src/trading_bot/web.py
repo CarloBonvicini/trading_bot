@@ -8,6 +8,7 @@ import pandas as pd
 from flask import Flask, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 
 from trading_bot.application.autosetting import run_autosetting
+from trading_bot.application.search_jobs import get_job, job_status, start_multi_search_job
 from trading_bot.strategies import STRATEGY_SPECS, build_strategy_signal, parse_strategy_parameters
 from trading_bot.application.chart_lab import (
     build_chart_lab_state,
@@ -50,7 +51,6 @@ from trading_bot.services import (
     list_strategy_presets,
     run_backtest_request,
     run_sma_sweep_request,
-    run_strategy_search,
     run_walk_forward,
     save_strategy_preset,
 )
@@ -137,9 +137,6 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             if run_mode == "walkforward":
                 return _run_walkforward_view(normalized_form)
 
-            if run_mode == "auto_search":
-                return _run_strategy_search_view(normalized_form)
-
             backtest_request = BacktestRequest.from_mapping(normalized_form)
             completed = run_backtest_request(
                 backtest_request=backtest_request,
@@ -167,12 +164,50 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
         flash(f"Backtest completato: {completed.report_dir.name}", "success")
         return redirect(url_for("report_detail", report_name=completed.report_dir.name))
 
-    @app.post("/backtests/auto")
-    def auto_search_backtest():
-        """Ricerca automatica della strategia migliore dal solo contesto del form."""
-        normalized_form = _normalize_intraday_form_window(request.form)
-        _store_home_draft(_resolve_home_form_values(normalized_form))
-        return _run_strategy_search_view(normalized_form)
+    @app.post("/searches/start")
+    def start_search():
+        """Avvia in background la ricerca automatica su uno o più mercati."""
+        form = _normalize_intraday_form_window(request.form)
+        _store_home_draft(_resolve_home_form_values(form))
+        symbols = _parse_symbols(str(form.get("symbols") or form.get("symbol") or ""))
+        if not symbols:
+            flash("Inserisci almeno un simbolo, per esempio SPY o AAPL.", "error")
+            return _render_home(form_values=form, view=HOME_VIEW_SETUP, status=400)
+
+        interval = str(form.get("interval", "1d")).strip() or "1d"
+        depth = str(form.get("depth", "rapida")).strip().lower()
+        if depth not in {"rapida", "media", "lunga", "xl"}:
+            depth = "rapida"
+        initial_capital = float(str(form.get("initial_capital", "10000")).strip() or "10000")
+        fee_bps = float(str(form.get("fee_bps", "5")).strip() or "5")
+
+        job_id = start_multi_search_job(
+            symbols=symbols,
+            interval=interval,
+            initial_capital=initial_capital,
+            fee_bps=fee_bps,
+            scan_mode=depth,
+            start=str(form.get("start", "")).strip(),
+            end=str(form.get("end", "")).strip(),
+            reports_dir=current_app.config["REPORTS_DIR"],
+        )
+        return redirect(url_for("search_detail", job_id=job_id))
+
+    @app.get("/searches/<job_id>")
+    def search_detail(job_id: str):
+        job = get_job(job_id, current_app.config["REPORTS_DIR"])
+        if job is None:
+            abort(404)
+        if job["status"] == "done":
+            return render_template("search_result.html", result=job["result"], job=job)
+        return render_template("search_progress.html", job=job, job_id=job_id)
+
+    @app.get("/searches/<job_id>/status")
+    def search_status(job_id: str):
+        status = job_status(job_id, current_app.config["REPORTS_DIR"])
+        if status is None:
+            abort(404)
+        return jsonify(status)
 
     @app.post("/api/chart-lab/preset")
     def api_save_chart_lab_preset():
@@ -413,53 +448,15 @@ def _run_walkforward_view(form: dict[str, object]):
     )
 
 
-def _run_strategy_search_view(form: dict[str, object]):
-    """Cerca automaticamente la strategia migliore per il contesto e la valida.
-
-    Usa il solo contesto (mercato, periodo, capitale, commissioni) del form: la
-    strategia selezionata è irrilevante qui perché la sceglie il sistema.
-    """
-    from trading_bot.data import download_price_data
-
-    try:
-        req = BacktestRequest.from_mapping(form)
-    except FormValidationError as exc:
-        flash(str(exc), "error")
-        return _render_home(
-            form_values=form,
-            field_errors=_field_errors(exc),
-            invalid_fields=exc.field_names,
-            view=HOME_VIEW_SETUP,
-            status=400,
-        )
-
-    try:
-        data = download_price_data(
-            symbol=req.data_symbol,
-            start=req.start,
-            end=req.end,
-            interval=req.interval,
-        )
-        search = run_strategy_search(
-            data=data,
-            symbol=req.symbol,
-            interval=req.interval,
-            initial_capital=req.initial_capital,
-            fee_bps=req.fee_bps,
-        )
-    except (FormValidationError, ValueError) as exc:
-        flash(str(exc), "error")
-        return _render_home(form_values=form, view=HOME_VIEW_SETUP, status=400)
-    except Exception as exc:
-        flash(f"Ricerca automatica non riuscita: {exc}", "error")
-        return _render_home(form_values=form, view=HOME_VIEW_SETUP, status=400)
-
-    return render_template(
-        "auto_search.html",
-        search=search,
-        req=req,
-        strategies=STRATEGY_OPTIONS,
-    )
+def _parse_symbols(raw: str) -> list[str]:
+    """Estrae la lista di simboli da un campo di testo (separati da virgola/spazio)."""
+    tokens: list[str] = []
+    for chunk in raw.replace(";", ",").replace("\n", ",").split(","):
+        for token in chunk.split():
+            symbol = token.strip().upper()
+            if symbol and symbol not in tokens:
+                tokens.append(symbol)
+    return tokens
 
 
 def build_parser() -> argparse.ArgumentParser:

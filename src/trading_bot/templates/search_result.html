@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Risultato ricerca · {{ result.symbols | join(', ') }}{% endblock %}
+
+{% block content %}
+{% set depth_labels = {'rapida': 'Rapida', 'media': 'Media', 'lunga': 'Approfondita', 'xl': 'Massima'} %}
+{% set rel_tone = {'alta': 'positive', 'media': 'neutral', 'bassa': 'negative', 'insufficiente': 'neutral'} %}
+{% set rel_label = {'alta': 'Affidabilità alta', 'media': 'Affidabilità media', 'bassa': 'Affidabilità bassa', 'insufficiente': 'Dati insufficienti'} %}
+{% set capital = result.settings.initial_capital | default(10000) %}
+{% set top = result.strategy_scores[0] if result.strategy_scores else None %}
+{% set hero_tone = 'positive' if (top and top.markets_reliable and top.markets_reliable > 0) else ('neutral' if (top and top.markets_positive and top.markets_positive > 0) else 'negative') %}
+
+<div class="page-header">
+  <p class="eyebrow">risultato della ricerca automatica</p>
+  <h1>
+    {% if result.overall_champion_label %}La migliore: {{ result.overall_champion_label }}{% else %}Nessuna strategia solida trovata{% endif %}
+  </h1>
+  <p class="inline-note">
+    Mercati testati: <strong>{{ result.symbols | join(', ') }}</strong> &middot;
+    profondità <strong>{{ depth_labels.get(result.scan_mode, result.scan_mode) }}</strong> &middot;
+    commissioni {{ result.settings.fee_bps }} bps
+  </p>
+</div>
+
+{# ── Verdetto in lingua semplice ─────────────────────────────────────── #}
+<section class="panel report-tone-{{ hero_tone }}" style="border-left:4px solid;">
+  <h2 style="margin-top:0;">In parole semplici</h2>
+  <p style="font-size:15px;line-height:1.7;margin:0;">{{ result.verdict_note }}</p>
+</section>
+
+{# ── Un riquadro per ogni mercato ─────────────────────────────────────── #}
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <p class="eyebrow">mercato per mercato</p>
+      <h3>
+        {% if result.overall_champion_label %}Come è andata {{ result.overall_champion_label }} su ogni mercato{% else %}La migliore di ogni mercato{% endif %}
+      </h3>
+    </div>
+  </div>
+  <p class="inline-note">
+    {% if result.overall_champion_label %}
+      Ecco come la strategia migliore si è comportata su ciascun mercato, su un periodo
+      successivo <strong>mai visto</strong> durante la ricerca (la vera prova del nove).
+    {% else %}
+      Per ogni mercato la strategia più promettente e come si è comportata su un periodo
+      successivo <strong>mai visto</strong> durante la ricerca.
+    {% endif %}
+  </p>
+
+  <div class="terminal-metric-grid" style="margin-top:0.75rem;">
+    {% for m in result.markets %}
+      {% set final_eq = (capital * (1 + (m.holdout_return_pct or 0) / 100)) | round(0) | int %}
+      {% set bench_eq = (capital * (1 + (m.benchmark_return_pct or 0) / 100)) | round(0) | int %}
+      <article class="terminal-metric-card report-tone-{{ rel_tone.get(m.reliability, 'neutral') }}">
+        <p style="font-size:15px;font-weight:500;margin:0;">{{ m.symbol }}</p>
+        {% if m.error %}
+          <span class="inline-note">Saltato: {{ m.error }}</span>
+        {% else %}
+          {% if not result.overall_champion_label and m.champion_label %}
+            <p class="inline-note" style="margin:2px 0 6px;">{{ m.champion_label }}</p>
+          {% endif %}
+          <p style="margin:0;font-size:15px;">Su dati nuovi: €{{ capital | round(0) | int }} → <strong>€{{ final_eq }}</strong></p>
+          <p class="inline-note" style="margin:2px 0 0;">
+            {{ "%+.1f"|format(m.holdout_return_pct or 0) }}% ·
+            comprando e basta €{{ bench_eq }} ({{ "%+.1f"|format(m.benchmark_return_pct or 0) }}%)
+          </p>
+          <span class="strategy-chip" style="margin-top:6px;">{{ rel_label.get(m.reliability, m.reliability) }}</span>
+        {% endif %}
+      </article>
+    {% endfor %}
+  </div>
+</section>
+
+{# ── Classifica strategie sui mercati testati ─────────────────────────── #}
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <p class="eyebrow">quali strategie reggono</p>
+      <h3>Affidabilità su più mercati</h3>
+    </div>
+  </div>
+  <p class="inline-note">
+    Una strategia è davvero valida se regge su dati nuovi in <strong>tanti mercati</strong>,
+    non per fortuna in uno solo.
+  </p>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Strategia</th>
+          <th>Affidabile su</th>
+          <th>In positivo su</th>
+          <th>Resa media su dati nuovi</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in result.strategy_scores %}
+          <tr {% if s.strategy_id == result.overall_champion_id %}class="is-champion"{% endif %}>
+            <td>
+              {{ s.label }}
+              {% if s.strategy_id == result.overall_champion_id %}<span class="strategy-chip strategy-chip-accent">migliore</span>{% endif %}
+            </td>
+            <td class="{% if s.markets_reliable > 0 %}tone-positive{% else %}tone-neutral{% endif %}">{{ s.markets_reliable }} / {{ s.markets_tested }} mercati</td>
+            <td>{{ s.markets_positive }} / {{ s.markets_tested }}</td>
+            <td class="{% if s.avg_holdout_return_pct >= 0 %}tone-positive{% else %}tone-negative{% endif %}">{{ "%+.1f"|format(s.avg_holdout_return_pct) }}%</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <details style="margin-top:0.75rem;">
+    <summary class="inline-note" style="cursor:pointer;">Dettagli tecnici (per chi li vuole)</summary>
+    <p class="inline-note" style="margin-top:8px;">
+      "Affidabile" = ha guadagnato su dati nuovi tenendo un rapporto rendimento/rischio (Sharpe) positivo
+      e vicino a quello mostrato in fase di sviluppo. La selezione avviene in walk-forward sullo sviluppo
+      (Sharpe out-of-sample); la resa mostrata qui è invece misurata sul periodo di prova mai usato nella
+      selezione. Sharpe medio sullo sviluppo per strategia:
+      {% for s in result.strategy_scores %}{{ s.label }} {{ s.avg_dev_sharpe }}{% if not loop.last %} · {% endif %}{% endfor %}.
+      Metriche al netto delle commissioni, slippage non modellato.
+    </p>
+  </details>
+</section>
+
+<div class="button-row" style="margin-top:1rem">
+  <a class="action-button" href="{{ url_for('new_backtest_home') }}">Nuova ricerca</a>
+</div>
+{% endblock %}

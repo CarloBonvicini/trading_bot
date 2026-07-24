@@ -5,33 +5,36 @@ sceglie la strategia più promettente fra tutte quelle disponibili, con la
 validazione più rigorosa che il codebase permette, in tre strati:
 
 1. **Holdout finale intoccato** — l'ultima fetta di dati (default 20%) viene
-   messa da parte e non partecipa *in alcun modo* alla selezione. Serve solo
-   per il verdetto finale sul campione, così il numero che leggi è calcolato su
-   dati che il processo di scelta non ha mai visto (difesa dal problema del
-   confronto multiplo: scegliere "la migliore fra 15" è di per sé una fonte di
-   overfitting).
+   messa da parte e non partecipa alla *selezione* del campione. Serve per
+   misurare la resa su dati mai visti (difesa dal confronto multiplo: scegliere
+   "la migliore fra 15" è di per sé una fonte di overfitting).
 
 2. **Walk-forward sullo sviluppo** — sul restante 80% ogni strategia viene
    valutata in walk-forward (finestre IS che ottimizzano i parametri, finestre
-   OOS che li testano). Si classifica per Sharpe out-of-sample medio: è la
-   performance *non* gonfiata dall'ottimizzazione.
+   OOS che li testano). La classifica di *selezione* usa lo Sharpe OOS medio.
 
-3. **Verdetto sul holdout** — il campione viene riottimizzato sull'intero
-   sviluppo e valutato una sola volta sul holdout. Se lì regge, la scelta è
-   confermata; se crolla, viene segnalato il possibile overfitting.
+3. **Prova su dati nuovi** — ogni strategia viene poi riottimizzata sull'intero
+   sviluppo e misurata sul holdout. Il campione (il primo per Sharpe OOS) porta
+   con sé questa prova; se lì crolla, l'affidabilità è bassa.
 
-Note sul realismo: il backtest usa dati di mercato reali (yfinance), applica le
-commissioni in basis point e lo shift di una barra che impedisce il lookahead.
-Non modella lo slippage: le metriche sono al netto delle sole commissioni.
+``scan_mode`` (rapida/media/lunga/xl) regola quante combinazioni di parametri
+provare: più è profondo, più è lento ma accurato.
+
+Note sul realismo: dati di mercato reali (yfinance), commissioni in basis point,
+shift di una barra contro il lookahead. Lo slippage non è modellato: le metriche
+sono al netto delle sole commissioni.
 """
 from __future__ import annotations
 
+import dataclasses
 import itertools
-from dataclasses import dataclass, field
+import math
+from dataclasses import dataclass
+from typing import Callable
 
 import pandas as pd
 
-from trading_bot.application.autosetting import AUTOSETTING_GRIDS
+from trading_bot.application.autosetting import AUTOSETTING_GRIDS, AUTOSETTING_GRIDS_BY_MODE
 from trading_bot.backtest import run_backtest
 from trading_bot.strategies import (
     STRATEGY_SPECS,
@@ -40,47 +43,61 @@ from trading_bot.strategies import (
 )
 from trading_bot.walkforward import WalkForwardResult, run_walk_forward
 
-HOLDOUT_RATIO = 0.20        # fetta finale riservata al verdetto (intoccata)
+HOLDOUT_RATIO = 0.20        # fetta finale riservata alla prova su dati nuovi
 TARGET_WINDOWS = 5          # numero indicativo di finestre walk-forward sullo sviluppo
-OVERFIT_SOGLIA = 0.40       # calo Sharpe holdout > 40% vs sviluppo → verdetto debole
+OVERFIT_SOGLIA = 0.40       # calo Sharpe holdout > 40% vs sviluppo → affidabilità ridotta
 MIN_TOTAL_BARS = 150        # sotto questa soglia la validazione severa non ha senso
 MIN_DEV_BARS = 100          # barre minime nello sviluppo per il walk-forward
+
+# Semaforo di affidabilità in lingua semplice.
+RELIABILITY_HIGH = "alta"
+RELIABILITY_MEDIUM = "media"
+RELIABILITY_LOW = "bassa"
+RELIABILITY_NONE = "insufficiente"
+
+ProgressCallback = Callable[[int, int, str], None]
 
 
 @dataclass
 class StrategyRanking:
-    """Riga di classifica: performance walk-forward di una strategia sullo sviluppo."""
+    """Riga di classifica: come è andata una strategia in selezione e alla prova."""
 
     strategy_id: str
     label: str
+    # Selezione (walk-forward sullo sviluppo)
     avg_oos_sharpe: float
+    avg_is_sharpe: float
     avg_oos_return_pct: float
     wf_efficiency: float
     windows: int
-    error: str | None = None  # motivo se la strategia non è stata valutabile
+    # Prova su dati nuovi (holdout)
+    params: dict[str, int | float]
+    holdout_return_pct: float
+    holdout_sharpe: float
+    holdout_max_drawdown_pct: float
+    holdout_trades: int
+    reliability: str            # alta | media | bassa | insufficiente
+    error: str | None = None    # motivo se la strategia non è stata valutabile
 
 
 @dataclass
 class StrategySearchResult:
+    symbol: str
     ranking: list[StrategyRanking]
     champion_id: str | None
     champion_label: str | None
     champion_params: dict[str, int | float]
     holdout: dict[str, object]
     development: dict[str, object]
-    verdict: str            # "confermata" | "debole" | "insufficiente"
+    reliability: str
     verdict_note: str
+    holdout_benchmark_return_pct: float
     data_span: dict[str, object]
     settings: dict[str, object]
 
 
 def _auto_windows(dev_len: int, target_windows: int = TARGET_WINDOWS) -> tuple[int, int]:
-    """Dimensiona le finestre IS/OOS per ottenere ~``target_windows`` finestre.
-
-    Il rapporto IS≈4×OOS con OOS≈dev_len/(target+3) mantiene il numero di
-    finestre pressoché costante al variare della quantità di dati, così il costo
-    computazionale non esplode sulle storie molto lunghe.
-    """
+    """Dimensiona le finestre IS/OOS per ottenere ~``target_windows`` finestre."""
     oos_days = max(20, dev_len // (target_windows + 3))
     is_days = max(60, oos_days * 4)
     return is_days, oos_days
@@ -96,12 +113,11 @@ def run_strategy_search(
     holdout_ratio: float = HOLDOUT_RATIO,
     target_windows: int = TARGET_WINDOWS,
     optimize_by: str = "sharpe_ratio",
+    scan_mode: str = "rapida",
     strategy_ids: list[str] | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> StrategySearchResult:
-    """Cerca la strategia migliore per il contesto dato con validazione severa.
-
-    ``strategy_ids`` limita l'insieme testato (default: tutte quelle con griglia).
-    """
+    """Cerca la strategia migliore per un singolo mercato con validazione severa."""
     candidate_ids = strategy_ids or list(AUTOSETTING_GRIDS.keys())
 
     n = len(data)
@@ -115,7 +131,7 @@ def run_strategy_search(
     dev_len = n - holdout_len
     if dev_len < MIN_DEV_BARS:
         raise ValueError(
-            "Dati insufficienti per separare sviluppo e holdout: "
+            "Dati insufficienti per separare sviluppo e prova su dati nuovi: "
             f"servono più barre storiche (sviluppo {dev_len}, minimo {MIN_DEV_BARS})."
         )
 
@@ -123,14 +139,15 @@ def run_strategy_search(
     holdout_index = data.index[dev_len:]
     is_days, oos_days = _auto_windows(dev_len, target_windows)
 
-    # --- Strato 2: walk-forward per ciascuna strategia sullo sviluppo ---
     ranking: list[StrategyRanking] = []
-    wf_by_id: dict[str, WalkForwardResult] = {}
+    benchmark_return_pct = 0.0
+    total = len(candidate_ids)
 
-    for strategy_id in candidate_ids:
+    for done, strategy_id in enumerate(candidate_ids, start=1):
         spec = STRATEGY_SPECS.get(strategy_id)
         if spec is None:
             continue
+
         try:
             wf = run_walk_forward(
                 data=dev_data,
@@ -140,34 +157,55 @@ def run_strategy_search(
                 optimize_by=optimize_by,
                 fee_bps=fee_bps,
                 initial_capital=initial_capital,
+                scan_mode=scan_mode,
+            )
+            # Parametri di produzione + prova su dati nuovi (holdout).
+            params = _optimize_on_development(
+                data=dev_data, strategy_id=strategy_id, fee_bps=fee_bps,
+                initial_capital=initial_capital, optimize_by=optimize_by, scan_mode=scan_mode,
+            )
+            holdout_result = _evaluate_on_holdout(
+                full_data=data, dev_len=dev_len, holdout_index=holdout_index,
+                strategy_id=strategy_id, params=params, fee_bps=fee_bps,
+                initial_capital=initial_capital,
+            )
+            hs = holdout_result.summary
+            benchmark_return_pct = float(hs.get("benchmark_return_pct", benchmark_return_pct))
+            reliability = _reliability(
+                dev_oos_sharpe=wf.avg_oos_sharpe,
+                holdout_return_pct=float(hs.get("total_return_pct", 0.0)),
+                holdout_sharpe=float(hs.get("sharpe_ratio", 0.0)),
+                holdout_trades=int(hs.get("trade_count", 0)),
+            )
+            ranking.append(
+                StrategyRanking(
+                    strategy_id=strategy_id, label=spec.label,
+                    avg_oos_sharpe=wf.avg_oos_sharpe, avg_is_sharpe=wf.avg_is_sharpe,
+                    avg_oos_return_pct=wf.avg_oos_return_pct,
+                    wf_efficiency=wf.wf_efficiency, windows=len(wf.windows),
+                    params=params,
+                    holdout_return_pct=round(float(hs.get("total_return_pct", 0.0)), 2),
+                    holdout_sharpe=round(float(hs.get("sharpe_ratio", 0.0)), 3),
+                    holdout_max_drawdown_pct=round(float(hs.get("max_drawdown_pct", 0.0)), 2),
+                    holdout_trades=int(hs.get("trade_count", 0)),
+                    reliability=reliability,
+                )
             )
         except Exception as exc:  # una strategia non valutabile non blocca la ricerca
             ranking.append(
                 StrategyRanking(
-                    strategy_id=strategy_id,
-                    label=spec.label,
-                    avg_oos_sharpe=float("-inf"),
-                    avg_oos_return_pct=0.0,
-                    wf_efficiency=0.0,
-                    windows=0,
-                    error=str(exc),
+                    strategy_id=strategy_id, label=spec.label,
+                    avg_oos_sharpe=float("-inf"), avg_is_sharpe=0.0, avg_oos_return_pct=0.0,
+                    wf_efficiency=0.0, windows=0, params={},
+                    holdout_return_pct=0.0, holdout_sharpe=0.0,
+                    holdout_max_drawdown_pct=0.0, holdout_trades=0,
+                    reliability=RELIABILITY_NONE, error=str(exc),
                 )
             )
-            continue
+        if progress_callback is not None:
+            progress_callback(done, total, spec.label)
 
-        wf_by_id[strategy_id] = wf
-        ranking.append(
-            StrategyRanking(
-                strategy_id=strategy_id,
-                label=spec.label,
-                avg_oos_sharpe=wf.avg_oos_sharpe,
-                avg_oos_return_pct=wf.avg_oos_return_pct,
-                wf_efficiency=wf.wf_efficiency,
-                windows=len(wf.windows),
-            )
-        )
-
-    # Classifica: prima le valutabili per Sharpe OOS decrescente, gli errori in fondo.
+    # Classifica di selezione: valutabili per Sharpe OOS decrescente, errori in fondo.
     ranking.sort(key=lambda r: (r.error is None, r.avg_oos_sharpe), reverse=True)
 
     data_span = {
@@ -182,101 +220,53 @@ def run_strategy_search(
         "holdout_end": _fmt(holdout_index[-1]) if len(holdout_index) else "",
         "is_days": int(is_days),
         "oos_days": int(oos_days),
+        "scan_mode": scan_mode,
     }
     settings = {"initial_capital": float(initial_capital), "fee_bps": float(fee_bps)}
 
-    # Campione: prima riga valutabile con almeno una finestra completata.
-    champion = next(
-        (r for r in ranking if r.error is None and r.windows > 0), None
-    )
+    champion = next((r for r in ranking if r.error is None and r.windows > 0), None)
     if champion is None:
         return StrategySearchResult(
-            ranking=ranking,
-            champion_id=None,
-            champion_label=None,
-            champion_params={},
-            holdout={},
-            development={},
-            verdict="insufficiente",
-            verdict_note=(
-                "Nessuna strategia ha completato la walk-forward su questo periodo. "
-                "Prova con più storia o un timeframe diverso."
-            ),
-            data_span=data_span,
-            settings=settings,
+            symbol=symbol, ranking=ranking, champion_id=None, champion_label=None,
+            champion_params={}, holdout={}, development={},
+            reliability=RELIABILITY_NONE,
+            verdict_note="Nessuna strategia ha completato la validazione su questo periodo. "
+                         "Prova con più storia o un timeframe diverso.",
+            holdout_benchmark_return_pct=round(benchmark_return_pct, 2),
+            data_span=data_span, settings=settings,
         )
 
-    champion_wf = wf_by_id[champion.strategy_id]
-
-    # --- Strato 3: riottimizza il campione sull'intero sviluppo, valuta sul holdout ---
-    champion_params = _optimize_on_development(
-        data=dev_data,
-        strategy_id=champion.strategy_id,
-        fee_bps=fee_bps,
-        initial_capital=initial_capital,
-        optimize_by=optimize_by,
-    )
-
-    holdout_result = _evaluate_on_holdout(
-        full_data=data,
-        dev_len=dev_len,
-        holdout_index=holdout_index,
-        strategy_id=champion.strategy_id,
-        params=champion_params,
-        fee_bps=fee_bps,
-        initial_capital=initial_capital,
-    )
-    holdout_summary = holdout_result.summary
-
-    verdict, verdict_note = _giudizio(
-        dev_oos_sharpe=champion.avg_oos_sharpe,
-        holdout_summary=holdout_summary,
-    )
-
     development = {
-        "avg_oos_sharpe": champion_wf.avg_oos_sharpe,
-        "avg_is_sharpe": champion_wf.avg_is_sharpe,
-        "avg_oos_return_pct": champion_wf.avg_oos_return_pct,
-        "wf_efficiency": champion_wf.wf_efficiency,
-        "windows": len(champion_wf.windows),
+        "avg_oos_sharpe": champion.avg_oos_sharpe,
+        "avg_is_sharpe": champion.avg_is_sharpe,
+        "avg_oos_return_pct": champion.avg_oos_return_pct,
+        "wf_efficiency": champion.wf_efficiency,
+        "windows": champion.windows,
     }
     holdout = {
-        "sharpe_ratio": round(float(holdout_summary.get("sharpe_ratio", 0.0)), 3),
-        "total_return_pct": round(float(holdout_summary.get("total_return_pct", 0.0)), 2),
-        "benchmark_return_pct": round(float(holdout_summary.get("benchmark_return_pct", 0.0)), 2),
-        "excess_return_pct": round(float(holdout_summary.get("excess_return_pct", 0.0)), 2),
-        "max_drawdown_pct": round(float(holdout_summary.get("max_drawdown_pct", 0.0)), 2),
-        "trade_count": int(holdout_summary.get("trade_count", 0)),
+        "sharpe_ratio": champion.holdout_sharpe,
+        "total_return_pct": champion.holdout_return_pct,
+        "max_drawdown_pct": champion.holdout_max_drawdown_pct,
+        "trade_count": champion.holdout_trades,
     }
-
     return StrategySearchResult(
-        ranking=ranking,
-        champion_id=champion.strategy_id,
-        champion_label=champion.label,
-        champion_params=champion_params,
-        holdout=holdout,
-        development=development,
-        verdict=verdict,
-        verdict_note=verdict_note,
-        data_span=data_span,
-        settings=settings,
+        symbol=symbol, ranking=ranking,
+        champion_id=champion.strategy_id, champion_label=champion.label,
+        champion_params=champion.params, holdout=holdout, development=development,
+        reliability=champion.reliability,
+        verdict_note=_verdict_note(champion, benchmark_return_pct),
+        holdout_benchmark_return_pct=round(benchmark_return_pct, 2),
+        data_span=data_span, settings=settings,
     )
 
 
 def _optimize_on_development(
-    *,
-    data: pd.DataFrame,
-    strategy_id: str,
-    fee_bps: float,
-    initial_capital: float,
-    optimize_by: str,
+    *, data: pd.DataFrame, strategy_id: str, fee_bps: float,
+    initial_capital: float, optimize_by: str, scan_mode: str = "rapida",
 ) -> dict[str, int | float]:
-    """Trova i parametri migliori del campione sull'intero set di sviluppo.
-
-    Sono i parametri "di produzione" che verrebbero poi applicati: valutarli sul
-    holdout dà la stima onesta di ciò che ci si può aspettare.
-    """
-    grid = AUTOSETTING_GRIDS[strategy_id]
+    """Trova i parametri migliori della strategia sull'intero set di sviluppo."""
+    grids = AUTOSETTING_GRIDS_BY_MODE.get(scan_mode, AUTOSETTING_GRIDS)
+    grid = grids[strategy_id]
     names = list(grid.keys())
     values = [grid[name] for name in names]
     ascending = optimize_by == "max_drawdown_pct"
@@ -289,12 +279,7 @@ def _optimize_on_development(
         try:
             validate_strategy_parameters(strategy_id, params)
             signal = build_strategy_signal(strategy_id=strategy_id, data=data, parameters=params)
-            result = run_backtest(
-                data=data,
-                signal=signal,
-                initial_capital=initial_capital,
-                fee_bps=fee_bps,
-            )
+            result = run_backtest(data=data, signal=signal, initial_capital=initial_capital, fee_bps=fee_bps)
         except Exception:
             continue
         raw = float(result.summary.get(optimize_by, 0.0))
@@ -302,75 +287,83 @@ def _optimize_on_development(
         if score > best_score:
             best_score = score
             best_params = params
-
     return best_params
 
 
 def _evaluate_on_holdout(
-    *,
-    full_data: pd.DataFrame,
-    dev_len: int,
-    holdout_index: pd.Index,
-    strategy_id: str,
-    params: dict[str, int | float],
-    fee_bps: float,
-    initial_capital: float,
-) -> "object":
-    """Valuta i parametri del campione sul holdout, con buffer di warm-up.
-
-    Gli indicatori vengono innescati usando la coda dello sviluppo come contesto,
-    ma il backtest misura solo le barre del holdout: nessun dato di selezione
-    entra nel risultato finale.
-    """
+    *, full_data: pd.DataFrame, dev_len: int, holdout_index: pd.Index,
+    strategy_id: str, params: dict[str, int | float], fee_bps: float, initial_capital: float,
+):
+    """Valuta i parametri sul holdout, con buffer di warm-up per innescare gli indicatori."""
     spec = STRATEGY_SPECS[strategy_id]
     int_params = [p.name for p in spec.parameters if p.value_type == "int"]
     warmup = max((int(params[name]) for name in int_params if name in params), default=30)
-    warmup = min(warmup * 3, dev_len)  # buffer generoso per indicatori a lunga memoria
+    warmup = min(warmup * 3, dev_len)
 
     context = full_data.iloc[dev_len - warmup:]
     signal_ctx = build_strategy_signal(strategy_id=strategy_id, data=context, parameters=params)
     signal_holdout = signal_ctx.reindex(holdout_index).fillna(0.0)
     holdout_data = full_data.loc[holdout_index]
-    return run_backtest(
-        data=holdout_data,
-        signal=signal_holdout,
-        initial_capital=initial_capital,
-        fee_bps=fee_bps,
-    )
+    return run_backtest(data=holdout_data, signal=signal_holdout, initial_capital=initial_capital, fee_bps=fee_bps)
 
 
-def _giudizio(*, dev_oos_sharpe: float, holdout_summary: dict) -> tuple[str, str]:
-    """Confronta lo Sharpe walk-forward (sviluppo) con quello sul holdout."""
-    trades = int(holdout_summary.get("trade_count", 0))
-    holdout_sharpe = float(holdout_summary.get("sharpe_ratio", 0.0))
-
-    if trades == 0:
-        return (
-            "insufficiente",
-            "Sul periodo di holdout la strategia non apre operazioni: dati non conclusivi.",
-        )
-    if holdout_sharpe <= 0:
-        return (
-            "debole",
-            f"Fuori campione lo Sharpe è {holdout_sharpe:.2f}: la strategia non regge "
-            "su dati mai visti nella selezione.",
-        )
+def _reliability(
+    *, dev_oos_sharpe: float, holdout_return_pct: float, holdout_sharpe: float, holdout_trades: int
+) -> str:
+    """Traduce la tenuta su dati nuovi in un semaforo (alta/media/bassa/insufficiente)."""
+    if holdout_trades == 0:
+        return RELIABILITY_NONE
+    if holdout_return_pct <= 0 or holdout_sharpe <= 0:
+        return RELIABILITY_LOW
+    # Ha guadagnato su dati nuovi: alta se ha retto anche il confronto con lo sviluppo.
     if dev_oos_sharpe > 0:
         calo = (dev_oos_sharpe - holdout_sharpe) / dev_oos_sharpe
-        if calo > OVERFIT_SOGLIA:
-            return (
-                "debole",
-                f"Lo Sharpe cala del {calo * 100:.0f}% sul holdout "
-                f"({dev_oos_sharpe:.2f} → {holdout_sharpe:.2f}): possibile overfitting.",
-            )
-    return (
-        "confermata",
-        f"Lo Sharpe regge sul holdout ({holdout_sharpe:.2f}), dati mai usati nella "
-        "selezione: la scelta è robusta.",
-    )
+        if calo <= OVERFIT_SOGLIA:
+            return RELIABILITY_HIGH
+        return RELIABILITY_MEDIUM
+    return RELIABILITY_MEDIUM
+
+
+def _verdict_note(champion: "StrategyRanking", benchmark_return_pct: float) -> str:
+    """Frase di sintesi in lingua semplice sul campione."""
+    r = champion.holdout_return_pct
+    if champion.reliability == RELIABILITY_HIGH:
+        return (f"Su dati nuovi mai visti ha guadagnato il {r:.1f}% e ha retto bene: "
+                "è la più solida fra quelle testate.")
+    if champion.reliability == RELIABILITY_MEDIUM:
+        return (f"Su dati nuovi ha guadagnato il {r:.1f}%, ma meno di quanto prometteva sul passato: "
+                "promettente ma da prendere con cautela.")
+    if champion.reliability == RELIABILITY_NONE:
+        return "Sul periodo di prova non ha aperto operazioni: risultato non conclusivo."
+    # bassa
+    confronto = ""
+    if benchmark_return_pct:
+        confronto = f" (comprando e basta: {benchmark_return_pct:+.1f}%)"
+    return (f"La più promettente sul passato, su dati nuovi ha reso il {r:.1f}%{confronto}: "
+            "non ha retto la prova, meglio non fidarsi.")
 
 
 def _fmt(ts) -> str:
     if hasattr(ts, "strftime"):
         return ts.strftime("%Y-%m-%d")
     return str(ts)[:10]
+
+
+def to_serializable(result) -> dict:
+    """Converte un risultato (dataclass) in dict JSON-safe.
+
+    Serve sia per salvare su disco sia per renderizzare i template da un'unica
+    fonte. I valori non finiti (es. -inf usato per ordinare le strategie in
+    errore) diventano ``None``.
+    """
+    return _clean(dataclasses.asdict(result))
+
+
+def _clean(value):
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _clean(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_clean(item) for item in value]
+    return value

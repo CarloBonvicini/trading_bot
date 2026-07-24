@@ -236,11 +236,84 @@
       >
         <section class="home-workspace-grid is-active">
 
+          {# ── Modalità automatica (consigliata): il sistema sceglie la strategia ── #}
+          <article class="panel panel-form auto-hero-panel">
+            <div class="panel-header home-panel-header">
+              <div>
+                <p class="eyebrow">consigliato</p>
+                <h3>Avvia un test automatico</h3>
+              </div>
+            </div>
+            <p class="inline-note">
+              Scegli uno o più mercati e quanto vuoi che il sistema scavi. Trova lui la strategia
+              migliore e ti dice, in parole semplici, se è affidabile su dati mai visti.
+            </p>
+
+            <form action="{{ url_for('start_search') }}" method="post" class="auto-search-form">
+              <div class="field-block">
+                <label>
+                  <span>Mercati (uno o più)</span>
+                  <input name="symbols" value="{{ form_values.symbol }}" placeholder="SPY, AAPL, BTC-USD" required>
+                </label>
+                <p class="field-hint">Separa più simboli con una virgola. Più mercati = test più robusto ma più lungo.</p>
+              </div>
+
+              <div class="input-grid">
+                <div class="field-block">
+                  <label><span>Da</span><input type="date" name="start" value="{{ form_values.start }}" required></label>
+                </div>
+                <div class="field-block">
+                  <label><span>A</span><input type="date" name="end" value="{{ form_values.end }}" required></label>
+                </div>
+              </div>
+
+              <div class="input-grid">
+                <div class="field-block">
+                  <label>
+                    <span>Timeframe</span>
+                    <select name="interval">
+                      {% for interval in intervals %}
+                        <option value="{{ interval }}" {% if form_values.interval == interval %}selected{% endif %}>{{ interval }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                </div>
+                <div class="field-block">
+                  <label>
+                    <span>Quanto scavare</span>
+                    <select name="depth">
+                      <option value="rapida">Rapida — pochi secondi</option>
+                      <option value="media">Media — circa un minuto</option>
+                      <option value="lunga">Approfondita — qualche minuto</option>
+                      <option value="xl">Massima — lenta, fino a ore su più mercati</option>
+                    </select>
+                  </label>
+                  <p class="field-hint">Test lunghi girano in background con barra di avanzamento.</p>
+                </div>
+              </div>
+
+              <div class="input-grid">
+                <div class="field-block">
+                  <label><span>Capitale iniziale (€)</span><input type="number" step="100" min="100" name="initial_capital" value="{{ form_values.initial_capital }}"></label>
+                </div>
+                <div class="field-block">
+                  <label><span>Commissioni (bps)</span><input type="number" step="0.1" min="0" name="fee_bps" value="{{ form_values.fee_bps }}"></label>
+                </div>
+              </div>
+
+              <div class="button-row" style="margin-top:0.75rem">
+                <button class="action-button auto-search-button" type="submit">Trova la strategia migliore →</button>
+              </div>
+            </form>
+          </article>
+
+          <details class="advanced-manual">
+            <summary>Opzioni avanzate — preferisco scegliere io la strategia</summary>
           <article class="panel panel-form home-launch-panel">
             <div class="panel-header home-panel-header">
               <div>
-                <p class="eyebrow">apri grafico</p>
-                <h3>Configura il test</h3>
+                <p class="eyebrow">modalità manuale</p>
+                <h3>Scelgo io la strategia</h3>
               </div>
               <span class="strategy-chip strategy-chip-accent">{{ saved_items|length }} sessioni salvate</span>
             </div>
@@ -462,24 +535,13 @@
                 {% include "partials/_strategy_sections.html" %}
               </div>
 
-              {# Ricerca automatica: dal solo contesto (simbolo/periodo/capitale)
-                 il sistema sceglie la strategia migliore con validazione severa. #}
-              <div class="auto-search-cta">
-                <button class="action-button auto-search-button" type="submit" formaction="{{ url_for('auto_search_backtest') }}">
-                  Trova la strategia migliore
-                </button>
-                <p class="inline-note">
-                  Non sai quale scegliere? Testa tutte le strategie in walk-forward e valida
-                  la vincente su dati mai usati nella selezione. Richiede qualche secondo.
-                </p>
-              </div>
-
               <div class="button-row home-step-actions">
-                <button class="ghost-button" type="submit" id="submit-button">Oppure scegli tu: apri grafico →</button>
+                <button class="action-button" type="submit" id="submit-button">Lancia il test →</button>
                 <button class="ghost-button" type="submit" formaction="{{ url_for('create_preset') }}">Salva preset</button>
               </div>
             </form>
           </article>
+          </details>
 
           <div class="home-side-stack">
             <article class="panel home-insight-panel">
