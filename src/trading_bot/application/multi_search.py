@@ -11,6 +11,7 @@ quale resa media. Vince la strategia più costantemente solida fra i mercati.
 """
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -21,6 +22,9 @@ from trading_bot.application.strategy_search import (
     MARGINE_MINIMO_PCT,
     RELIABILITY_HIGH,
     Candidato,
+    StrategyRanking,
+    chiave_candidato,
+    costruisci_candidati,
     estimate_search_combinations,
     run_strategy_search,
 )
@@ -93,8 +97,17 @@ def run_multi_market_search(
     download_data: Callable[..., pd.DataFrame] = download_price_data,
     progress_callback: ProgressCallback | None = None,
     max_workers: int | None = None,
+    checkpoint: dict | None = None,
+    on_row: Callable[[str, dict, float, int], None] | None = None,
 ) -> MultiMarketSearchResult:
-    """Esegue la ricerca su più mercati e aggrega la robustezza per strategia."""
+    """Esegue la ricerca su più mercati e aggrega la robustezza per strategia.
+
+    ``checkpoint`` contiene il lavoro già svolto in una ricerca interrotta
+    (``{"markets": {simbolo: {"rows": {...}, "benchmark_return_pct": ..., "bars": ...}}}``):
+    i candidati già valutati non vengono ricalcolati e i mercati completati non
+    vengono nemmeno riscaricati. ``on_row`` riceve ogni candidato completato per
+    salvarlo su disco.
+    """
     clean_symbols = [s.strip().upper() for s in symbols if s and s.strip()]
     if not clean_symbols:
         raise ValueError("Indica almeno un simbolo da analizzare.")
@@ -109,8 +122,37 @@ def run_multi_market_search(
     # strategy_id -> liste di risultati per mercato (resa su dati nuovi, sharpe sviluppo, affidabile)
     per_strategy: dict[str, dict[str, list]] = {}
 
+    attesi = [chiave_candidato(c) for c in costruisci_candidati(strategy_ids, consenti_short)]
+
     for index, symbol in enumerate(clean_symbols):
         mercati_rimanenti = len(clean_symbols) - index - 1
+        salvate = (checkpoint or {}).get("markets", {}).get(symbol, {})
+        righe_salvate: dict[str, dict] = salvate.get("rows", {})
+
+        # Mercato già completato prima dell'interruzione: si riusa tutto, senza
+        # nemmeno riscaricare i dati.
+        if righe_salvate and all(chiave in righe_salvate for chiave in attesi):
+            ranking = [StrategyRanking(**riga) for riga in righe_salvate.values()]
+            ranking.sort(
+                key=lambda r: (r.error is None, r.dev_oos_trades > 0, r.avg_oos_sharpe),
+                reverse=True,
+            )
+            market_info[symbol] = _info_da_righe(ranking, salvate)
+            combinazioni_concluse += estimate_search_combinations(
+                int(salvate.get("bars", 0)), scan_mode=scan_mode,
+                strategy_ids=strategy_ids, consenti_short=consenti_short,
+            )
+            if progress_callback is not None:
+                progress_callback(combinazioni_concluse, combinazioni_concluse,
+                                  f"{symbol} · già completato")
+            _aggrega(per_strategy, ranking)
+            continue
+
+        barre_correnti = [int(salvate.get("bars", 0))]
+
+        def _riga_completata(riga, benchmark: float, _sym=symbol) -> None:
+            if on_row is not None:
+                on_row(_sym, dataclasses.asdict(riga), benchmark, barre_correnti[0])
 
         def inner_progress(
             done: int, market_total: int, label: str,
@@ -122,11 +164,15 @@ def run_multi_market_search(
 
         try:
             data = download_data(symbol=symbol, start=start, end=end, interval=interval)
+            barre_correnti[0] = len(data)
             result = run_strategy_search(
                 data=data, symbol=symbol, interval=interval,
                 initial_capital=initial_capital, fee_bps=fee_bps,
                 slippage_bps=slippage_bps, scan_mode=scan_mode, strategy_ids=strategy_ids, progress_callback=inner_progress,
                 consenti_short=consenti_short, max_workers=max_workers,
+                precomputed_rows=righe_salvate or None,
+                benchmark_return_pct=float(salvate.get("benchmark_return_pct", 0.0)),
+                on_row=_riga_completata,
             )
         except Exception as exc:
             market_info[symbol] = {"error": str(exc)}
@@ -155,21 +201,7 @@ def run_multi_market_search(
             "by_strategy": by_strategy,
         }
 
-        for row in result.ranking:
-            if row.error is not None:
-                continue
-            bucket = per_strategy.setdefault(
-                Candidato(row.strategy_id, row.consenti_short),
-                {"returns": [], "excess": [], "dev_sharpe": [], "reliable": 0, "beat": 0,
-                 "label": row.label},
-            )
-            bucket["returns"].append(row.holdout_return_pct)
-            bucket["excess"].append(row.holdout_excess_return_pct)
-            bucket["dev_sharpe"].append(row.avg_oos_sharpe)
-            if row.reliability == RELIABILITY_HIGH:
-                bucket["reliable"] += 1
-            if row.holdout_excess_return_pct >= MARGINE_MINIMO_PCT:
-                bucket["beat"] += 1
+        _aggrega(per_strategy, result.ranking)
 
     strategy_scores = _aggregate(per_strategy)
     overall = strategy_scores[0] if strategy_scores else None
@@ -202,6 +234,44 @@ def run_multi_market_search(
             "slippage_bps": float(slippage_bps),
         },
     )
+
+
+def _aggrega(per_strategy: dict, righe: list) -> None:
+    """Somma le righe di un mercato nell'aggregato per candidato."""
+    for row in righe:
+        if row.error is not None:
+            continue
+        bucket = per_strategy.setdefault(
+            Candidato(row.strategy_id, row.consenti_short),
+            {"returns": [], "excess": [], "dev_sharpe": [], "reliable": 0, "beat": 0,
+             "label": row.label},
+        )
+        bucket["returns"].append(row.holdout_return_pct)
+        bucket["excess"].append(row.holdout_excess_return_pct)
+        bucket["dev_sharpe"].append(row.avg_oos_sharpe)
+        if row.reliability == RELIABILITY_HIGH:
+            bucket["reliable"] += 1
+        if row.holdout_excess_return_pct >= MARGINE_MINIMO_PCT:
+            bucket["beat"] += 1
+
+
+def _info_da_righe(ranking: list, salvate: dict) -> dict:
+    """Ricostruisce la scheda di un mercato dalle righe salvate su disco."""
+    campione = next((r for r in ranking if r.error is None and r.windows > 0), None)
+    return {
+        "error": None,
+        "bars": int(salvate.get("bars", 0)),
+        "benchmark": float(salvate.get("benchmark_return_pct", 0.0)),
+        "local_return": float(campione.holdout_return_pct) if campione else 0.0,
+        "local_reliability": campione.reliability if campione else "insufficiente",
+        "local_champion_label": campione.label if campione else None,
+        "by_strategy": {
+            Candidato(r.strategy_id, r.consenti_short): {
+                "return": r.holdout_return_pct, "reliability": r.reliability,
+            }
+            for r in ranking if r.error is None
+        },
+    }
 
 
 def _market_outcome(symbol: str, info: dict, campione, overall_label: str | None) -> MarketOutcome:

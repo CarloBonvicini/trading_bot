@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from trading_bot.application.multi_search import run_multi_market_search
+from trading_bot.application.multi_search import N_STRATEGIES, run_multi_market_search
 from trading_bot.application.strategy_search import to_serializable
 
 _JOBS: dict[str, dict] = {}
@@ -37,26 +37,64 @@ def start_multi_search_job(
     initial_capital: float,
     fee_bps: float,
     scan_mode: str,
-    slippage_bps: float = 0.0,
     start: str,
     end: str,
     reports_dir: str | Path,
     consenti_short: bool = False,
+    slippage_bps: float = 0.0,
 ) -> str:
     """Avvia una ricerca multi-mercato in background e restituisce l'id del job."""
     job_id = uuid.uuid4().hex[:12]
+    parametri = {
+        "symbols": symbols,
+        "interval": interval,
+        "initial_capital": float(initial_capital),
+        "fee_bps": float(fee_bps),
+        "scan_mode": scan_mode,
+        "start": start,
+        "end": end,
+        "consenti_short": bool(consenti_short),
+        "slippage_bps": float(slippage_bps),
+    }
+    stato = {"id": job_id, "params": parametri, "markets": {}}
+    _write_checkpoint(job_id, reports_dir, stato)
+    _launch(job_id=job_id, parametri=parametri, reports_dir=reports_dir, stato=stato)
+    return job_id
+
+
+def resume_search_job(job_id: str, reports_dir: str | Path) -> str | None:
+    """Riprende una ricerca interrotta riusando il lavoro già salvato.
+
+    Restituisce l'id del job, o None se non c'è un avanzamento da riprendere.
+    Se il job è già in esecuzione non fa nulla (evita due thread sullo stesso id).
+    """
+    stato = load_checkpoint(job_id, reports_dir)
+    if stato is None or not stato.get("params"):
+        return None
+
+    with _LOCK:
+        esistente = _JOBS.get(job_id)
+        if esistente is not None and esistente.get("status") == "running":
+            return job_id
+
+    _launch(job_id=job_id, parametri=stato["params"], reports_dir=reports_dir, stato=stato)
+    return job_id
+
+
+def _launch(*, job_id: str, parametri: dict, reports_dir: str | Path, stato: dict) -> None:
+    """Avvia il thread di ricerca, salvando l'avanzamento a ogni strategia."""
     job = {
         "id": job_id,
         "status": "running",
+        "consenti_short": bool(parametri.get("consenti_short", False)),
         "progress": 0,
         # Il totale reale (combinazioni da provare) si conosce dopo il download
         # dei dati: fino ad allora l'avanzamento resta a 0.
         "total": 1,
         "message": "Scarico i dati di mercato…",
-        "symbols": symbols,
-        "interval": interval,
-        "scan_mode": scan_mode,
-        "consenti_short": consenti_short,
+        "symbols": parametri["symbols"],
+        "interval": parametri["interval"],
+        "scan_mode": parametri["scan_mode"],
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "result": None,
         "error": None,
@@ -70,13 +108,28 @@ def start_multi_search_job(
             job["total"] = total
             job["message"] = message
 
+    def _on_row(symbol: str, riga: dict, benchmark: float, barre: int) -> None:
+        """Salva su disco una strategia completata: se la ricerca si interrompe
+        qui, alla ripresa non verrà rifatta."""
+        with _LOCK:
+            mercato = stato.setdefault("markets", {}).setdefault(symbol, {"rows": {}})
+            # La chiave comprende il verso: con il ribasso attivo la stessa
+            # strategia corre due volte e le due righe non vanno confuse.
+            verso = "short" if riga.get("consenti_short") else "long"
+            mercato["rows"][f"{riga['strategy_id']}|{verso}"] = riga
+            mercato["benchmark_return_pct"] = benchmark
+            mercato["bars"] = barre
+            _write_checkpoint(job_id, reports_dir, stato)
+
     def _worker() -> None:
         try:
             result = run_multi_market_search(
-                symbols=symbols, interval=interval, initial_capital=initial_capital,
-                fee_bps=fee_bps, slippage_bps=slippage_bps,
-                scan_mode=scan_mode, start=start, end=end,
-                consenti_short=consenti_short, progress_callback=_progress,
+                symbols=parametri["symbols"], interval=parametri["interval"],
+                initial_capital=parametri["initial_capital"], fee_bps=parametri["fee_bps"],
+                scan_mode=parametri["scan_mode"], start=parametri["start"], end=parametri["end"],
+                consenti_short=parametri.get("consenti_short", False),
+                slippage_bps=parametri.get("slippage_bps", 0.0),
+                progress_callback=_progress, checkpoint=stato, on_row=_on_row,
             )
             payload = to_serializable(result)
             path = _job_dir(reports_dir) / f"{job_id}.json"
@@ -86,6 +139,8 @@ def start_multi_search_job(
                      "result": payload},
                     handle, indent=2,
                 )
+            # Il risultato definitivo sostituisce l'avanzamento parziale.
+            _checkpoint_path(job_id, reports_dir).unlink(missing_ok=True)
             with _LOCK:
                 job["status"] = "done"
                 job["result"] = payload
@@ -98,7 +153,32 @@ def start_multi_search_job(
                 job["message"] = "Errore durante la ricerca"
 
     threading.Thread(target=_worker, name=f"search-{job_id}", daemon=True).start()
-    return job_id
+
+
+def _checkpoint_path(job_id: str, reports_dir: str | Path) -> Path:
+    return _job_dir(reports_dir) / f"{job_id}.progress.json"
+
+
+def _write_checkpoint(job_id: str, reports_dir: str | Path, stato: dict) -> None:
+    stato["updated_at"] = datetime.now().isoformat(timespec="seconds")
+    path = _checkpoint_path(job_id, reports_dir)
+    # Scrittura atomica: un'interruzione a metà non deve lasciare un file rotto.
+    temporaneo = path.with_suffix(".tmp")
+    with temporaneo.open("w", encoding="utf-8") as handle:
+        json.dump(stato, handle, indent=2)
+    temporaneo.replace(path)
+
+
+def load_checkpoint(job_id: str, reports_dir: str | Path) -> dict | None:
+    """Legge l'avanzamento salvato di una ricerca (None se non esiste)."""
+    path = _checkpoint_path(job_id, reports_dir)
+    if not path.exists():
+        return None
+    try:
+        with path.open(encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
 
 
 def get_job(job_id: str, reports_dir: str | Path) -> dict | None:
@@ -119,6 +199,21 @@ def get_job(job_id: str, reports_dir: str | Path) -> dict | None:
             "symbols": result.get("symbols", []),
             "scan_mode": result.get("scan_mode", ""),
         }
+
+    # Nessun risultato ma un avanzamento salvato: ricerca interrotta, riprendibile.
+    stato = load_checkpoint(job_id, reports_dir)
+    if stato is not None:
+        parametri = stato.get("params") or {}
+        fatte = sum(len(m.get("rows") or {}) for m in (stato.get("markets") or {}).values())
+        symbols = parametri.get("symbols") or []
+        return {
+            "id": job_id, "status": "interrupted", "progress": fatte,
+            "total": max(1, len(symbols) * N_STRATEGIES),
+            "message": f"Interrotta dopo {fatte} strategie completate",
+            "result": None, "error": None,
+            "symbols": symbols,
+            "scan_mode": parametri.get("scan_mode", ""),
+        }
     return None
 
 
@@ -134,6 +229,9 @@ def list_saved_searches(reports_dir: str | Path, limit: int = 20) -> list[dict]:
 
     searches: list[dict] = []
     for path in directory.glob("*.json"):
+        # I file di avanzamento non sono risultati: vengono elencati a parte.
+        if path.name.endswith(".progress.json") or path.name.endswith(".tmp"):
+            continue
         try:
             with path.open(encoding="utf-8") as handle:
                 saved = json.load(handle)
@@ -168,6 +266,40 @@ def list_saved_searches(reports_dir: str | Path, limit: int = 20) -> list[dict]:
                 "markets_count": tested,
                 "markets_reliable": reliable,
                 "scan_mode": result.get("scan_mode") or "",
+                "interrupted": False,
+            }
+        )
+
+    # Ricerche interrotte (avanzamento salvato senza risultato finale): vanno
+    # mostrate perché sono riprendibili.
+    completate = {item["id"] for item in searches}
+    for path in directory.glob("*.progress.json"):
+        job_id = path.name[: -len(".progress.json")]
+        if job_id in completate:
+            continue
+        try:
+            with path.open(encoding="utf-8") as handle:
+                stato = json.load(handle)
+        except (OSError, ValueError):
+            continue
+        parametri = stato.get("params") or {}
+        symbols = parametri.get("symbols") or []
+        fatte = sum(len(m.get("rows") or {}) for m in (stato.get("markets") or {}).values())
+        searches.append(
+            {
+                "id": job_id,
+                "saved_at": str(stato.get("updated_at") or ""),
+                "saved_at_display": _format_saved_at(stato.get("updated_at")),
+                "symbols": symbols,
+                "symbols_display": ", ".join(symbols) if symbols else "—",
+                "champion_label": None,
+                "verdict_note": "",
+                "markets_count": len(symbols),
+                "markets_reliable": 0,
+                "scan_mode": parametri.get("scan_mode") or "",
+                "interrupted": True,
+                "strategies_done": fatte,
+                "strategies_total": len(symbols) * N_STRATEGIES,
             }
         )
 

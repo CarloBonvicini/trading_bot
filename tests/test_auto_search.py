@@ -1,6 +1,7 @@
 """Test per la ricerca automatica multi-mercato e l'esecuzione in background."""
 from __future__ import annotations
 
+import dataclasses
 import json
 import time
 from pathlib import Path
@@ -14,9 +15,10 @@ from trading_bot.application.search_jobs import (
     get_job,
     job_status,
     list_saved_searches,
+    resume_search_job,
     start_multi_search_job,
 )
-from trading_bot.application.strategy_search import to_serializable
+from trading_bot.application.strategy_search import chiave_candidato, to_serializable
 
 _STRATS = ["sma_cross", "ema_cross", "rsi_mean_reversion"]
 
@@ -234,6 +236,95 @@ def test_list_saved_searches_prefers_champion_aggregate(tmp_path: Path) -> None:
 
     assert search["markets_reliable"] == 2
     assert search["markets_count"] == 2
+
+
+@pytest.mark.lento
+def test_checkpoint_lets_search_skip_already_computed_strategies(mercato_sintetico) -> None:
+    """Il cuore della ripresa: le strategie già salvate non vengono ricalcolate."""
+    from trading_bot.application.strategy_search import run_strategy_search
+
+    data = mercato_sintetico(seed=1, deriva=60)
+    # Prima passata completa: raccoglie le righe da riusare.
+    completa = run_strategy_search(data=data, symbol="AAA", fee_bps=0.0, strategy_ids=_STRATS)
+    salvate = {
+        chiave_candidato(r): dataclasses.asdict(r)
+        for r in completa.ranking
+        if r.strategy_id in {"sma_cross", "ema_cross"}
+    }
+
+    combinazioni: list[int] = []
+    ripresa = run_strategy_search(
+        data=data, symbol="AAA", fee_bps=0.0, strategy_ids=_STRATS,
+        precomputed_rows=salvate,
+        progress_callback=lambda done, total, label: combinazioni.append(done),
+    )
+
+    # Stesso esito della passata completa...
+    assert ripresa.champion_id == completa.champion_id
+    assert {r.strategy_id for r in ripresa.ranking} == {r.strategy_id for r in completa.ranking}
+    # ...ma le due strategie salvate risultano già conteggiate fin dall'inizio,
+    # quindi il contatore parte molto avanti invece che da zero.
+    assert combinazioni[0] > 0
+
+
+@pytest.mark.lento
+def test_job_saves_partial_progress_and_can_be_resumed(tmp_path: Path, monkeypatch, mercato_sintetico) -> None:
+    """Un lavoro interrotto lascia un checkpoint riprendibile, e la ripresa
+    riusa i dati senza riscaricare i mercati già completati."""
+    mapping = {"AAA": mercato_sintetico(seed=1, deriva=60)}
+    monkeypatch.setattr(
+        "trading_bot.application.multi_search.download_price_data",
+        _fake_download_factory(mapping),
+    )
+    monkeypatch.setattr("trading_bot.application.multi_search.N_STRATEGIES", len(_STRATS))
+    monkeypatch.setattr("trading_bot.application.search_jobs.N_STRATEGIES", len(_STRATS))
+
+    # Simula un'interruzione: checkpoint scritto a mano con una strategia fatta.
+    job_id = "ripresa1"
+    parziale = run_strategy_search_rows(mapping["AAA"])
+    directory = tmp_path / "auto_searches"
+    directory.mkdir(parents=True)
+    (directory / f"{job_id}.progress.json").write_text(
+        json.dumps({
+            "id": job_id,
+            "updated_at": "2026-08-06T01:00:00",
+            "params": {
+                "symbols": ["AAA"], "interval": "1d", "initial_capital": 10000.0,
+                "fee_bps": 0.0, "scan_mode": "rapida", "start": "", "end": "",
+            },
+            "markets": {"AAA": {"rows": parziale, "benchmark_return_pct": 1.0, "bars": 320}},
+        }),
+        encoding="utf-8",
+    )
+
+    # La home la mostra come interrotta e riprendibile.
+    elenco = list_saved_searches(tmp_path)
+    assert elenco[0]["interrupted"] is True
+    assert elenco[0]["strategies_done"] == len(parziale)
+    assert get_job(job_id, tmp_path)["status"] == "interrupted"
+
+    assert resume_search_job(job_id, tmp_path) == job_id
+
+    deadline = time.time() + 60
+    status = job_status(job_id, tmp_path)
+    while status and status["status"] == "running" and time.time() < deadline:
+        time.sleep(0.4)
+        status = job_status(job_id, tmp_path)
+
+    assert status["status"] == "done"
+    # A fine corsa il risultato sostituisce il checkpoint.
+    assert (directory / f"{job_id}.json").exists()
+    assert not (directory / f"{job_id}.progress.json").exists()
+    # E non compare più come interrotta.
+    assert all(not s["interrupted"] for s in list_saved_searches(tmp_path))
+
+
+def run_strategy_search_rows(data) -> dict:
+    """Righe di una sola strategia, come le salverebbe un lavoro interrotto."""
+    from trading_bot.application.strategy_search import run_strategy_search
+
+    parziale = run_strategy_search(data=data, symbol="AAA", fee_bps=0.0, strategy_ids=["sma_cross"])
+    return {chiave_candidato(r): dataclasses.asdict(r) for r in parziale.ranking}
 
 
 def test_get_job_loads_persisted_result_after_restart(tmp_path: Path) -> None:

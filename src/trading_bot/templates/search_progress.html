@@ -6,12 +6,29 @@
 {% set depth_labels = {'rapida': 'Rapida', 'media': 'Media', 'lunga': 'Approfondita', 'xl': 'Massima'} %}
 <div class="page-header">
   <p class="eyebrow">ricerca automatica</p>
-  <h1>Sto cercando la strategia migliore…</h1>
+  <h1>
+    {% if job.status == 'interrupted' %}Ricerca interrotta{% else %}Sto cercando la strategia migliore…{% endif %}
+  </h1>
   <p class="inline-note">
     Mercati: <strong>{{ job.symbols | join(', ') }}</strong> &middot;
     profondità: <strong>{{ depth_labels.get(job.scan_mode, job.scan_mode) }}</strong>
   </p>
 </div>
+
+{% if job.status == 'interrupted' %}
+  {# Il lavoro già fatto è salvato su disco: si riparte da lì, senza rifarlo. #}
+  <section class="panel">
+    <p style="font-size:15px;line-height:1.7;margin:0 0 0.75rem;">
+      Questa ricerca si è fermata (server riavviato o chiuso), ma
+      <strong>{{ job.progress }} strategie su {{ job.total }} sono già state calcolate e salvate</strong>.
+      Riprendendola non verranno rifatte: il lavoro riparte da dove era arrivato.
+    </p>
+    <form action="{{ url_for('resume_search', job_id=job_id) }}" method="post" class="button-row">
+      <button class="action-button" type="submit">Riprendi la ricerca →</button>
+      <a class="ghost-button" href="{{ url_for('index') }}">Torna alla home</a>
+    </form>
+  </section>
+{% else %}
 
 <section class="panel">
   <p class="inline-note">
@@ -34,10 +51,13 @@
 <div class="button-row" style="margin-top:1rem">
   <a class="ghost-button" href="{{ url_for('new_backtest_home') }}">← Annulla e torna indietro</a>
 </div>
+{% endif %}
 
 <script>
   (function () {
     var jobId = "{{ job_id }}";
+    // In stato "interrotta" non c'è nulla da seguire: si riprende col pulsante.
+    if (!document.getElementById('search-bar-fill')) return;
     var bar = document.getElementById('search-bar-fill');
     var msg = document.getElementById('search-msg');
     var pct = document.getElementById('search-pct');
