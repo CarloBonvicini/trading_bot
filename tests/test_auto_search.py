@@ -9,7 +9,12 @@ import numpy as np
 import pandas as pd
 
 from trading_bot.application.multi_search import MultiMarketSearchResult, run_multi_market_search
-from trading_bot.application.search_jobs import get_job, job_status, start_multi_search_job
+from trading_bot.application.search_jobs import (
+    get_job,
+    job_status,
+    list_saved_searches,
+    start_multi_search_job,
+)
 from trading_bot.application.strategy_search import to_serializable
 
 _STRATS = ["sma_cross", "ema_cross", "rsi_mean_reversion"]
@@ -106,6 +111,65 @@ def test_start_multi_search_job_runs_in_background_and_persists(tmp_path: Path, 
     assert job["result"]["symbols"] == ["AAA", "BBB"]
     # Il risultato è stato salvato su disco e resta caricabile.
     assert (tmp_path / "auto_searches" / f"{job_id}.json").exists()
+
+
+def test_list_saved_searches_returns_newest_first(tmp_path: Path) -> None:
+    directory = tmp_path / "auto_searches"
+    directory.mkdir(parents=True)
+    for job_id, saved_at, symbols in (
+        ("vecchia", "2026-07-01T09:00:00", ["SPY"]),
+        ("nuova", "2026-07-24T18:15:00", ["AAPL", "MSFT"]),
+    ):
+        (directory / f"{job_id}.json").write_text(
+            json.dumps({
+                "id": job_id, "saved_at": saved_at,
+                "result": {
+                    "symbols": symbols,
+                    "overall_champion_label": "SMA Crossover",
+                    "markets": [{"reliability": "alta"}] * len(symbols),
+                },
+            }),
+            encoding="utf-8",
+        )
+
+    searches = list_saved_searches(tmp_path)
+
+    assert [s["id"] for s in searches] == ["nuova", "vecchia"]
+    assert searches[0]["symbols_display"] == "AAPL, MSFT"
+    assert searches[0]["markets_reliable"] == 2
+    assert searches[0]["saved_at_display"] == "24/07/2026 18:15"
+
+
+def test_list_saved_searches_is_empty_without_directory(tmp_path: Path) -> None:
+    assert list_saved_searches(tmp_path) == []
+
+
+def test_list_saved_searches_prefers_champion_aggregate(tmp_path: Path) -> None:
+    """Il conteggio mostrato deve venire dall'aggregato del campione (stessa
+    fonte della frase di verdetto), non dalle schede per-mercato."""
+    directory = tmp_path / "auto_searches"
+    directory.mkdir(parents=True)
+    (directory / "x.json").write_text(
+        json.dumps({
+            "id": "x", "saved_at": "2026-07-24T12:00:00",
+            "result": {
+                "symbols": ["SPY", "AAPL"],
+                "overall_champion_id": "keltner_reversion",
+                "overall_champion_label": "Keltner Reversion",
+                # Schede con il campione locale (vecchio formato): direbbero 0.
+                "markets": [{"reliability": "bassa"}, {"reliability": "bassa"}],
+                "strategy_scores": [
+                    {"strategy_id": "keltner_reversion", "markets_reliable": 2, "markets_tested": 2},
+                ],
+            },
+        }),
+        encoding="utf-8",
+    )
+
+    search = list_saved_searches(tmp_path)[0]
+
+    assert search["markets_reliable"] == 2
+    assert search["markets_count"] == 2
 
 
 def test_get_job_loads_persisted_result_after_restart(tmp_path: Path) -> None:

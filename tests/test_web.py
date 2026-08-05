@@ -446,16 +446,51 @@ def test_index_lists_existing_reports(tmp_path: Path) -> None:
     assert 'data-home-tab-button="dashboard"' in body
     assert 'data-home-tab-button="strategies"' not in body
     assert 'data-home-tab-route="/backtests/new"' in body
-    assert "Panoramica workspace" in body
-    assert "ultima sessione" in body
-    assert "Miglior win ratio" in body
-    assert "Best Sharpe" in body
-    assert "Metriche da tenere d'occhio" in body
-    assert "100.00%" in body
-    assert "1.12" in body
+    # La home semplificata: una sola azione chiara e due elenchi leggibili.
+    assert "Avvia un test" in body
+    assert "Strategie trovate dal sistema" in body
+    assert "Test salvati" in body
+    # Il test salvato compare con il suo rendimento, senza gergo.
+    assert "+20.00%" in body
+    # Niente più schede di metriche in gergo sulla home (restano solo dentro
+    # le opzioni avanzate del form manuale).
+    assert "Miglior win ratio" not in body
+    assert "Metriche da tenere d'occhio" not in body
+    assert "Panoramica workspace" not in body
+    assert "Simboli piu' usati" not in body
     assert 'id="home-panel-backtest"' in body
     assert "/drafts/resume/SPY-sma_cross-20260403-090000" in body
     assert ">Backtest<" in body
+
+
+def test_index_lists_saved_auto_searches(tmp_path: Path) -> None:
+    """Le ricerche automatiche già fatte devono essere riapribili dalla home."""
+    searches_dir = tmp_path / "auto_searches"
+    searches_dir.mkdir(parents=True)
+    (searches_dir / "abc123.json").write_text(
+        json.dumps(
+            {
+                "id": "abc123",
+                "saved_at": "2026-07-24T10:30:00",
+                "result": {
+                    "symbols": ["SPY", "MSFT"],
+                    "overall_champion_label": "Keltner Reversion",
+                    "verdict_note": "Keltner Reversion è la più solida.",
+                    "markets": [{"reliability": "alta"}, {"reliability": "media"}],
+                    "scan_mode": "rapida",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+
+    body = app.test_client().get("/").get_data(as_text=True)
+
+    assert "SPY, MSFT" in body
+    assert "Keltner Reversion" in body
+    assert "/searches/abc123" in body
+    assert "affidabile su 1/2" in body
 
 
 def test_new_backtest_page_renders_setup_form(tmp_path: Path) -> None:

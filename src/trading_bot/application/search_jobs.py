@@ -117,6 +117,69 @@ def get_job(job_id: str, reports_dir: str | Path) -> dict | None:
     return None
 
 
+def list_saved_searches(reports_dir: str | Path, limit: int = 20) -> list[dict]:
+    """Elenca le ricerche automatiche già completate, dalla più recente.
+
+    Legge i file salvati in ``reports/auto_searches``: servono alla home per
+    mostrare lo storico e riaprire un risultato senza rifare il calcolo.
+    """
+    directory = Path(reports_dir) / "auto_searches"
+    if not directory.exists():
+        return []
+
+    searches: list[dict] = []
+    for path in directory.glob("*.json"):
+        try:
+            with path.open(encoding="utf-8") as handle:
+                saved = json.load(handle)
+        except (OSError, ValueError):
+            continue
+        result = saved.get("result") or {}
+        symbols = result.get("symbols") or []
+        markets = result.get("markets") or []
+        # Conteggio autorevole: quello aggregato del campione (stessa fonte della
+        # frase di verdetto). Le schede per-mercato sono un ripiego per i
+        # risultati salvati prima che l'aggregato esistesse.
+        champion_id = result.get("overall_champion_id")
+        champion_score = next(
+            (s for s in (result.get("strategy_scores") or []) if s.get("strategy_id") == champion_id),
+            None,
+        )
+        if champion_score:
+            reliable = int(champion_score.get("markets_reliable") or 0)
+            tested = int(champion_score.get("markets_tested") or len(markets))
+        else:
+            reliable = sum(1 for m in markets if m.get("reliability") == "alta")
+            tested = len(markets)
+        searches.append(
+            {
+                "id": str(saved.get("id") or path.stem),
+                "saved_at": str(saved.get("saved_at") or ""),
+                "saved_at_display": _format_saved_at(saved.get("saved_at")),
+                "symbols": symbols,
+                "symbols_display": ", ".join(symbols) if symbols else "—",
+                "champion_label": result.get("overall_champion_label"),
+                "verdict_note": result.get("verdict_note") or "",
+                "markets_count": tested,
+                "markets_reliable": reliable,
+                "scan_mode": result.get("scan_mode") or "",
+            }
+        )
+
+    searches.sort(key=lambda item: item["saved_at"], reverse=True)
+    return searches[:limit]
+
+
+def _format_saved_at(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "data non disponibile"
+    try:
+        return datetime.fromisoformat(text).strftime("%d/%m/%Y %H:%M")
+    except ValueError:
+        return text
+
+
 def job_status(job_id: str, reports_dir: str | Path) -> dict | None:
     """Snapshot leggero per il polling (senza il payload completo del risultato)."""
     job = get_job(job_id, reports_dir)

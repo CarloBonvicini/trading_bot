@@ -8,7 +8,12 @@ import pandas as pd
 from flask import Flask, abort, current_app, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 
 from trading_bot.application.autosetting import run_autosetting
-from trading_bot.application.search_jobs import get_job, job_status, start_multi_search_job
+from trading_bot.application.search_jobs import (
+    get_job,
+    job_status,
+    list_saved_searches,
+    start_multi_search_job,
+)
 from trading_bot.strategies import STRATEGY_SPECS, build_strategy_signal, parse_strategy_parameters
 from trading_bot.application.chart_lab import (
     build_chart_lab_state,
@@ -503,6 +508,7 @@ def _render_home(
         session_items=session_items,
         selected_session=selected_session,
         strategy_presets=list_strategy_presets(current_app.config["REPORTS_DIR"]),
+        saved_searches=list_saved_searches(current_app.config["REPORTS_DIR"]),
         strategies=STRATEGY_OPTIONS,
         rule_logic_options=RULE_LOGIC_OPTIONS,
         intervals=INTERVAL_OPTIONS,
