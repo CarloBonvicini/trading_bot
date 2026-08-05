@@ -22,7 +22,6 @@ from trading_bot.application.strategy_search import to_serializable
 
 _JOBS: dict[str, dict] = {}
 _LOCK = threading.Lock()
-_N_STRATEGIES = 15
 
 
 def _job_dir(reports_dir: str | Path) -> Path:
@@ -48,8 +47,10 @@ def start_multi_search_job(
         "id": job_id,
         "status": "running",
         "progress": 0,
-        "total": max(1, len(symbols) * _N_STRATEGIES),
-        "message": "Avvio della ricerca…",
+        # Il totale reale (combinazioni da provare) si conosce dopo il download
+        # dei dati: fino ad allora l'avanzamento resta a 0.
+        "total": 1,
+        "message": "Scarico i dati di mercato…",
         "symbols": symbols,
         "interval": interval,
         "scan_mode": scan_mode,
@@ -181,15 +182,39 @@ def _format_saved_at(value: object) -> str:
 
 
 def job_status(job_id: str, reports_dir: str | Path) -> dict | None:
-    """Snapshot leggero per il polling (senza il payload completo del risultato)."""
+    """Snapshot leggero per il polling (senza il payload completo del risultato).
+
+    Include tempo trascorso e stima del rimanente: fra un passo e l'altro possono
+    passare minuti, e senza questi numeri la pagina sembra ferma.
+    """
     job = get_job(job_id, reports_dir)
     if job is None:
         return None
+
+    progress = int(job.get("progress", 0))
+    total = max(1, int(job.get("total", 1)))
+    elapsed = _elapsed_seconds(job.get("started_at"))
+    remaining = None
+    if elapsed is not None and progress > 0 and job.get("status") == "running":
+        remaining = int(elapsed / progress * max(0, total - progress))
+
     return {
         "id": job["id"],
         "status": job["status"],
-        "progress": int(job.get("progress", 0)),
-        "total": int(job.get("total", 1)),
+        "progress": progress,
+        "total": total,
         "message": job.get("message", ""),
         "error": job.get("error"),
+        "elapsed_seconds": elapsed,
+        "remaining_seconds": remaining,
     }
+
+
+def _elapsed_seconds(started_at: object) -> int | None:
+    text = str(started_at or "").strip()
+    if not text:
+        return None
+    try:
+        return max(0, int((datetime.now() - datetime.fromisoformat(text)).total_seconds()))
+    except ValueError:
+        return None

@@ -19,6 +19,7 @@ import pandas as pd
 from trading_bot.application.autosetting import AUTOSETTING_GRIDS
 from trading_bot.application.strategy_search import (
     RELIABILITY_HIGH,
+    estimate_search_combinations,
     run_strategy_search,
 )
 from trading_bot.data import download_price_data
@@ -86,18 +87,25 @@ def run_multi_market_search(
         raise ValueError("Indica almeno un simbolo da analizzare.")
 
     n_strategies = len(strategy_ids) if strategy_ids else N_STRATEGIES
-    total = len(clean_symbols) * n_strategies
+    # Avanzamento in combinazioni provate: il totale dei mercati non ancora
+    # scaricati viene stimato da quello corrente (stesso periodo e timeframe,
+    # quindi numero di barre pressoché identico).
+    combinazioni_concluse = 0
     # Info per mercato, tenute finché non conosciamo il campione complessivo.
     market_info: dict[str, dict] = {}
     # strategy_id -> liste di risultati per mercato (resa su dati nuovi, sharpe sviluppo, affidabile)
     per_strategy: dict[str, dict[str, list]] = {}
 
     for index, symbol in enumerate(clean_symbols):
-        base_done = index * n_strategies
+        mercati_rimanenti = len(clean_symbols) - index - 1
 
-        def inner_progress(done: int, _local_total: int, label: str, _sym=symbol, _base=base_done) -> None:
+        def inner_progress(
+            done: int, market_total: int, label: str,
+            _sym=symbol, _base=combinazioni_concluse, _rimanenti=mercati_rimanenti,
+        ) -> None:
             if progress_callback is not None:
-                progress_callback(_base + done, total, f"{_sym} · {label}")
+                stima_totale = _base + market_total * (_rimanenti + 1)
+                progress_callback(_base + done, stima_totale, f"{_sym} · {label}")
 
         try:
             data = download_data(symbol=symbol, start=start, end=end, interval=interval)
@@ -109,8 +117,12 @@ def run_multi_market_search(
         except Exception as exc:
             market_info[symbol] = {"error": str(exc)}
             if progress_callback is not None:
-                progress_callback(base_done + n_strategies, total, f"{symbol} · saltato")
+                progress_callback(combinazioni_concluse, combinazioni_concluse, f"{symbol} · saltato")
             continue
+
+        combinazioni_concluse += estimate_search_combinations(
+            len(data), scan_mode=scan_mode, strategy_ids=strategy_ids
+        )
 
         by_strategy = {
             row.strategy_id: {"return": row.holdout_return_pct, "reliability": row.reliability}

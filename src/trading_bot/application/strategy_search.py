@@ -30,6 +30,7 @@ import dataclasses
 import itertools
 import math
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Callable
 
 import pandas as pd
@@ -55,7 +56,65 @@ RELIABILITY_MEDIUM = "media"
 RELIABILITY_LOW = "bassa"
 RELIABILITY_NONE = "insufficiente"
 
+# Avanzamento: (combinazioni provate, combinazioni totali stimate, messaggio).
 ProgressCallback = Callable[[int, int, str], None]
+# Ogni quante combinazioni aggiornare l'avanzamento condiviso (evita di
+# prendere il lock migliaia di volte al secondo senza che si veda differenza).
+PROGRESS_EVERY = 50
+
+
+@lru_cache(maxsize=None)
+def count_valid_combinations(strategy_id: str, scan_mode: str) -> int:
+    """Quante combinazioni di parametri valide ha una strategia a una profondità."""
+    grids = AUTOSETTING_GRIDS_BY_MODE.get(scan_mode, AUTOSETTING_GRIDS)
+    grid = grids.get(strategy_id)
+    if not grid:
+        return 0
+    names = list(grid.keys())
+    values = [grid[name] for name in names]
+    valide = 0
+    for combo in itertools.product(*values):
+        try:
+            validate_strategy_parameters(strategy_id, dict(zip(names, combo)))
+        except ValueError:
+            continue
+        valide += 1
+    return valide
+
+
+def count_windows(dev_len: int, is_days: int, oos_days: int) -> int:
+    """Numero di finestre walk-forward che entrano nel set di sviluppo."""
+    finestre = 0
+    start = 0
+    while start + is_days + oos_days <= dev_len:
+        finestre += 1
+        start += oos_days
+    return finestre
+
+
+def estimate_search_combinations(
+    n_bars: int,
+    *,
+    scan_mode: str = "rapida",
+    strategy_ids: list[str] | None = None,
+    holdout_ratio: float = HOLDOUT_RATIO,
+    target_windows: int = TARGET_WINDOWS,
+) -> int:
+    """Quante combinazioni verranno provate in totale su un mercato.
+
+    Serve a mostrare all'utente un contatore "X di Y opzioni controllate": ogni
+    combinazione viene provata una volta per finestra walk-forward più una volta
+    nell'ottimizzazione finale sull'intero sviluppo.
+    """
+    candidati = strategy_ids or list(AUTOSETTING_GRIDS.keys())
+    holdout_len = max(1, int(round(n_bars * holdout_ratio)))
+    dev_len = n_bars - holdout_len
+    if dev_len <= 0:
+        return 0
+    is_days, oos_days = _auto_windows(dev_len, target_windows)
+    finestre = count_windows(dev_len, is_days, oos_days)
+    passaggi = finestre + 1  # finestre walk-forward + ottimizzazione finale
+    return sum(count_valid_combinations(sid, scan_mode) * passaggi for sid in candidati)
 
 
 @dataclass
@@ -141,12 +200,34 @@ def run_strategy_search(
 
     ranking: list[StrategyRanking] = []
     benchmark_return_pct = 0.0
-    total = len(candidate_ids)
 
-    for done, strategy_id in enumerate(candidate_ids, start=1):
+    # Contatore delle combinazioni: è l'avanzamento reale del lavoro, molto più
+    # informativo del semplice "quante strategie ho finito".
+    finestre = count_windows(dev_len, is_days, oos_days)
+    passaggi = finestre + 1
+    total = sum(count_valid_combinations(sid, scan_mode) * passaggi for sid in candidate_ids)
+    provate = 0
+    etichetta = ""
+
+    def _segnala(forza: bool = False) -> None:
+        if progress_callback is not None and (forza or provate % PROGRESS_EVERY == 0):
+            progress_callback(provate, total, etichetta)
+
+    def _combinazione_provata() -> None:
+        nonlocal provate
+        provate += 1
+        _segnala()
+
+    for strategy_id in candidate_ids:
         spec = STRATEGY_SPECS.get(strategy_id)
         if spec is None:
             continue
+
+        # Segnala la strategia PRIMA di testarla: a profondità alte una singola
+        # strategia può richiedere minuti, e senza questo l'utente resterebbe a
+        # guardare "avvio della ricerca" senza sapere cosa sta succedendo.
+        etichetta = spec.label
+        _segnala(forza=True)
 
         try:
             wf = run_walk_forward(
@@ -158,11 +239,13 @@ def run_strategy_search(
                 fee_bps=fee_bps,
                 initial_capital=initial_capital,
                 scan_mode=scan_mode,
+                on_combination=_combinazione_provata,
             )
             # Parametri di produzione + prova su dati nuovi (holdout).
             params = _optimize_on_development(
                 data=dev_data, strategy_id=strategy_id, fee_bps=fee_bps,
                 initial_capital=initial_capital, optimize_by=optimize_by, scan_mode=scan_mode,
+                on_combination=_combinazione_provata,
             )
             holdout_result = _evaluate_on_holdout(
                 full_data=data, dev_len=dev_len, holdout_index=holdout_index,
@@ -202,8 +285,9 @@ def run_strategy_search(
                     reliability=RELIABILITY_NONE, error=str(exc),
                 )
             )
-        if progress_callback is not None:
-            progress_callback(done, total, spec.label)
+    etichetta = "analisi completata"
+    provate = max(provate, total)
+    _segnala(forza=True)
 
     # Classifica di selezione: valutabili per Sharpe OOS decrescente, errori in fondo.
     ranking.sort(key=lambda r: (r.error is None, r.avg_oos_sharpe), reverse=True)
@@ -263,6 +347,7 @@ def run_strategy_search(
 def _optimize_on_development(
     *, data: pd.DataFrame, strategy_id: str, fee_bps: float,
     initial_capital: float, optimize_by: str, scan_mode: str = "rapida",
+    on_combination: Callable[[], None] | None = None,
 ) -> dict[str, int | float]:
     """Trova i parametri migliori della strategia sull'intero set di sviluppo."""
     grids = AUTOSETTING_GRIDS_BY_MODE.get(scan_mode, AUTOSETTING_GRIDS)
@@ -276,12 +361,20 @@ def _optimize_on_development(
 
     for combo in itertools.product(*values):
         params = dict(zip(names, combo))
+        # I vincoli si controllano prima: le combinazioni impossibili non
+        # costano un backtest e quindi non entrano nel conteggio mostrato.
         try:
             validate_strategy_parameters(strategy_id, params)
+        except ValueError:
+            continue
+        try:
             signal = build_strategy_signal(strategy_id=strategy_id, data=data, parameters=params)
             result = run_backtest(data=data, signal=signal, initial_capital=initial_capital, fee_bps=fee_bps)
         except Exception:
             continue
+        finally:
+            if on_combination is not None:
+                on_combination()
         raw = float(result.summary.get(optimize_by, 0.0))
         score = -raw if ascending else raw
         if score > best_score:

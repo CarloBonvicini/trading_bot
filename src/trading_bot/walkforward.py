@@ -10,6 +10,7 @@ from __future__ import annotations
 import itertools
 import math
 from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -61,6 +62,7 @@ def run_walk_forward(
     sizing_param: float = 100.0,
     initial_capital: float = 10_000.0,
     scan_mode: str = "rapida",
+    on_combination: "Callable[[], None] | None" = None,
 ) -> WalkForwardResult:
     """Esegue la walk-forward validation su ``data`` per la strategia indicata.
 
@@ -111,6 +113,7 @@ def run_walk_forward(
             sizing_method=sizing_method,
             sizing_param=sizing_param,
             initial_capital=initial_capital,
+            on_combination=on_combination,
         )
 
         # Applica parametri migliori a OOS
@@ -217,8 +220,13 @@ def _optimize_params(
     sizing_method: str,
     sizing_param: float,
     initial_capital: float,
+    on_combination: Callable[[], None] | None = None,
 ) -> tuple[dict[str, int | float], float]:
-    """Trova i parametri ottimali sulla finestra IS. Restituisce (params, sharpe_IS)."""
+    """Trova i parametri ottimali sulla finestra IS. Restituisce (params, sharpe_IS).
+
+    ``on_combination`` viene invocata dopo ogni combinazione provata: serve a
+    contare le opzioni controllate per l'avanzamento mostrato all'utente.
+    """
     best_score = float("-inf")
     best_params: dict[str, int | float] = param_grid[0]
     best_sharpe = 0.0
@@ -247,6 +255,9 @@ def _optimize_params(
                 best_sharpe = float(result.summary.get("sharpe_ratio", 0.0))
         except Exception:
             continue
+        finally:
+            if on_combination is not None:
+                on_combination()
 
     return best_params, best_sharpe
 

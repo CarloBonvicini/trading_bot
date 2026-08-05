@@ -3441,6 +3441,49 @@ td {
   box-shadow: 0 8px 30px rgba(59, 130, 246, 0.08);
 }
 
+/* Barra di avanzamento della ricerca automatica */
+.search-progress-track {
+  margin: 1rem 0 0.5rem;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(27, 27, 24, 0.1);
+  overflow: hidden;
+}
+
+.home-dashboard-body .search-progress-track {
+  background: rgba(163, 177, 204, 0.16);
+}
+
+.search-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: var(--accent, #3b82f6);
+  transition: width 0.4s ease;
+}
+
+.search-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.search-progress-meta .inline-note {
+  margin: 0;
+}
+
+.search-progress-count {
+  margin: 0.45rem 0 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.search-progress-timing {
+  margin-top: 0.2rem;
+}
+
 /* Home semplificata: una sola azione in evidenza + elenchi leggibili */
 .home-start-panel {
   display: grid;

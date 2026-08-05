@@ -113,6 +113,69 @@ def test_start_multi_search_job_runs_in_background_and_persists(tmp_path: Path, 
     assert (tmp_path / "auto_searches" / f"{job_id}.json").exists()
 
 
+def test_search_counts_combinations_while_working() -> None:
+    """L'avanzamento conta le combinazioni provate (non le strategie finite),
+    così l'utente vede un numero che sale invece di scatti da 15 passi."""
+    from trading_bot.application.strategy_search import (
+        estimate_search_combinations,
+        run_strategy_search,
+    )
+
+    data = _synth(seed=1, drift=60)
+    eventi: list[tuple[int, int, str]] = []
+    run_strategy_search(
+        data=data, symbol="AAA", fee_bps=0.0,
+        strategy_ids=_STRATS,
+        progress_callback=lambda done, total, label: eventi.append((done, total, label)),
+    )
+
+    atteso = estimate_search_combinations(len(data), strategy_ids=_STRATS)
+    assert atteso > 0
+    # Il primo evento annuncia la strategia in corso prima di iniziare a contare.
+    assert eventi[0][0] == 0
+    assert eventi[0][2] == "SMA Crossover"
+    # Il totale annunciato coincide con la stima mostrata all'utente.
+    assert {e[1] for e in eventi} == {atteso}
+    # Il contatore sale sempre e arriva esattamente al totale.
+    assert [e[0] for e in eventi] == sorted(e[0] for e in eventi)
+    assert eventi[-1][0] == atteso
+    # Ci sono aggiornamenti intermedi: non è un salto unico da 0 a fine.
+    assert len([e for e in eventi if 0 < e[0] < atteso]) > 3
+
+
+def test_estimate_search_combinations_grows_with_depth() -> None:
+    """Più la profondità è alta, più opzioni vengono controllate."""
+    from trading_bot.application.strategy_search import estimate_search_combinations
+
+    rapida = estimate_search_combinations(320, scan_mode="rapida", strategy_ids=_STRATS)
+    media = estimate_search_combinations(320, scan_mode="media", strategy_ids=_STRATS)
+    lunga = estimate_search_combinations(320, scan_mode="lunga", strategy_ids=_STRATS)
+
+    assert 0 < rapida < media < lunga
+
+
+def test_job_status_reports_elapsed_and_remaining(tmp_path: Path) -> None:
+    """Fra un passo e l'altro possono passare minuti: lo stato deve dire da
+    quanto sta girando e quanto manca."""
+    from datetime import datetime, timedelta
+
+    from trading_bot.application import search_jobs
+
+    search_jobs._JOBS["fake"] = {
+        "id": "fake", "status": "running", "progress": 3, "total": 15,
+        "message": "SPY · MACD Trend", "error": None,
+        "started_at": (datetime.now() - timedelta(seconds=60)).isoformat(timespec="seconds"),
+    }
+    try:
+        status = job_status("fake", tmp_path)
+    finally:
+        search_jobs._JOBS.pop("fake", None)
+
+    assert status["elapsed_seconds"] >= 59
+    # 3 passi in 60s → i 12 rimanenti richiedono circa 240s.
+    assert 200 <= status["remaining_seconds"] <= 280
+
+
 def test_list_saved_searches_returns_newest_first(tmp_path: Path) -> None:
     directory = tmp_path / "auto_searches"
     directory.mkdir(parents=True)

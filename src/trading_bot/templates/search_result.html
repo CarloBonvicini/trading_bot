@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Risultato ricerca · {{ result.symbols | join(', ') }}{% endblock %}
+{% block body_class %}home-dashboard-body{% endblock %}
 
 {% block content %}
 {% set depth_labels = {'rapida': 'Rapida', 'media': 'Media', 'lunga': 'Approfondita', 'xl': 'Massima'} %}
