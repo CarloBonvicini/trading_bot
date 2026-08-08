@@ -4,6 +4,14 @@ Divide il periodo storico in finestre IS/OOS sovrapposte:
 per ogni finestra in-sample ottimizza i parametri tramite sweep,
 poi applica i parametri migliori alla finestra out-of-sample.
 Concatena i risultati OOS per produrre la curva walk-forward.
+
+**Warm-up degli indicatori.** Il segnale di ogni combinazione viene calcolato
+una sola volta sull'intera serie e poi ritagliato sulla finestra: un indicatore
+a 200 barre su una finestra da 125 partirebbe altrimenti "a freddo" e resterebbe
+piatto a zero per tutta la finestra, facendo sembrare inattive un terzo delle
+combinazioni della griglia. Non introduce lookahead — gli indicatori guardano
+solo indietro — e come effetto collaterale evita di ricalcolare lo stesso
+segnale una volta per finestra.
 """
 from __future__ import annotations
 
@@ -20,6 +28,11 @@ from trading_bot.backtest import SIZING_FULL, run_backtest
 from trading_bot.strategies import STRATEGY_SPECS, build_strategy_signal, validate_strategy_parameters
 
 TRADING_DAYS_PER_YEAR = 252
+
+# Una combinazione che non apre nemmeno un'operazione ha rendimenti tutti nulli
+# e quindi Sharpe esattamente 0: senza questa guardia batterebbe ogni strategia
+# in perdita e verrebbe scelta proprio perché non fa niente.
+MIN_TRADE_PER_SCELTA = 1
 
 
 @dataclass
@@ -92,34 +105,67 @@ def run_walk_forward(
             f"disponibili {n}."
         )
 
+    # Confini delle finestre: calcolati una volta sola, così il ciclo pesante
+    # può girare per combinazione (segnale calcolato una volta) invece che per
+    # finestra (segnale ricalcolato ogni volta).
+    limiti = _window_bounds(n=n, is_days=is_days, oos_days=oos_days)
+    if not limiti:
+        raise ValueError("Nessuna finestra walk-forward completata — periodo troppo breve.")
+
+    selezioni = [_SelezioneFinestra(param_grid[0]) for _ in limiti]
+
+    for params in param_grid:
+        try:
+            # Warm-up: il segnale nasce sull'intera serie e viene poi ritagliato.
+            signal_full = build_strategy_signal(
+                strategy_id=strategy_id, data=data, parameters=params
+            )
+        except Exception:
+            # La combinazione è inutilizzabile: conta comunque come provata su
+            # ogni finestra, altrimenti l'avanzamento mostrato non tornerebbe.
+            if on_combination is not None:
+                for _ in limiti:
+                    on_combination()
+            continue
+
+        for selezione, (start_i, split_i, end_i) in zip(selezioni, limiti):
+            is_data = data.iloc[start_i:split_i]
+            try:
+                result = run_backtest(
+                    data=is_data,
+                    signal=signal_full.iloc[start_i:split_i],
+                    initial_capital=initial_capital,
+                    fee_bps=fee_bps,
+                    sl_pct=sl_pct,
+                    tp_pct=tp_pct,
+                    sizing_method=sizing_method,
+                    sizing_param=sizing_param,
+                )
+            except Exception:
+                continue
+            finally:
+                if on_combination is not None:
+                    on_combination()
+
+            selezione.considera(
+                params=params,
+                summary=result.summary,
+                optimize_by=optimize_by,
+                oos_signal=signal_full.iloc[split_i:end_i],
+            )
+
     windows: list[WalkForwardWindow] = []
     oos_curves: list[pd.DataFrame] = []
-    window_idx = 0
-    start_i = 0
 
-    while start_i + is_days + oos_days <= n:
-        is_data = data.iloc[start_i : start_i + is_days]
-        oos_data = data.iloc[start_i + is_days : start_i + is_days + oos_days]
+    for window_idx, (selezione, (start_i, split_i, end_i)) in enumerate(zip(selezioni, limiti)):
+        is_data = data.iloc[start_i:split_i]
+        oos_data = data.iloc[split_i:end_i]
+        oos_signal = selezione.oos_signal
+        if oos_signal is None:
+            oos_signal = build_strategy_signal(
+                strategy_id=strategy_id, data=data, parameters=selezione.params
+            ).iloc[split_i:end_i]
 
-        # Ottimizza parametri su IS
-        best_params, is_sharpe = _optimize_params(
-            data=is_data,
-            strategy_id=strategy_id,
-            param_grid=param_grid,
-            optimize_by=optimize_by,
-            fee_bps=fee_bps,
-            sl_pct=sl_pct,
-            tp_pct=tp_pct,
-            sizing_method=sizing_method,
-            sizing_param=sizing_param,
-            initial_capital=initial_capital,
-            on_combination=on_combination,
-        )
-
-        # Applica parametri migliori a OOS
-        oos_signal = build_strategy_signal(
-            strategy_id=strategy_id, data=oos_data, parameters=best_params
-        )
         oos_result = run_backtest(
             data=oos_data,
             signal=oos_signal,
@@ -132,32 +178,21 @@ def run_walk_forward(
         )
 
         oos_curves.append(oos_result.equity_curve)
-        is_start_str = _fmt_date(is_data.index[0])
-        is_end_str = _fmt_date(is_data.index[-1])
-        oos_start_str = _fmt_date(oos_data.index[0])
-        oos_end_str = _fmt_date(oos_data.index[-1])
-
         windows.append(
             WalkForwardWindow(
                 window_index=window_idx + 1,
-                is_start=is_start_str,
-                is_end=is_end_str,
-                oos_start=oos_start_str,
-                oos_end=oos_end_str,
-                best_params=best_params,
-                is_sharpe=round(is_sharpe, 3),
+                is_start=_fmt_date(is_data.index[0]),
+                is_end=_fmt_date(is_data.index[-1]),
+                oos_start=_fmt_date(oos_data.index[0]),
+                oos_end=_fmt_date(oos_data.index[-1]),
+                best_params=selezione.params,
+                is_sharpe=round(selezione.sharpe, 3),
                 oos_sharpe=round(float(oos_result.summary.get("sharpe_ratio", 0.0)), 3),
                 oos_return_pct=round(float(oos_result.summary.get("total_return_pct", 0.0)), 2),
                 oos_max_drawdown_pct=round(float(oos_result.summary.get("max_drawdown_pct", 0.0)), 2),
                 oos_trades=int(oos_result.summary.get("trade_count", 0)),
             )
         )
-
-        start_i += oos_days  # avanza di un passo OOS (walk forward)
-        window_idx += 1
-
-    if not windows:
-        raise ValueError("Nessuna finestra walk-forward completata — periodo troppo breve.")
 
     # Concatena le equity curve OOS e ri-calcola la sequenza di equity continua
     oos_equity_curve = _stitch_oos_curves(oos_curves, initial_capital)
@@ -208,58 +243,58 @@ def _build_param_grid(spec, scan_mode: str = "rapida") -> list[dict[str, int | f
     return combos
 
 
-def _optimize_params(
-    *,
-    data: pd.DataFrame,
-    strategy_id: str,
-    param_grid: list[dict[str, int | float]],
-    optimize_by: str,
-    fee_bps: float,
-    sl_pct: float | None,
-    tp_pct: float | None,
-    sizing_method: str,
-    sizing_param: float,
-    initial_capital: float,
-    on_combination: Callable[[], None] | None = None,
-) -> tuple[dict[str, int | float], float]:
-    """Trova i parametri ottimali sulla finestra IS. Restituisce (params, sharpe_IS).
+def _window_bounds(*, n: int, is_days: int, oos_days: int) -> list[tuple[int, int, int]]:
+    """Confini ``(inizio IS, inizio OOS, fine OOS)`` di ogni finestra."""
+    limiti: list[tuple[int, int, int]] = []
+    start_i = 0
+    while start_i + is_days + oos_days <= n:
+        limiti.append((start_i, start_i + is_days, start_i + is_days + oos_days))
+        start_i += oos_days  # avanza di un passo OOS (walk forward)
+    return limiti
 
-    ``on_combination`` viene invocata dopo ogni combinazione provata: serve a
-    contare le opzioni controllate per l'avanzamento mostrato all'utente.
+
+class _SelezioneFinestra:
+    """Tiene la combinazione migliore per una singola finestra in-sample.
+
+    Fra due combinazioni preferisce sempre quella che ha davvero operato: una
+    che non apre nessuna operazione ha punteggio 0 secco e vincerebbe su ogni
+    combinazione in perdita, facendo scegliere i parametri proprio perché
+    inerti (vedi ``MIN_TRADE_PER_SCELTA``).
     """
-    best_score = float("-inf")
-    best_params: dict[str, int | float] = param_grid[0]
-    best_sharpe = 0.0
-    ascending = optimize_by == "max_drawdown_pct"  # drawdown: vogliamo il meno negativo
 
-    for params in param_grid:
-        try:
-            signal = build_strategy_signal(
-                strategy_id=strategy_id, data=data, parameters=params
-            )
-            result = run_backtest(
-                data=data,
-                signal=signal,
-                initial_capital=initial_capital,
-                fee_bps=fee_bps,
-                sl_pct=sl_pct,
-                tp_pct=tp_pct,
-                sizing_method=sizing_method,
-                sizing_param=sizing_param,
-            )
-            raw_score = float(result.summary.get(optimize_by, 0.0))
-            score = raw_score if not ascending else -raw_score
-            if score > best_score:
-                best_score = score
-                best_params = params
-                best_sharpe = float(result.summary.get("sharpe_ratio", 0.0))
-        except Exception:
-            continue
-        finally:
-            if on_combination is not None:
-                on_combination()
+    def __init__(self, params_default: dict[str, int | float]) -> None:
+        self.params = params_default
+        self.sharpe = 0.0
+        self.oos_signal: pd.Series | None = None
+        self._score = float("-inf")
+        self._attiva = False
 
-    return best_params, best_sharpe
+    def considera(
+        self,
+        *,
+        params: dict[str, int | float],
+        summary: dict,
+        optimize_by: str,
+        oos_signal: pd.Series,
+    ) -> None:
+        ascending = optimize_by == "max_drawdown_pct"  # drawdown: vogliamo il meno negativo
+        raw = float(summary.get(optimize_by, 0.0))
+        score = -raw if ascending else raw
+        attiva = int(summary.get("trade_count", 0)) >= MIN_TRADE_PER_SCELTA
+
+        if attiva and not self._attiva:
+            migliore = True          # la prima combinazione che opera vince comunque
+        elif attiva == self._attiva:
+            migliore = score > self._score
+        else:
+            migliore = False         # inerte contro una che opera: mai
+
+        if migliore:
+            self.params = params
+            self.sharpe = float(summary.get("sharpe_ratio", 0.0))
+            self.oos_signal = oos_signal
+            self._score = score
+            self._attiva = attiva
 
 
 def _stitch_oos_curves(curves: list[pd.DataFrame], initial_capital: float) -> pd.DataFrame:
