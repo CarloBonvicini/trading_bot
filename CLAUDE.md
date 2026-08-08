@@ -16,15 +16,36 @@ trading-bot-web
 # Eseguire un backtest da CLI
 trading-bot --symbol SPY --start 2020-01-01 --end 2025-01-01 --strategy sma_cross --fast 20 --slow 100
 
-# Eseguire tutti i test
-pytest
+# Eseguire i test (suite veloce, ~5 secondi)
+python -m pytest
+
+# Eseguire anche i test marcati "lento" (ricerche vere, ~75 secondi)
+python -m pytest --lenti
 
 # Eseguire un singolo file di test
-pytest tests/test_backtest.py
+python -m pytest tests/test_backtest.py
 
 # Eseguire un singolo test
-pytest tests/test_backtest.py::nome_funzione
+python -m pytest tests/test_backtest.py::nome_funzione
 ```
+
+### Regole sui test
+
+- **Sempre `python -m pytest` dalla radice del progetto.** Il pacchetto è
+  installato in editable mode e punta a un solo checkout: lanciato altrimenti,
+  Python importa quello invece del codice su cui stai lavorando. In un worktree
+  serve un ambiente virtuale suo (`python -m venv .venv` +
+  `.venv\Scripts\python -m pip install -e .[dev]`) oppure `PYTHONPATH=src`. La
+  guardia in `conftest.py` ferma la sessione se il modulo importato non è quello
+  del checkout corrente.
+- **Gli avvisi di deprecazione sono errori** (`filterwarnings` nel
+  `pyproject.toml`): un `FutureWarning` di pandas ignorato è codice che smetterà
+  di funzionare a un aggiornamento.
+- **I dati sintetici vengono da `conftest.py`** (`mercato_sintetico`,
+  `ohlc_da_chiusure`, `mercato_piatto`): non ridichiarare generatori nei singoli
+  file di test.
+- **`@pytest.mark.lento`** per i test che eseguono ricerche vere, così la suite
+  di default resta sotto i cinque secondi. La CI li esegue comunque.
 
 ## Architettura
 

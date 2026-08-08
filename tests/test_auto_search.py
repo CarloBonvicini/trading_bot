@@ -5,8 +5,7 @@ import json
 import time
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
+import pytest
 
 from trading_bot.application.multi_search import MultiMarketSearchResult, run_multi_market_search
 from trading_bot.application.search_jobs import (
@@ -20,24 +19,15 @@ from trading_bot.application.strategy_search import to_serializable
 _STRATS = ["sma_cross", "ema_cross", "rsi_mean_reversion"]
 
 
-def _synth(n: int = 320, seed: int = 1, drift: float = 50.0) -> pd.DataFrame:
-    rng = np.random.default_rng(seed)
-    closes = np.linspace(100.0, 100.0 + drift, n) + rng.normal(0, 1.2, n).cumsum() * 0.3
-    return pd.DataFrame(
-        {"open": closes, "high": closes + 1, "low": closes - 1, "close": closes,
-         "volume": rng.integers(1000, 5000, n)},
-        index=pd.date_range("2022-01-01", periods=n, freq="D"),
-    )
-
-
 def _fake_download_factory(mapping):
     def _download(symbol, start, end, interval):
         return mapping[symbol]
     return _download
 
 
-def test_run_multi_market_search_aggregates_across_markets() -> None:
-    mapping = {"AAA": _synth(seed=1, drift=60), "BBB": _synth(seed=2, drift=40), "CCC": _synth(seed=3, drift=-10)}
+@pytest.mark.lento
+def test_run_multi_market_search_aggregates_across_markets(mercato_sintetico) -> None:
+    mapping = {"AAA": mercato_sintetico(seed=1, deriva=60), "BBB": mercato_sintetico(seed=2, deriva=40), "CCC": mercato_sintetico(seed=3, deriva=-10)}
     result = run_multi_market_search(
         ["aaa", "bbb", "ccc"], interval="1d", fee_bps=0.0,
         strategy_ids=_STRATS, download_data=_fake_download_factory(mapping),
@@ -61,8 +51,9 @@ def test_run_multi_market_search_aggregates_across_markets() -> None:
     assert result.verdict_note
 
 
-def test_run_multi_market_search_skips_broken_symbol() -> None:
-    mapping = {"AAA": _synth(seed=1)}
+@pytest.mark.lento
+def test_run_multi_market_search_skips_broken_symbol(mercato_sintetico) -> None:
+    mapping = {"AAA": mercato_sintetico(seed=1)}
 
     def _download(symbol, start, end, interval):
         if symbol == "BAD":
@@ -78,8 +69,9 @@ def test_run_multi_market_search_skips_broken_symbol() -> None:
     assert outcomes["AAA"].error is None
 
 
-def test_multi_market_result_is_json_serializable() -> None:
-    mapping = {"AAA": _synth(seed=1, drift=60)}
+@pytest.mark.lento
+def test_multi_market_result_is_json_serializable(mercato_sintetico) -> None:
+    mapping = {"AAA": mercato_sintetico(seed=1, deriva=60)}
     result = run_multi_market_search(
         ["AAA"], interval="1d", fee_bps=0.0,
         strategy_ids=_STRATS, download_data=_fake_download_factory(mapping),
@@ -90,8 +82,8 @@ def test_multi_market_result_is_json_serializable() -> None:
     assert payload["symbols"] == ["AAA"]
 
 
-def test_start_multi_search_job_runs_in_background_and_persists(tmp_path: Path, monkeypatch) -> None:
-    mapping = {"AAA": _synth(seed=1, drift=60), "BBB": _synth(seed=2, drift=40)}
+def test_start_multi_search_job_runs_in_background_and_persists(tmp_path: Path, monkeypatch, mercato_sintetico) -> None:
+    mapping = {"AAA": mercato_sintetico(seed=1, deriva=60), "BBB": mercato_sintetico(seed=2, deriva=40)}
     monkeypatch.setattr(
         "trading_bot.application.multi_search.download_price_data",
         _fake_download_factory(mapping),
@@ -117,7 +109,8 @@ def test_start_multi_search_job_runs_in_background_and_persists(tmp_path: Path, 
     assert (tmp_path / "auto_searches" / f"{job_id}.json").exists()
 
 
-def test_search_counts_combinations_while_working() -> None:
+@pytest.mark.lento
+def test_search_counts_combinations_while_working(mercato_sintetico) -> None:
     """L'avanzamento conta le combinazioni provate (non le strategie finite),
     così l'utente vede un numero che sale invece di scatti da 15 passi."""
     from trading_bot.application.strategy_search import (
@@ -125,7 +118,7 @@ def test_search_counts_combinations_while_working() -> None:
         run_strategy_search,
     )
 
-    data = _synth(seed=1, drift=60)
+    data = mercato_sintetico(seed=1, deriva=60)
     eventi: list[tuple[int, int, str]] = []
     # Su un solo processo: è il percorso che annuncia la strategia in corso
     # (in parallelo le strategie girano insieme e l'etichetta è complessiva).
@@ -329,12 +322,13 @@ def test_classifica_multi_mercato_conta_chi_batte_il_mercato() -> None:
     assert scores[0].avg_holdout_excess_pct == 9.0
 
 
-def test_ricerca_in_parallelo_da_lo_stesso_risultato(monkeypatch) -> None:
+@pytest.mark.lento
+def test_ricerca_in_parallelo_da_lo_stesso_risultato(monkeypatch, mercato_sintetico) -> None:
     """Il parallelismo è solo velocità: campione, parametri e classifica devono
     coincidere con l'esecuzione su un solo processo."""
     from trading_bot.application.strategy_search import run_strategy_search
 
-    data = _synth(n=400, seed=4, drift=45)
+    data = mercato_sintetico(n=400, seed=4, deriva=45)
     comuni = dict(data=data, symbol="AAA", fee_bps=0.0, strategy_ids=_STRATS)
 
     sequenziale = run_strategy_search(**comuni, max_workers=1)
@@ -348,13 +342,14 @@ def test_ricerca_in_parallelo_da_lo_stesso_risultato(monkeypatch) -> None:
     assert parallelo.reliability == sequenziale.reliability
 
 
-def test_avanzamento_arriva_al_totale_anche_in_parallelo() -> None:
+@pytest.mark.lento
+def test_avanzamento_arriva_al_totale_anche_in_parallelo(mercato_sintetico) -> None:
     from trading_bot.application.strategy_search import (
         estimate_search_combinations,
         run_strategy_search,
     )
 
-    data = _synth(n=400, seed=4, drift=45)
+    data = mercato_sintetico(n=400, seed=4, deriva=45)
     eventi: list[tuple[int, int, str]] = []
     run_strategy_search(
         data=data, symbol="AAA", fee_bps=0.0, strategy_ids=_STRATS, max_workers=2,

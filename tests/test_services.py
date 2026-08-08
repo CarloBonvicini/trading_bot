@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pytest
 
@@ -17,24 +16,6 @@ from trading_bot.services import (
     run_strategy_search,
     save_strategy_preset,
 )
-
-
-def _synth_ohlcv(n: int = 340, seed: int = 7) -> pd.DataFrame:
-    """Serie OHLCV sintetica con trend e rumore per i test di ricerca strategia."""
-    rng = np.random.default_rng(seed)
-    trend = np.linspace(100.0, 150.0, n)
-    noise = rng.normal(0.0, 1.2, n).cumsum() * 0.3
-    closes = trend + noise
-    return pd.DataFrame(
-        {
-            "open": closes,
-            "high": closes + 1.0,
-            "low": closes - 1.0,
-            "close": closes,
-            "volume": rng.integers(1000, 5000, n),
-        },
-        index=pd.date_range("2022-01-01", periods=n, freq="D"),
-    )
 
 
 def test_run_sma_sweep_request_generates_all_valid_combinations(monkeypatch, tmp_path: Path) -> None:
@@ -216,10 +197,11 @@ def test_save_strategy_preset_saves_namespaced_sweep_settings(tmp_path: Path) ->
     }
 
 
-def test_run_strategy_search_ranks_and_validates_on_holdout() -> None:
+@pytest.mark.lento
+def test_run_strategy_search_ranks_and_validates_on_holdout(mercato_sintetico) -> None:
     """La ricerca automatica classifica le strategie in walk-forward sullo
     sviluppo e valida il campione sul holdout intoccato."""
-    data = _synth_ohlcv(n=340)
+    data = mercato_sintetico(n=340)
 
     result = run_strategy_search(
         data=data,
@@ -255,8 +237,8 @@ def test_run_strategy_search_ranks_and_validates_on_holdout() -> None:
     assert set(result.holdout) >= {"sharpe_ratio", "total_return_pct", "trade_count"}
 
 
-def test_run_strategy_search_requires_enough_history() -> None:
-    data = _synth_ohlcv(n=80)
+def test_run_strategy_search_requires_enough_history(mercato_sintetico) -> None:
+    data = mercato_sintetico(n=80)
     with pytest.raises(ValueError, match="validazione severa"):
         run_strategy_search(data=data, symbol="TEST", strategy_ids=["sma_cross"])
 

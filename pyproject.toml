@@ -28,4 +28,16 @@ where = ["src"]
 trading_bot = ["templates/*.html", "templates/partials/*.html", "static/*.css", "static/*.js"]
 
 [tool.pytest.ini_options]
+# Relativo alla rootdir: mette il src di QUESTO checkout davanti al pacchetto
+# installato in editable mode (vedi la guardia in conftest.py).
 pythonpath = ["src"]
+addopts = "--strict-markers --strict-config"
+markers = [
+  "lento: esegue ricerche vere e dura secondi; girano solo con --lenti",
+]
+# Gli avvisi di deprecazione sono errori: un FutureWarning di pandas ignorato
+# e' un pezzo di codice che smettera' di funzionare a un aggiornamento.
+filterwarnings = [
+  "error::FutureWarning",
+  "error::DeprecationWarning",
+]
