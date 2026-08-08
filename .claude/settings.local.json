@@ -1,4 +1,7 @@
 {
+  "env": {
+    "PYTHONPATH": "src"
+  },
   "permissions": {
     "allow": [
       "Bash(gh repo *)"
