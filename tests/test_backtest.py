@@ -11,7 +11,19 @@ from trading_bot.backtest import (
     infer_periods_per_year,
     run_backtest,
 )
-from trading_bot.strategies import build_combined_signal, donchian_breakout, rsi_mean_reversion, sma_crossover
+from trading_bot.strategies import (
+    STRATEGY_SPECS,
+    adx_components,
+    build_combined_signal,
+    build_strategy_signal,
+    commodity_channel_index,
+    donchian_breakout,
+    money_flow_index,
+    relative_strength_index,
+    rsi_mean_reversion,
+    sma_crossover,
+    williams_r_indicator,
+)
 
 
 def test_sma_crossover_returns_binary_positions() -> None:
@@ -439,3 +451,64 @@ def test_sharpe_orario_non_annualizzato_come_giornaliero() -> None:
     # Stesso guadagno totale concentrato in 60 giorni invece che in 420: il
     # rendimento annuo orario deve risultare molto più alto, non uguale.
     assert orario.summary["annual_return_pct"] > giornaliero.summary["annual_return_pct"]
+
+
+# ── Divisioni protette senza degradare a dtype "object" ──────────────────────
+
+def _mercato_piatto(n: int = 80) -> pd.DataFrame:
+    """Mercato fermo: high == low == close e volume costante.
+
+    È il caso che azzera i denominatori degli indicatori (ampiezza del canale,
+    ATR, flusso negativo): serve a controllare cosa succede alla divisione.
+    """
+    prezzo = [100.0] * n
+    return pd.DataFrame(
+        {"open": prezzo, "high": prezzo, "low": prezzo, "close": prezzo,
+         "volume": [1000.0] * n},
+        index=pd.date_range("2024-01-01", periods=n, freq="D"),
+    )
+
+
+def test_indicatori_restano_numerici_su_mercato_piatto() -> None:
+    """Regressione: sostituire lo zero con pd.NA rendeva la serie di tipo
+    object, e da lì in poi fillna avvisava del cambio di comportamento."""
+    import warnings
+
+    data = _mercato_piatto()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        indicatori = {
+            "rsi": relative_strength_index(data["close"], period=14),
+            "cci": commodity_channel_index(data, period=20),
+            "williams_r": williams_r_indicator(data, period=14),
+            "mfi": money_flow_index(data, period=14),
+        }
+
+    for nome, serie in indicatori.items():
+        assert serie.dtype == float, f"{nome} non è numerico: {serie.dtype}"
+        assert not serie.isna().any(), f"{nome} contiene valori mancanti"
+
+
+def test_adx_su_mercato_piatto_non_solleva() -> None:
+    """Regressione: con ATR a zero la serie diventava object e la media
+    esponenziale falliva, facendo sparire in silenzio l'intera strategia."""
+    componenti = adx_components(_mercato_piatto(), period=14)
+
+    assert list(componenti.columns) == ["adx", "plus_di", "minus_di"]
+    assert all(componenti[colonna].dtype == float for colonna in componenti.columns)
+
+
+def test_strategie_su_mercato_piatto_non_operano() -> None:
+    """Su un mercato che non si muove nessuna strategia deve entrare."""
+    import warnings
+
+    data = _mercato_piatto()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        for strategy_id in ("adx_trend", "stochastic_reversion", "mfi_reversion",
+                            "roc_momentum", "williams_r_reversion", "cci_reversion"):
+            segnale = build_strategy_signal(
+                strategy_id=strategy_id, data=data,
+                parameters=STRATEGY_SPECS[strategy_id].defaults(),
+            )
+            assert segnale.sum() == 0.0, f"{strategy_id} ha operato su un mercato fermo"
