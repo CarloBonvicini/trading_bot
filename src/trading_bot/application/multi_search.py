@@ -18,6 +18,7 @@ import pandas as pd
 
 from trading_bot.application.autosetting import AUTOSETTING_GRIDS
 from trading_bot.application.strategy_search import (
+    MARGINE_MINIMO_PCT,
     RELIABILITY_HIGH,
     estimate_search_combinations,
     run_strategy_search,
@@ -50,8 +51,12 @@ class StrategyAcrossMarkets:
     label: str
     markets_tested: int
     markets_reliable: int       # affidabilità "alta" su dati nuovi
-    markets_positive: int       # resa su dati nuovi > 0
+    # Mercati in cui ha fatto meglio del comprare-e-tenere: per un motore solo
+    # long è il confronto onesto (in un mercato che scende, "in positivo" non lo
+    # sarebbe nessuno).
+    markets_beat_market: int
     avg_holdout_return_pct: float
+    avg_holdout_excess_pct: float
     avg_dev_sharpe: float
 
 
@@ -80,6 +85,7 @@ def run_multi_market_search(
     strategy_ids: list[str] | None = None,
     download_data: Callable[..., pd.DataFrame] = download_price_data,
     progress_callback: ProgressCallback | None = None,
+    max_workers: int | None = None,
 ) -> MultiMarketSearchResult:
     """Esegue la ricerca su più mercati e aggrega la robustezza per strategia."""
     clean_symbols = [s.strip().upper() for s in symbols if s and s.strip()]
@@ -113,6 +119,7 @@ def run_multi_market_search(
                 data=data, symbol=symbol, interval=interval,
                 initial_capital=initial_capital, fee_bps=fee_bps,
                 scan_mode=scan_mode, strategy_ids=strategy_ids, progress_callback=inner_progress,
+                max_workers=max_workers,
             )
         except Exception as exc:
             market_info[symbol] = {"error": str(exc)}
@@ -142,19 +149,21 @@ def run_multi_market_search(
             if row.error is not None:
                 continue
             bucket = per_strategy.setdefault(
-                row.strategy_id, {"returns": [], "dev_sharpe": [], "reliable": 0, "positive": 0}
+                row.strategy_id,
+                {"returns": [], "excess": [], "dev_sharpe": [], "reliable": 0, "beat": 0},
             )
             bucket["returns"].append(row.holdout_return_pct)
+            bucket["excess"].append(row.holdout_excess_return_pct)
             bucket["dev_sharpe"].append(row.avg_oos_sharpe)
             if row.reliability == RELIABILITY_HIGH:
                 bucket["reliable"] += 1
-            if row.holdout_return_pct > 0:
-                bucket["positive"] += 1
+            if row.holdout_excess_return_pct >= MARGINE_MINIMO_PCT:
+                bucket["beat"] += 1
 
     strategy_scores = _aggregate(per_strategy)
     overall = strategy_scores[0] if strategy_scores else None
     overall_id = None
-    if overall and (overall.markets_reliable > 0 or overall.markets_positive > 0):
+    if overall and (overall.markets_reliable > 0 or overall.markets_beat_market > 0):
         overall_id = overall.strategy_id
     overall_label = STRATEGY_SPECS[overall_id].label if overall_id else None
 
@@ -204,6 +213,7 @@ def _aggregate(per_strategy: dict[str, dict[str, list]]) -> list[StrategyAcrossM
     scores: list[StrategyAcrossMarkets] = []
     for strategy_id, bucket in per_strategy.items():
         returns = bucket["returns"]
+        excess = bucket["excess"]
         dev = bucket["dev_sharpe"]
         tested = len(returns)
         scores.append(
@@ -212,15 +222,16 @@ def _aggregate(per_strategy: dict[str, dict[str, list]]) -> list[StrategyAcrossM
                 label=STRATEGY_SPECS[strategy_id].label,
                 markets_tested=tested,
                 markets_reliable=bucket["reliable"],
-                markets_positive=bucket["positive"],
+                markets_beat_market=bucket["beat"],
                 avg_holdout_return_pct=round(sum(returns) / tested, 2) if tested else 0.0,
+                avg_holdout_excess_pct=round(sum(excess) / tested, 2) if tested else 0.0,
                 avg_dev_sharpe=round(sum(dev) / tested, 3) if tested else 0.0,
             )
         )
-    # La più robusta: prima chi è affidabile su più mercati, poi chi è positivo
-    # su più mercati, poi la resa media più alta.
+    # La più robusta: prima chi è affidabile su più mercati, poi chi ha battuto
+    # il comprare-e-tenere su più mercati, poi il margine medio più alto.
     scores.sort(
-        key=lambda s: (s.markets_reliable, s.markets_positive, s.avg_holdout_return_pct),
+        key=lambda s: (s.markets_reliable, s.markets_beat_market, s.avg_holdout_excess_pct),
         reverse=True,
     )
     return scores
@@ -237,15 +248,16 @@ def _overall_note(overall: "StrategyAcrossMarkets | None", n_markets: int) -> st
         return (
             f"{overall.label} è la più solida: affidabile su dati nuovi in "
             f"{_mercati(overall.markets_reliable)} su {n_markets} testati, "
-            f"con una resa media su dati nuovi del {overall.avg_holdout_return_pct:+.1f}%."
+            f"con una resa media su dati nuovi del {overall.avg_holdout_return_pct:+.1f}% "
+            f"({overall.avg_holdout_excess_pct:+.1f} punti rispetto a comprare e tenere)."
         )
-    if overall.markets_positive > 0:
+    if overall.markets_beat_market > 0:
         return (
             f"Nessuna strategia è risultata pienamente affidabile su più mercati. "
-            f"La meno debole è {overall.label} (in positivo su "
-            f"{_mercati(overall.markets_positive)} su {n_markets})."
+            f"La meno debole è {overall.label}: ha fatto meglio del comprare e tenere in "
+            f"{_mercati(overall.markets_beat_market)} su {n_markets}."
         )
     return (
-        "Nessuna strategia ha retto su dati nuovi in questi mercati: è il segno che "
-        "batterli stabilmente è molto difficile, e spesso comprare e tenere è già competitivo."
+        "Nessuna strategia ha battuto il semplice comprare e tenere su dati nuovi in questi "
+        "mercati: è il segno che batterli stabilmente è molto difficile."
     )

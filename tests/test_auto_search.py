@@ -51,8 +51,12 @@ def test_run_multi_market_search_aggregates_across_markets() -> None:
     for score in result.strategy_scores:
         assert score.markets_tested == 3
         assert 0 <= score.markets_reliable <= 3
-    # La classifica è ordinata per robustezza (affidabile, poi positivo, poi resa).
-    keys = [(s.markets_reliable, s.markets_positive, s.avg_holdout_return_pct) for s in result.strategy_scores]
+    # La classifica è ordinata per robustezza (affidabile, poi meglio del
+    # mercato, poi margine medio sul comprare-e-tenere).
+    keys = [
+        (s.markets_reliable, s.markets_beat_market, s.avg_holdout_excess_pct)
+        for s in result.strategy_scores
+    ]
     assert keys == sorted(keys, reverse=True)
     assert result.verdict_note
 
@@ -123,9 +127,11 @@ def test_search_counts_combinations_while_working() -> None:
 
     data = _synth(seed=1, drift=60)
     eventi: list[tuple[int, int, str]] = []
+    # Su un solo processo: è il percorso che annuncia la strategia in corso
+    # (in parallelo le strategie girano insieme e l'etichetta è complessiva).
     run_strategy_search(
         data=data, symbol="AAA", fee_bps=0.0,
-        strategy_ids=_STRATS,
+        strategy_ids=_STRATS, max_workers=1,
         progress_callback=lambda done, total, label: eventi.append((done, total, label)),
     )
 
@@ -247,3 +253,115 @@ def test_get_job_loads_persisted_result_after_restart(tmp_path: Path) -> None:
     assert job is not None
     assert job["status"] == "done"
     assert job["result"]["symbols"] == ["XYZ"]
+
+
+# ── Affidabilità misurata sul mercato, non sullo zero ────────────────────────
+
+def test_affidabilita_confronta_col_mercato_non_con_lo_zero() -> None:
+    """Regressione: in un periodo di prova al ribasso il motore (solo long) non
+    può guadagnare in assoluto, quindi pretenderlo bocciava chiunque — comprese
+    le strategie che avevano limitato le perdite."""
+    from trading_bot.application.strategy_search import (
+        RELIABILITY_LOW,
+        RELIABILITY_MEDIUM,
+        RELIABILITY_NONE,
+        _reliability,
+    )
+
+    # Mercato -18%, strategia -5%: 13 punti risparmiati, non è una bocciatura.
+    limita_i_danni = _reliability(
+        dev_oos_sharpe=0.8, holdout_return_pct=-5.0, holdout_excess_return_pct=13.0,
+        holdout_sharpe=-0.2, holdout_trades=6,
+    )
+    assert limita_i_danni == RELIABILITY_MEDIUM
+
+    # Guadagna il 4% ma il mercato ha fatto +12%: non ha aggiunto niente.
+    peggio_del_mercato = _reliability(
+        dev_oos_sharpe=0.8, holdout_return_pct=4.0, holdout_excess_return_pct=-8.0,
+        holdout_sharpe=0.5, holdout_trades=6,
+    )
+    assert peggio_del_mercato == RELIABILITY_LOW
+
+    # Senza operazioni non c'è niente da giudicare.
+    assert _reliability(
+        dev_oos_sharpe=0.8, holdout_return_pct=0.0, holdout_excess_return_pct=18.0,
+        holdout_sharpe=0.0, holdout_trades=0,
+    ) == RELIABILITY_NONE
+
+
+def test_affidabilita_alta_richiede_guadagno_e_tenuta() -> None:
+    from trading_bot.application.strategy_search import (
+        RELIABILITY_HIGH,
+        RELIABILITY_MEDIUM,
+        _reliability,
+    )
+
+    assert _reliability(
+        dev_oos_sharpe=1.0, holdout_return_pct=14.0, holdout_excess_return_pct=6.0,
+        holdout_sharpe=0.9, holdout_trades=8,
+    ) == RELIABILITY_HIGH
+    # Stesso guadagno ma crollo rispetto allo sviluppo: promettente, non solida.
+    assert _reliability(
+        dev_oos_sharpe=2.0, holdout_return_pct=14.0, holdout_excess_return_pct=6.0,
+        holdout_sharpe=0.4, holdout_trades=8,
+    ) == RELIABILITY_MEDIUM
+
+
+def test_classifica_multi_mercato_conta_chi_batte_il_mercato() -> None:
+    """L'aggregato deve contare i mercati battuti, non quelli chiusi in positivo."""
+    from trading_bot.application.multi_search import _aggregate
+
+    scores = _aggregate({
+        "sma_cross": {
+            # Perde meno del mercato in entrambi: due mercati battuti.
+            "returns": [-4.0, -6.0], "excess": [10.0, 8.0],
+            "dev_sharpe": [0.4, 0.3], "reliable": 0, "beat": 2,
+        },
+        "ema_cross": {
+            # Guadagna, ma meno del mercato: nessun mercato battuto.
+            "returns": [5.0, 7.0], "excess": [-6.0, -4.0],
+            "dev_sharpe": [0.9, 0.8], "reliable": 0, "beat": 0,
+        },
+    })
+
+    assert [s.strategy_id for s in scores] == ["sma_cross", "ema_cross"]
+    assert scores[0].markets_beat_market == 2
+    assert scores[0].avg_holdout_excess_pct == 9.0
+
+
+def test_ricerca_in_parallelo_da_lo_stesso_risultato(monkeypatch) -> None:
+    """Il parallelismo è solo velocità: campione, parametri e classifica devono
+    coincidere con l'esecuzione su un solo processo."""
+    from trading_bot.application.strategy_search import run_strategy_search
+
+    data = _synth(n=400, seed=4, drift=45)
+    comuni = dict(data=data, symbol="AAA", fee_bps=0.0, strategy_ids=_STRATS)
+
+    sequenziale = run_strategy_search(**comuni, max_workers=1)
+    parallelo = run_strategy_search(**comuni, max_workers=2)
+
+    assert parallelo.champion_id == sequenziale.champion_id
+    assert parallelo.champion_params == sequenziale.champion_params
+    assert [r.strategy_id for r in parallelo.ranking] == [
+        r.strategy_id for r in sequenziale.ranking
+    ]
+    assert parallelo.reliability == sequenziale.reliability
+
+
+def test_avanzamento_arriva_al_totale_anche_in_parallelo() -> None:
+    from trading_bot.application.strategy_search import (
+        estimate_search_combinations,
+        run_strategy_search,
+    )
+
+    data = _synth(n=400, seed=4, drift=45)
+    eventi: list[tuple[int, int, str]] = []
+    run_strategy_search(
+        data=data, symbol="AAA", fee_bps=0.0, strategy_ids=_STRATS, max_workers=2,
+        progress_callback=lambda done, total, label: eventi.append((done, total, label)),
+    )
+
+    atteso = estimate_search_combinations(len(data), strategy_ids=_STRATS)
+    assert [e[0] for e in eventi] == sorted(e[0] for e in eventi)
+    assert eventi[-1][0] == atteso
+    assert all(e[0] <= atteso for e in eventi)

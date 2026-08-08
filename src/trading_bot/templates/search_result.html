@@ -8,7 +8,9 @@
 {% set rel_label = {'alta': 'Affidabilità alta', 'media': 'Affidabilità media', 'bassa': 'Affidabilità bassa', 'insufficiente': 'Dati insufficienti'} %}
 {% set capital = result.settings.initial_capital | default(10000) %}
 {% set top = result.strategy_scores[0] if result.strategy_scores else None %}
-{% set hero_tone = 'positive' if (top and top.markets_reliable and top.markets_reliable > 0) else ('neutral' if (top and top.markets_positive and top.markets_positive > 0) else 'negative') %}
+{# Le ricerche salvate prima della revisione hanno markets_positive al posto di markets_beat_market. #}
+{% set top_beat = (top.markets_beat_market if top and top.markets_beat_market is defined else (top.markets_positive if top else 0)) or 0 %}
+{% set hero_tone = 'positive' if (top and top.markets_reliable and top.markets_reliable > 0) else ('neutral' if top_beat > 0 else 'negative') %}
 
 <div class="page-header">
   <p class="eyebrow">risultato della ricerca automatica</p>
@@ -90,8 +92,9 @@
         <tr>
           <th>Strategia</th>
           <th>Affidabile su</th>
-          <th>In positivo su</th>
+          <th>Meglio del mercato su</th>
           <th>Resa media su dati nuovi</th>
+          <th>Differenza col mercato</th>
         </tr>
       </thead>
       <tbody>
@@ -102,8 +105,13 @@
               {% if s.strategy_id == result.overall_champion_id %}<span class="strategy-chip strategy-chip-accent">migliore</span>{% endif %}
             </td>
             <td class="{% if s.markets_reliable > 0 %}tone-positive{% else %}tone-neutral{% endif %}">{{ s.markets_reliable }} / {{ s.markets_tested }} mercati</td>
-            <td>{{ s.markets_positive }} / {{ s.markets_tested }}</td>
+            {% set beat = (s.markets_beat_market if s.markets_beat_market is defined else s.markets_positive) or 0 %}
+            <td>{{ beat }} / {{ s.markets_tested }}</td>
             <td class="{% if s.avg_holdout_return_pct >= 0 %}tone-positive{% else %}tone-negative{% endif %}">{{ "%+.1f"|format(s.avg_holdout_return_pct) }}%</td>
+            {% set margine = s.avg_holdout_excess_pct if s.avg_holdout_excess_pct is defined else None %}
+            <td class="{% if margine is none %}tone-neutral{% elif margine >= 0 %}tone-positive{% else %}tone-negative{% endif %}">
+              {% if margine is none %}—{% else %}{{ "%+.1f"|format(margine) }} punti{% endif %}
+            </td>
           </tr>
         {% endfor %}
       </tbody>
@@ -113,10 +121,14 @@
   <details style="margin-top:0.75rem;">
     <summary class="inline-note" style="cursor:pointer;">Dettagli tecnici (per chi li vuole)</summary>
     <p class="inline-note" style="margin-top:8px;">
-      "Affidabile" = ha guadagnato su dati nuovi tenendo un rapporto rendimento/rischio (Sharpe) positivo
-      e vicino a quello mostrato in fase di sviluppo. La selezione avviene in walk-forward sullo sviluppo
-      (Sharpe out-of-sample); la resa mostrata qui è invece misurata sul periodo di prova mai usato nella
-      selezione. Sharpe medio sullo sviluppo per strategia:
+      "Affidabile" = su dati nuovi ha guadagnato <em>e</em> ha battuto il comprare-e-tenere di almeno
+      mezzo punto, con un rapporto rendimento/rischio (Sharpe) positivo e vicino a quello mostrato in
+      fase di sviluppo. Il confronto è col mercato e non con lo zero perché il motore è solo long: in un
+      periodo di prova al ribasso nessuna strategia potrebbe guadagnare in assoluto. Chi perde meno del
+      mercato si ferma ad affidabilità media. La selezione avviene in walk-forward sullo sviluppo
+      (Sharpe out-of-sample, con gli indicatori scaldati sulla storia precedente e le combinazioni che
+      non aprono operazioni escluse); la resa mostrata qui è invece misurata sul periodo di prova mai
+      usato nella selezione. Sharpe medio sullo sviluppo per strategia:
       {% for s in result.strategy_scores %}{{ s.label }} {{ s.avg_dev_sharpe }}{% if not loop.last %} · {% endif %}{% endfor %}.
       Metriche al netto delle commissioni, slippage non modellato.
     </p>
