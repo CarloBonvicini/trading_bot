@@ -43,12 +43,15 @@ Il layer `application/` orchestra questa pipeline senza contenere logica di busi
 - **`application/dashboard.py`** — aggrega statistiche da tutti i report salvati per la home page.
 - **`application/forms.py`** — conversione bidirezionale tra `BacktestRequest` e valori del form HTML.
 - **`application/chart_lab.py`** — preview indicatori per il strategy lab.
+- **`application/strategy_search.py`** — ricerca automatica della strategia migliore su un mercato (holdout finale + walk-forward + prova su dati nuovi). L'affidabilità si misura sul **margine rispetto al comprare-e-tenere** (`excess_return_pct`), mai sullo zero: il motore è long-only, quindi in un periodo di prova al ribasso nessuna strategia potrebbe guadagnare in assoluto. Le strategie sono valutate in parallelo su più processi quando il lavoro supera `SOGLIA_PARALLELO` (`max_workers=1` forza il sequenziale).
+- **`application/multi_search.py`** — la stessa ricerca su più mercati insieme, aggregata per strategia (quanti mercati ha battuto, con quale margine medio).
 
 ### Moduli core
 
-- **`data.py`** — download OHLCV via yfinance, gestione limiti intraday (1m=8gg, 5m=60gg, 1h=730gg), alias simboli (es. GOLD→GC=F). Sempre chiama `coerce_interval_date_window()` prima del download.
+- **`data.py`** — download OHLCV via yfinance, gestione limiti intraday (1m=8gg, 5m=60gg, 1h=730gg), alias simboli (es. GOLD→GC=F). Sempre chiama `coerce_interval_date_window()` prima del download. Gli scaricamenti sono messi in cache su disco in `reports/.cache_dati` (12 ore se la finestra arriva a oggi, 30 giorni se è tutta nel passato); `use_cache=False` la salta, `clear_data_cache()` la svuota.
 - **`strategies.py`** — 10 funzioni strategia + `STRATEGY_SPECS` (dizionario con metadati/parametri per ogni strategia) + `STRATEGY_FUNCTIONS` (mapping id→funzione). Per aggiungere una strategia: implementa la funzione, aggiungila ad entrambi i dizionari, crea il `StrategySpec`. Le strategie mean-reversion usano `_stateful_signal()` per tracciare lo stato entry/exit. Le strategie con `supports_sweep=True` supportano lo sweep parametri.
-- **`backtest.py`** — engine puro: prende `data` e `signal` (pd.Series 0/1), restituisce `BacktestResult`. Il position shift di 1 barra è critico per evitare lookahead bias — non rimuoverlo mai. Fee simulate in basis points.
+- **`backtest.py`** — engine puro: prende `data` e `signal` (pd.Series 0/1), restituisce `BacktestResult`. Il position shift di 1 barra è critico per evitare lookahead bias — non rimuoverlo mai. Fee simulate in basis points. L'annualizzazione (CAGR, volatilità, Sharpe, Sortino) usa `infer_periods_per_year()`, che deduce le barre per anno dal calendario: 252 sul giornaliero, `252 × barre al giorno` sull'intraday.
+- **`walkforward.py`** — finestre IS/OOS scorrevoli. Il segnale di ogni combinazione si calcola **una volta sull'intera serie** e poi si ritaglia sulla finestra: è il warm-up degli indicatori (senza, un indicatore più lungo della finestra resta piatto a zero) ed evita di ricalcolare lo stesso segnale per ogni finestra. A parità di punteggio vince sempre una combinazione che ha operato: quelle inerti hanno Sharpe 0 secco e batterebbero tutte quelle in perdita.
 - **`reporting.py`** — trasforma `BacktestResult` in payload per la UI (card summary, dati grafico). Label italiane in `SUMMARY_LABELS`.
 - **`errors.py`** — `FormValidationError` con tracking dei campi per evidenziazione UI.
 
