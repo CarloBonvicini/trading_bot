@@ -11,6 +11,11 @@ import pandas as pd
 
 TRADING_DAYS_PER_YEAR = 252
 
+# Sopra questa media di barre al giorno la serie è considerata intraday.
+_SOGLIA_INTRADAY = 1.5
+# Sotto questo numero di barre non c'è abbastanza calendario per dedurre nulla.
+_MIN_BARRE_INFERENZA = 10
+
 # ── Metodi di position sizing ────────────────────────────────────────────────
 SIZING_FULL = "full"        # 100% del capitale (default)
 SIZING_FIXED = "fixed"      # Frazione fissa del capitale
@@ -26,6 +31,40 @@ class BacktestResult:
     summary: dict[str, float | int | str]
     equity_curve: pd.DataFrame
     trades: pd.DataFrame
+
+
+def infer_periods_per_year(index: pd.Index) -> float:
+    """Quante barre entrano in un anno di mercato, dedotte dal calendario.
+
+    Serve ad annualizzare correttamente rendimento annuo, volatilità, Sharpe e
+    Sortino: usare 252 su barre orarie gonfia i valori di circa 6-7 volte e su
+    barre da un minuto di quasi 400.
+
+    - Serie intraday (più barre nello stesso giorno): ``252 × barre al giorno``.
+    - Serie giornaliere o più larghe: ``252 / giorni di borsa per barra``, così
+      il caso giornaliero resta esattamente 252 (nessuna variazione sui report
+      già salvati) e settimanale/mensile scendono a ~50 e ~12.
+    """
+    if not isinstance(index, pd.DatetimeIndex) or len(index) < _MIN_BARRE_INFERENZA:
+        return float(TRADING_DAYS_PER_YEAR)
+
+    giorni_distinti = index.normalize().nunique()
+    if giorni_distinti <= 0:
+        return float(TRADING_DAYS_PER_YEAR)
+
+    barre_per_giorno = len(index) / giorni_distinti
+    if barre_per_giorno >= _SOGLIA_INTRADAY:
+        return float(TRADING_DAYS_PER_YEAR) * barre_per_giorno
+
+    distanze = index.to_series().diff().dropna()
+    distanze = distanze[distanze > pd.Timedelta(0)]
+    if distanze.empty:
+        return float(TRADING_DAYS_PER_YEAR)
+
+    giorni_solari = float(distanze.median() / pd.Timedelta(days=1))
+    # 5 giorni di borsa ogni 7 solari: una barra settimanale "vale" 5 giorni.
+    giorni_borsa_per_barra = max(1, round(giorni_solari * 5.0 / 7.0))
+    return float(TRADING_DAYS_PER_YEAR) / giorni_borsa_per_barra
 
 
 def apply_sl_tp(
@@ -123,6 +162,7 @@ def compute_position_size(
     position: pd.Series,
     method: str = SIZING_FULL,
     param: float = 1.0,
+    periods_per_year: float | None = None,
 ) -> pd.Series:
     """Calcola la dimensione della posizione in base al metodo di sizing scelto.
 
@@ -140,8 +180,9 @@ def compute_position_size(
         if param <= 0:
             return position  # protezione: target nullo → ignora
         target = param / 100.0
+        barre_anno = periods_per_year or infer_periods_per_year(data.index)
         returns = data["close"].pct_change()
-        realized_vol = returns.rolling(20, min_periods=5).std() * math.sqrt(TRADING_DAYS_PER_YEAR)
+        realized_vol = returns.rolling(20, min_periods=5).std() * math.sqrt(barre_anno)
         realized_vol = realized_vol.replace(0.0, np.nan).ffill().bfill().fillna(target)
         size = (target / realized_vol).clip(upper=2.0)
         return position * size
@@ -167,6 +208,9 @@ def run_backtest(
     if fee_bps < 0:
         raise ValueError("fee_bps cannot be negative.")
 
+    # Barre per anno dedotte dal calendario: su intraday 252 sarebbe sbagliato.
+    periods_per_year = infer_periods_per_year(data.index)
+
     close = data["close"].astype(float)
     position = signal.reindex(data.index).fillna(0.0).clip(lower=0.0, upper=1.0)
     # Shift di 1 barra: il segnale generato dalla barra t è eseguibile dalla t+1.
@@ -181,7 +225,9 @@ def run_backtest(
     binary_position = executed_position.copy()
 
     # Position sizing (può creare frazioni 0..2 della posizione binaria)
-    executed_position = compute_position_size(data, executed_position, sizing_method, sizing_param)
+    executed_position = compute_position_size(
+        data, executed_position, sizing_method, sizing_param, periods_per_year=periods_per_year
+    )
 
     daily_returns = close.pct_change().fillna(0.0)
     position_change = executed_position.diff().abs().fillna(executed_position.abs())
@@ -230,6 +276,7 @@ def run_backtest(
         equity_curve=equity_curve,
         trades=trades,
         initial_capital=initial_capital,
+        periods_per_year=periods_per_year,
     )
     return BacktestResult(summary=summary, equity_curve=equity_curve, trades=trades)
 
@@ -256,6 +303,7 @@ def _build_summary(
     equity_curve: pd.DataFrame,
     trades: pd.DataFrame,
     initial_capital: float,
+    periods_per_year: float = float(TRADING_DAYS_PER_YEAR),
 ) -> dict[str, float | int | str]:
     strategy_returns = equity_curve["strategy_return"]
     final_equity = float(equity_curve["equity"].iloc[-1])
@@ -265,7 +313,7 @@ def _build_summary(
     total_return = (final_equity / initial_capital) - 1
     benchmark_return = (benchmark_final_equity / initial_capital) - 1
     periods = len(equity_curve)
-    years = periods / TRADING_DAYS_PER_YEAR if periods else 0.0
+    years = periods / periods_per_year if periods and periods_per_year > 0 else 0.0
 
     # CAGR: rendimento annualizzato composto. Se la serie è più corta di un
     # anno restituiamo il rendimento totale per evitare amplificazioni assurde.
@@ -274,9 +322,9 @@ def _build_summary(
     else:
         annual_return = total_return
 
-    annual_volatility = strategy_returns.std(ddof=0) * math.sqrt(TRADING_DAYS_PER_YEAR)
-    sharpe_ratio = _compute_sharpe(strategy_returns)
-    sortino_ratio = _compute_sortino(strategy_returns)
+    annual_volatility = strategy_returns.std(ddof=0) * math.sqrt(periods_per_year)
+    sharpe_ratio = _compute_sharpe(strategy_returns, periods_per_year)
+    sortino_ratio = _compute_sortino(strategy_returns, periods_per_year)
     calmar_ratio = _compute_calmar(annual_return=annual_return, drawdown=equity_curve["drawdown"])
 
     # Statistiche trade (richiedono pnl_pct numerico sui trade chiusi)
@@ -310,7 +358,9 @@ def _build_summary(
     }
 
 
-def _compute_sharpe(returns: pd.Series) -> float:
+def _compute_sharpe(
+    returns: pd.Series, periods_per_year: float = float(TRADING_DAYS_PER_YEAR)
+) -> float:
     """Sharpe ratio annualizzato con risk-free rate = 0.
 
     Convenzione: ``std(ddof=0)`` (deviazione di popolazione) per coerenza con
@@ -321,10 +371,12 @@ def _compute_sharpe(returns: pd.Series) -> float:
     std = returns.std(ddof=0)
     if std <= 0:
         return 0.0
-    return float(returns.mean() / std * math.sqrt(TRADING_DAYS_PER_YEAR))
+    return float(returns.mean() / std * math.sqrt(periods_per_year))
 
 
-def _compute_sortino(returns: pd.Series) -> float:
+def _compute_sortino(
+    returns: pd.Series, periods_per_year: float = float(TRADING_DAYS_PER_YEAR)
+) -> float:
     """Sortino ratio: come Sharpe ma usa solo la volatilità dei rendimenti negativi.
 
     Premia le strategie che hanno bassa volatilità al ribasso anche se la
@@ -339,7 +391,7 @@ def _compute_sortino(returns: pd.Series) -> float:
     downside_std = downside.std(ddof=0)
     if downside_std <= 0:
         return 0.0
-    return float(returns.mean() / downside_std * math.sqrt(TRADING_DAYS_PER_YEAR))
+    return float(returns.mean() / downside_std * math.sqrt(periods_per_year))
 
 
 def _compute_calmar(*, annual_return: float, drawdown: pd.Series) -> float:

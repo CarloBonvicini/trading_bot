@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 import pytest
 
-from trading_bot.backtest import apply_sl_tp, compute_position_size, run_backtest
+from trading_bot.backtest import (
+    apply_sl_tp,
+    compute_position_size,
+    infer_periods_per_year,
+    run_backtest,
+)
 from trading_bot.strategies import build_combined_signal, donchian_breakout, rsi_mean_reversion, sma_crossover
 
 
@@ -361,3 +368,74 @@ def test_sortino_handles_no_downside_returns() -> None:
     assert isinstance(sortino, float)
     assert not (sortino != sortino)  # not NaN
 
+
+
+# ── Annualizzazione dedotta dal calendario ───────────────────────────────────
+
+def test_infer_periods_per_year_daily_resta_252() -> None:
+    """Le serie giornaliere devono restare a 252: i report già salvati non
+    devono cambiare valore."""
+    idx = pd.bdate_range("2022-01-03", periods=300)
+    assert infer_periods_per_year(idx) == 252.0
+
+
+def test_infer_periods_per_year_intraday_conta_le_barre_del_giorno() -> None:
+    # 7 barre orarie al giorno per 40 giorni di borsa.
+    idx = pd.DatetimeIndex(
+        [
+            giorno + pd.Timedelta(hours=ora)
+            for giorno in pd.bdate_range("2024-01-02", periods=40)
+            for ora in range(9, 16)
+        ]
+    )
+    assert infer_periods_per_year(idx) == pytest.approx(252 * 7)
+
+
+def test_infer_periods_per_year_settimanale_e_mensile() -> None:
+    settimanale = pd.date_range("2020-01-06", periods=120, freq="W-MON")
+    mensile = pd.date_range("2015-01-31", periods=60, freq="ME")
+    # ~50 barre l'anno sul settimanale, ~12 sul mensile.
+    assert infer_periods_per_year(settimanale) == pytest.approx(252 / 5)
+    assert 10.0 <= infer_periods_per_year(mensile) <= 13.0
+
+
+def test_infer_periods_per_year_fallback_su_serie_corte() -> None:
+    assert infer_periods_per_year(pd.date_range("2024-01-01", periods=4)) == 252.0
+    assert infer_periods_per_year(pd.Index([1, 2, 3])) == 252.0
+
+
+def test_sharpe_orario_non_annualizzato_come_giornaliero() -> None:
+    """Regressione: su barre orarie ogni barra veniva contata come un giorno,
+    quindi Sharpe risultava schiacciato di un fattore radice(barre al giorno) e
+    il rendimento annuo veniva spalmato su sette volte il tempo reale."""
+    idx = pd.DatetimeIndex(
+        [
+            giorno + pd.Timedelta(hours=ora)
+            for giorno in pd.bdate_range("2024-01-02", periods=60)
+            for ora in range(9, 16)
+        ]
+    )
+    rendimenti = [0.001 if i % 2 else 0.002 for i in range(len(idx))]
+    closes = 100.0 * pd.Series(rendimenti, index=idx).add(1).cumprod()
+    data = pd.DataFrame({"close": closes, "high": closes, "low": closes}, index=idx)
+    signal = pd.Series(1.0, index=idx)
+
+    orario = run_backtest(data=data, signal=signal, fee_bps=0.0)
+
+    # Stessa identica serie di rendimenti, ma su barre giornaliere.
+    idx_daily = pd.bdate_range("2020-01-01", periods=len(idx))
+    closes_daily = pd.Series(closes.to_numpy(), index=idx_daily)
+    data_daily = pd.DataFrame(
+        {"close": closes_daily, "high": closes_daily, "low": closes_daily}, index=idx_daily
+    )
+    giornaliero = run_backtest(
+        data=data_daily, signal=pd.Series(1.0, index=idx_daily), fee_bps=0.0
+    )
+
+    # Stessi rendimenti per barra, ma le barre orarie sono 7 volte più fitte:
+    # annualizzate correttamente danno uno Sharpe radice(7) volte più alto.
+    rapporto = orario.summary["sharpe_ratio"] / giornaliero.summary["sharpe_ratio"]
+    assert rapporto == pytest.approx(math.sqrt(7), rel=0.01)
+    # Stesso guadagno totale concentrato in 60 giorni invece che in 420: il
+    # rendimento annuo orario deve risultare molto più alto, non uguale.
+    assert orario.summary["annual_return_pct"] > giornaliero.summary["annual_return_pct"]
