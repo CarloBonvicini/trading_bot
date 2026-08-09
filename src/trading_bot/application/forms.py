@@ -3,9 +3,42 @@ from __future__ import annotations
 from datetime import datetime
 
 from trading_bot.application.constants import INTERVAL_OPTIONS, STRATEGY_OPTIONS
-from trading_bot.application.requests import BacktestRequest
+from trading_bot.application.requests import BacktestRequest, sweep_parameter_names
 from trading_bot.data import INTRADAY_LOOKBACK_DAYS
-from trading_bot.strategies import default_parameter_values, strategy_field_name
+from trading_bot.strategies import STRATEGY_SPECS, default_parameter_values, strategy_field_name
+
+
+def _sweep_range_defaults() -> dict[str, object]:
+    """Default dei campi range sweep (``<strategia>__<parametro>_start/_end/_step``).
+
+    Copre ogni strategia ``supports_sweep`` con un range centrato sul default
+    dello spec (metà → doppio, passo ≈ un sesto dell'ampiezza). Il namespace
+    strategia evita collisioni tra strategie che condividono i nomi parametro
+    (es. fast/slow di sma_cross, ema_cross e obv_trend).
+    """
+    defaults: dict[str, object] = {}
+    for spec in STRATEGY_SPECS.values():
+        if not spec.supports_sweep:
+            continue
+        parameter_map = spec.parameter_map()
+        for name in sweep_parameter_names(spec.key):
+            parameter = parameter_map[name]
+            if parameter.value_type == "int":
+                start = int(parameter.default) // 2
+                if parameter.minimum is not None:
+                    start = max(int(parameter.minimum), start)
+                end = int(parameter.default) * 2
+                step = max(1, (end - start) // 6)
+            else:
+                start = float(parameter.default) / 2
+                if parameter.minimum is not None:
+                    start = max(float(parameter.minimum), start)
+                end = float(parameter.default) * 2
+                step = round((end - start) / 6, 4) or float(parameter.step or 1.0)
+            defaults[f"{spec.key}__{name}_start"] = start
+            defaults[f"{spec.key}__{name}_end"] = end
+            defaults[f"{spec.key}__{name}_step"] = step
+    return defaults
 
 
 def default_form_values() -> dict[str, object]:
@@ -30,12 +63,7 @@ def default_form_values() -> dict[str, object]:
         "wf_is_days": 252,
         "wf_oos_days": 63,
         "wf_optimize_by": "sharpe_ratio",
-        "fast_start": 10,
-        "fast_end": 40,
-        "fast_step": 10,
-        "slow_start": 80,
-        "slow_end": 200,
-        "slow_step": 20,
+        **_sweep_range_defaults(),
         **default_parameter_values(),
     }
 

@@ -3,13 +3,17 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from trading_bot.services import (
+    FloatRange,
     IntegerRange,
     STRATEGY_OPTIONS,
+    StrategySearchResult,
     SweepRequest,
     list_strategy_presets,
     run_sma_sweep_request,
+    run_strategy_search,
     save_strategy_preset,
 )
 
@@ -115,6 +119,128 @@ def test_run_sma_sweep_request_supports_donchian_breakout(monkeypatch, tmp_path:
     assert "entry_period" in best and "exit_period" in best
     # File generati
     assert (tmp_path / completed.sweep_dir.name / "results.csv").exists()
+
+
+def test_run_sma_sweep_request_supports_parabolic_sar_float_ranges(monkeypatch, tmp_path: Path) -> None:
+    """Regressione: lo sweep deve funzionare anche con parametri float
+    (step/max_step di Parabolic SAR) tramite FloatRange."""
+    closes = [100.0, 101.0, 103.0, 102.0, 105.0, 107.0, 106.0, 110.0, 111.0, 113.0,
+              112.0, 116.0, 115.0, 118.0, 117.0, 114.0, 112.0, 110.0, 108.0, 106.0]
+    data = pd.DataFrame(
+        {
+            "close": closes,
+            "high":  [c + 1.0 for c in closes],
+            "low":   [c - 1.0 for c in closes],
+        },
+        index=pd.date_range("2024-01-01", periods=len(closes), freq="D"),
+    )
+    monkeypatch.setattr("trading_bot.application.execution.download_price_data", lambda **_: data)
+
+    sweep_request = SweepRequest(
+        symbol="SPY",
+        data_symbol="SPY",
+        start="2024-01-01",
+        end="2024-01-20",
+        interval="1d",
+        strategy="parabolic_sar",
+        parameter_ranges={
+            "step": FloatRange(0.01, 0.03, 0.01),
+            "max_step": FloatRange(0.1, 0.3, 0.1),
+        },
+        fee_bps=0.0,
+    )
+
+    completed = run_sma_sweep_request(sweep_request=sweep_request, output_dir=tmp_path)
+
+    # 3 valori di step x 3 di max_step, tutti validi (step < max_step)
+    assert completed.summary["run_count"] == 9
+    best = completed.summary.get("best_parameters", {})
+    assert "step" in best and "max_step" in best
+    assert (tmp_path / completed.sweep_dir.name / "results.csv").exists()
+
+
+def test_save_strategy_preset_saves_namespaced_sweep_settings(tmp_path: Path) -> None:
+    """Le impostazioni sweep vengono salvate con chiavi namespaced; i campi in
+    forma globale (form pre-namespacing) vengono normalizzati."""
+    saved = save_strategy_preset(
+        raw={
+            "preset_name": "Donchian sweep",
+            "symbol": "SPY",
+            "start": "2024-01-01",
+            "end": "2024-03-01",
+            "interval": "1d",
+            "strategy": "donchian_breakout",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "run_mode": "sweep",
+            "sort_by": "sharpe_ratio",
+            "donchian_breakout__entry_period_start": "10",
+            "donchian_breakout__entry_period_end": "40",
+            "donchian_breakout__entry_period_step": "10",
+            # exit_period in forma globale: deve essere normalizzato
+            "exit_period_start": "5",
+            "exit_period_end": "15",
+            "exit_period_step": "5",
+        },
+        output_dir=tmp_path,
+    )
+
+    assert saved["run_mode"] == "sweep"
+    assert saved["sweep_settings"] == {
+        "sort_by": "sharpe_ratio",
+        "donchian_breakout__entry_period_start": 10,
+        "donchian_breakout__entry_period_end": 40,
+        "donchian_breakout__entry_period_step": 10,
+        "donchian_breakout__exit_period_start": 5,
+        "donchian_breakout__exit_period_end": 15,
+        "donchian_breakout__exit_period_step": 5,
+    }
+
+
+@pytest.mark.lento
+def test_run_strategy_search_ranks_and_validates_on_holdout(mercato_sintetico) -> None:
+    """La ricerca automatica classifica le strategie in walk-forward sullo
+    sviluppo e valida il campione sul holdout intoccato."""
+    data = mercato_sintetico(n=340)
+
+    result = run_strategy_search(
+        data=data,
+        symbol="TEST",
+        interval="1d",
+        fee_bps=0.0,
+        strategy_ids=["sma_cross", "ema_cross"],
+    )
+
+    assert isinstance(result, StrategySearchResult)
+    assert len(result.ranking) == 2
+    # Il campione è una delle strategie testate e ha parametri di produzione.
+    assert result.champion_id in {"sma_cross", "ema_cross"}
+    assert result.champion_params  # non vuoto
+    assert result.reliability in {"alta", "media", "bassa", "insufficiente"}
+    assert result.verdict_note  # frase in lingua semplice
+
+    # La classifica è ordinata per Sharpe OOS medio (valutabili prima degli errori).
+    valid = [r for r in result.ranking if r.error is None]
+    sharpes = [r.avg_oos_sharpe for r in valid]
+    assert sharpes == sorted(sharpes, reverse=True)
+    # Ogni riga valutabile porta con sé la prova su dati nuovi e il semaforo.
+    for row in valid:
+        assert row.reliability in {"alta", "media", "bassa", "insufficiente"}
+        assert row.params  # parametri di produzione
+
+    # Lo split sviluppo/holdout copre tutte le barre e il holdout è ~20%.
+    span = result.data_span
+    assert span["dev_bars"] + span["holdout_bars"] == 340
+    assert span["holdout_bars"] == round(340 * 0.20)
+
+    # La prova sul holdout riporta metriche misurate fuori campione.
+    assert set(result.holdout) >= {"sharpe_ratio", "total_return_pct", "trade_count"}
+
+
+def test_run_strategy_search_requires_enough_history(mercato_sintetico) -> None:
+    data = mercato_sintetico(n=80)
+    with pytest.raises(ValueError, match="validazione severa"):
+        run_strategy_search(data=data, symbol="TEST", strategy_ids=["sma_cross"])
 
 
 def test_strategy_catalog_and_presets_cover_extended_setup(tmp_path: Path) -> None:

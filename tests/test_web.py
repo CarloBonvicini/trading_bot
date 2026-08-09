@@ -275,6 +275,163 @@ def test_sweep_request_keeps_display_symbol_and_resolves_data_symbol() -> None:
     assert request.metadata()["data_symbol"] == "GC=F"
 
 
+def test_sweep_request_reads_namespaced_parameter_ranges_for_donchian() -> None:
+    """I campi ``<strategia>__<parametro>_start/_end/_step`` devono pilotare lo
+    sweep anche per strategie con parametri diversi da fast/slow."""
+    request = SweepRequest.from_mapping(
+        {
+            "symbol": "SPY",
+            "start": "2024-01-01",
+            "end": "2024-12-31",
+            "interval": "1d",
+            "run_mode": "sweep",
+            "active_strategies": ["donchian_breakout"],
+            "rule_logic": "all",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "donchian_breakout__entry_period_start": "10",
+            "donchian_breakout__entry_period_end": "40",
+            "donchian_breakout__entry_period_step": "10",
+            "donchian_breakout__exit_period_start": "5",
+            "donchian_breakout__exit_period_end": "15",
+            "donchian_breakout__exit_period_step": "5",
+        }
+    )
+
+    assert request.parameter_names == ("entry_period", "exit_period")
+    assert request.parameter_ranges["entry_period"].values() == [10, 20, 30, 40]
+    assert request.parameter_ranges["exit_period"].values() == [5, 10, 15]
+
+
+def test_sweep_request_prefers_namespaced_fields_over_global() -> None:
+    """A parità di campo, la forma namespaced vince su quella globale
+    retro-compat."""
+    request = SweepRequest.from_mapping(
+        {
+            "symbol": "SPY",
+            "start": "2024-01-01",
+            "end": "2024-12-31",
+            "interval": "1d",
+            "run_mode": "sweep",
+            "active_strategies": ["ema_cross"],
+            "rule_logic": "all",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "ema_cross__fast_start": "6",
+            "ema_cross__fast_end": "12",
+            "ema_cross__fast_step": "3",
+            "fast_start": "10",
+            "fast_end": "40",
+            "fast_step": "10",
+            "slow_start": "20",
+            "slow_end": "40",
+            "slow_step": "10",
+        }
+    )
+
+    assert request.parameter_ranges["fast"].values() == [6, 9, 12]
+    # slow non ha la forma namespaced: si usa quella globale
+    assert request.parameter_ranges["slow"].values() == [20, 30, 40]
+
+
+def test_sweep_request_reads_float_ranges_for_parabolic_sar() -> None:
+    """Copre anche la forma globale retro-compat (senza namespace strategia)."""
+    request = SweepRequest.from_mapping(
+        {
+            "symbol": "SPY",
+            "start": "2024-01-01",
+            "end": "2024-12-31",
+            "interval": "1d",
+            "run_mode": "sweep",
+            "active_strategies": ["parabolic_sar"],
+            "rule_logic": "all",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "step_start": "0.01",
+            "step_end": "0.03",
+            "step_step": "0.01",
+            "max_step_start": "0.1",
+            "max_step_end": "0.3",
+            "max_step_step": "0.1",
+        }
+    )
+
+    assert request.parameter_names == ("step", "max_step")
+    assert request.parameter_ranges["step"].values() == [0.01, 0.02, 0.03]
+    assert request.parameter_ranges["max_step"].values() == [0.1, 0.2, 0.3]
+
+
+def test_sweep_request_mixes_int_and_float_ranges_for_roc_momentum() -> None:
+    request = SweepRequest.from_mapping(
+        {
+            "symbol": "SPY",
+            "start": "2024-01-01",
+            "end": "2024-12-31",
+            "interval": "1d",
+            "run_mode": "sweep",
+            "active_strategies": ["roc_momentum"],
+            "rule_logic": "all",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "period_start": "5",
+            "period_end": "15",
+            "period_step": "5",
+            "threshold_start": "2",
+            "threshold_end": "6",
+            "threshold_step": "2",
+        }
+    )
+
+    assert request.parameter_names == ("period", "threshold")
+    assert request.parameter_ranges["period"].values() == [5, 10, 15]
+    assert request.parameter_ranges["threshold"].values() == [2.0, 4.0, 6.0]
+
+
+def test_sweep_request_falls_back_to_spec_defaults_without_range_fields() -> None:
+    """Campi assenti o vuoti non devono rompere il parsing: si ricade sui
+    default dello spec (start=default, end=default*2)."""
+    request = SweepRequest.from_mapping(
+        {
+            "symbol": "SPY",
+            "start": "2024-01-01",
+            "end": "2024-12-31",
+            "interval": "1d",
+            "run_mode": "sweep",
+            "active_strategies": ["donchian_breakout"],
+            "rule_logic": "all",
+            "initial_capital": "10000",
+            "fee_bps": "5",
+            "donchian_breakout__entry_period_start": "",
+            "entry_period_start": "",
+        }
+    )
+
+    entry_range = request.parameter_ranges["entry_period"]
+    assert entry_range.start == 20
+    assert entry_range.end == 40
+    assert entry_range.step == 1
+    exit_range = request.parameter_ranges["exit_period"]
+    assert exit_range.start == 10
+    assert exit_range.end == 20
+
+
+def test_new_backtest_form_renders_named_sweep_fields(tmp_path: Path) -> None:
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+
+    client = app.test_client()
+    body = client.get("/backtests/new").get_data(as_text=True)
+
+    assert 'name="sma_cross__fast_start"' in body
+    assert 'name="ema_cross__fast_start"' in body
+    assert 'name="obv_trend__slow_end"' in body
+    assert 'name="donchian_breakout__entry_period_start"' in body
+    assert 'name="donchian_breakout__exit_period_step"' in body
+    assert 'name="roc_momentum__period_start"' in body
+    assert 'name="roc_momentum__threshold_start"' in body   # float
+    assert 'name="parabolic_sar__step_start"' in body       # float
+    assert 'name="parabolic_sar__max_step_end"' in body
+
+
 def test_index_lists_existing_reports(tmp_path: Path) -> None:
     create_report_fixture(tmp_path / "SPY-sma_cross-20260403-090000")
     create_sweep_fixture(tmp_path / "SPY-sma_cross-sweep-20260403-100000")
@@ -289,16 +446,51 @@ def test_index_lists_existing_reports(tmp_path: Path) -> None:
     assert 'data-home-tab-button="dashboard"' in body
     assert 'data-home-tab-button="strategies"' not in body
     assert 'data-home-tab-route="/backtests/new"' in body
-    assert "Panoramica workspace" in body
-    assert "ultima sessione" in body
-    assert "Miglior win ratio" in body
-    assert "Best Sharpe" in body
-    assert "Metriche da tenere d'occhio" in body
-    assert "100.00%" in body
-    assert "1.12" in body
+    # La home semplificata: una sola azione chiara e due elenchi leggibili.
+    assert "Avvia un test" in body
+    assert "Strategie trovate dal sistema" in body
+    assert "Test salvati" in body
+    # Il test salvato compare con il suo rendimento, senza gergo.
+    assert "+20.00%" in body
+    # Niente più schede di metriche in gergo sulla home (restano solo dentro
+    # le opzioni avanzate del form manuale).
+    assert "Miglior win ratio" not in body
+    assert "Metriche da tenere d'occhio" not in body
+    assert "Panoramica workspace" not in body
+    assert "Simboli piu' usati" not in body
     assert 'id="home-panel-backtest"' in body
     assert "/drafts/resume/SPY-sma_cross-20260403-090000" in body
     assert ">Backtest<" in body
+
+
+def test_index_lists_saved_auto_searches(tmp_path: Path) -> None:
+    """Le ricerche automatiche già fatte devono essere riapribili dalla home."""
+    searches_dir = tmp_path / "auto_searches"
+    searches_dir.mkdir(parents=True)
+    (searches_dir / "abc123.json").write_text(
+        json.dumps(
+            {
+                "id": "abc123",
+                "saved_at": "2026-07-24T10:30:00",
+                "result": {
+                    "symbols": ["SPY", "MSFT"],
+                    "overall_champion_label": "Keltner Reversion",
+                    "verdict_note": "Keltner Reversion è la più solida.",
+                    "markets": [{"reliability": "alta"}, {"reliability": "media"}],
+                    "scan_mode": "rapida",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+
+    body = app.test_client().get("/").get_data(as_text=True)
+
+    assert "SPY, MSFT" in body
+    assert "Keltner Reversion" in body
+    assert "/searches/abc123" in body
+    assert "affidabile su 1/2" in body
 
 
 def test_new_backtest_page_renders_setup_form(tmp_path: Path) -> None:

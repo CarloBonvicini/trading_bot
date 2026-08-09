@@ -1,10 +1,29 @@
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 import pytest
 
-from trading_bot.backtest import apply_sl_tp, compute_position_size, run_backtest
-from trading_bot.strategies import build_combined_signal, donchian_breakout, rsi_mean_reversion, sma_crossover
+from trading_bot.backtest import (
+    apply_sl_tp,
+    compute_position_size,
+    infer_periods_per_year,
+    run_backtest,
+)
+from trading_bot.strategies import (
+    STRATEGY_SPECS,
+    adx_components,
+    build_combined_signal,
+    build_strategy_signal,
+    commodity_channel_index,
+    donchian_breakout,
+    money_flow_index,
+    relative_strength_index,
+    rsi_mean_reversion,
+    sma_crossover,
+    williams_r_indicator,
+)
 
 
 def test_sma_crossover_returns_binary_positions() -> None:
@@ -61,43 +80,31 @@ def test_backtest_tracks_fees_paid() -> None:
     assert round(result.summary["fee_drag_equity"], 2) >= round(result.summary["fees_paid"], 2)
 
 
-def _donchian_data(closes: list[float], highs: list[float] | None = None, lows: list[float] | None = None) -> pd.DataFrame:
-    n = len(closes)
-    return pd.DataFrame(
-        {
-            "close": closes,
-            "high":  highs  if highs  is not None else [c + 1.0 for c in closes],
-            "low":   lows   if lows   is not None else [c - 1.0 for c in closes],
-        },
-        index=pd.date_range("2024-01-01", periods=n, freq="D"),
-    )
-
-
-def test_donchian_breakout_returns_binary_positions() -> None:
+def test_donchian_breakout_returns_binary_positions(ohlc_da_chiusure) -> None:
     closes = [100.0, 99.0, 101.0, 100.0, 98.0, 102.0, 105.0, 107.0, 106.0, 108.0]
-    data = _donchian_data(closes)
+    data = ohlc_da_chiusure(closes)
     signal = donchian_breakout(data, entry_period=5, exit_period=3)
     assert set(signal.unique()).issubset({0.0, 1.0})
 
 
-def test_donchian_breakout_entry_fires_on_new_high() -> None:
+def test_donchian_breakout_entry_fires_on_new_high(ohlc_da_chiusure) -> None:
     # Prime 3 barre: high fermo a 101. Quarta barra: high = 110 -> breakout
     closes = [100.0, 100.0, 100.0, 110.0, 110.0]
     highs  = [101.0, 101.0, 101.0, 110.0, 110.0]
     lows   = [ 99.0,  99.0,  99.0,  99.0,  99.0]
-    data = _donchian_data(closes, highs, lows)
+    data = ohlc_da_chiusure(closes, massimi=highs, minimi=lows)
     signal = donchian_breakout(data, entry_period=3, exit_period=2)
     # Alla barra 3 (indice 3): close=110 >= max high(101,101,110)=110 -> entrata
     assert signal.iloc[3] == 1.0
 
 
-def test_donchian_breakout_exit_fires_on_new_low() -> None:
+def test_donchian_breakout_exit_fires_on_new_low(ohlc_da_chiusure) -> None:
     # Prezzi range-bound -> breakout a rialzo (ingresso) -> crollo sotto il canale (uscita)
     # entry_period=3, exit_period=2
     closes = [100.0, 101.0, 100.0, 101.0, 101.0, 121.0, 120.0, 73.0]
     highs  = [101.0, 102.0, 101.0, 102.0, 102.0, 121.0,  81.0, 74.0]
     lows   = [ 99.0,  99.0,  99.0,  99.0,  99.0,  99.0,  80.0, 73.0]
-    data = _donchian_data(closes, highs, lows)
+    data = ohlc_da_chiusure(closes, massimi=highs, minimi=lows)
     signal = donchian_breakout(data, entry_period=3, exit_period=2)
     # Ingresso alla barra 5: close 121 >= max high(102,102,121)=121
     assert signal.iloc[5] == 1.0
@@ -105,8 +112,8 @@ def test_donchian_breakout_exit_fires_on_new_low() -> None:
     assert signal.iloc[7] == 0.0
 
 
-def test_donchian_breakout_raises_if_exit_period_not_smaller() -> None:
-    data = _donchian_data([100.0] * 10)
+def test_donchian_breakout_raises_if_exit_period_not_smaller(ohlc_da_chiusure) -> None:
+    data = ohlc_da_chiusure([100.0] * 10)
     with pytest.raises(ValueError, match="exit period"):
         donchian_breakout(data, entry_period=10, exit_period=10)
 
@@ -141,32 +148,20 @@ def test_build_combined_signal_supports_and_logic() -> None:
 
 # ── apply_sl_tp ──────────────────────────────────────────────────────────────
 
-def _make_ohlc(closes: list[float], spread: float = 1.0) -> pd.DataFrame:
-    """Crea un DataFrame OHLC con high/low simmetrici attorno al close."""
-    idx = pd.date_range("2024-01-01", periods=len(closes), freq="D")
-    return pd.DataFrame(
-        {
-            "close": closes,
-            "high":  [c + spread for c in closes],
-            "low":   [c - spread for c in closes],
-        },
-        index=idx,
-    )
 
-
-def test_apply_sl_tp_noop_when_both_none() -> None:
-    data = _make_ohlc([100.0, 105.0, 110.0])
+def test_apply_sl_tp_noop_when_both_none(ohlc_da_chiusure) -> None:
+    data = ohlc_da_chiusure([100.0, 105.0, 110.0])
     pos = pd.Series([0.0, 1.0, 1.0], index=data.index)
     new_pos, mask = apply_sl_tp(data, pos, sl_pct=None, tp_pct=None)
     assert new_pos.tolist() == pos.tolist()
     assert mask.sum() == 0
 
 
-def test_apply_sl_tp_stop_loss_triggers() -> None:
+def test_apply_sl_tp_stop_loss_triggers(ohlc_da_chiusure) -> None:
     # Posizione entra alla barra 1 (close=100). Entry price = close[0] = 100.
     # SL al 5% → prezzo soglia = 95. Barra 2: low = 88 - 2 = 86 → scatta.
     closes = [100.0, 100.0, 88.0, 110.0]
-    data = _make_ohlc(closes, spread=2.0)
+    data = ohlc_da_chiusure(closes, spread=2.0)
     # Segnale scende a 0 alla barra 3 per isolare: verifichiamo solo che SL chiuda a barra 2
     pos = pd.Series([0.0, 1.0, 1.0, 0.0], index=data.index)
     new_pos, mask = apply_sl_tp(data, pos, sl_pct=5.0, tp_pct=None)
@@ -177,20 +172,20 @@ def test_apply_sl_tp_stop_loss_triggers() -> None:
     assert new_pos.iloc[3] == 0.0
 
 
-def test_apply_sl_tp_take_profit_triggers() -> None:
+def test_apply_sl_tp_take_profit_triggers(ohlc_da_chiusure) -> None:
     # Entry price = 100. TP al 10% → soglia = 110. Barra 2: high = 115 + 2 = 117 → scatta.
     closes = [100.0, 100.0, 115.0, 80.0]
-    data = _make_ohlc(closes, spread=2.0)
+    data = ohlc_da_chiusure(closes, spread=2.0)
     pos = pd.Series([0.0, 1.0, 1.0, 1.0], index=data.index)
     new_pos, mask = apply_sl_tp(data, pos, sl_pct=None, tp_pct=10.0)
     assert new_pos.iloc[2] == 0.0
     assert mask.iloc[2] is True or mask.iloc[2] == True  # noqa: E712
 
 
-def test_apply_sl_tp_no_trigger_when_price_in_range() -> None:
+def test_apply_sl_tp_no_trigger_when_price_in_range(ohlc_da_chiusure) -> None:
     # SL 5% TP 10%: range 95–110. Prezzi mai fuori.
     closes = [100.0, 100.0, 103.0, 107.0, 109.0]
-    data = _make_ohlc(closes, spread=0.5)
+    data = ohlc_da_chiusure(closes, spread=0.5)
     pos = pd.Series([0.0, 1.0, 1.0, 1.0, 1.0], index=data.index)
     new_pos, mask = apply_sl_tp(data, pos, sl_pct=5.0, tp_pct=10.0)
     assert new_pos.tolist() == pos.tolist()
@@ -215,22 +210,22 @@ def test_apply_sl_tp_result_integrated_in_run_backtest() -> None:
 
 # ── compute_position_size ─────────────────────────────────────────────────────
 
-def test_compute_position_size_full_unchanged() -> None:
-    data = _make_ohlc([100.0] * 5)
+def test_compute_position_size_full_unchanged(ohlc_da_chiusure) -> None:
+    data = ohlc_da_chiusure([100.0] * 5)
     pos = pd.Series([0.0, 1.0, 1.0, 0.0, 1.0], index=data.index)
     result = compute_position_size(data, pos, method="full", param=100.0)
     assert result.tolist() == pos.tolist()
 
 
-def test_compute_position_size_fixed_fraction() -> None:
-    data = _make_ohlc([100.0] * 5)
+def test_compute_position_size_fixed_fraction(ohlc_da_chiusure) -> None:
+    data = ohlc_da_chiusure([100.0] * 5)
     pos = pd.Series([1.0, 1.0, 1.0, 1.0, 1.0], index=data.index)
     result = compute_position_size(data, pos, method="fixed", param=50.0)
     assert all(abs(v - 0.5) < 1e-9 for v in result)
 
 
-def test_compute_position_size_fixed_zero_when_no_position() -> None:
-    data = _make_ohlc([100.0] * 4)
+def test_compute_position_size_fixed_zero_when_no_position(ohlc_da_chiusure) -> None:
+    data = ohlc_da_chiusure([100.0] * 4)
     pos = pd.Series([0.0, 1.0, 0.0, 1.0], index=data.index)
     result = compute_position_size(data, pos, method="fixed", param=40.0)
     assert result.iloc[0] == 0.0
@@ -238,10 +233,10 @@ def test_compute_position_size_fixed_zero_when_no_position() -> None:
     assert abs(result.iloc[1] - 0.4) < 1e-9
 
 
-def test_compute_position_size_vol_target_clips_at_2x() -> None:
+def test_compute_position_size_vol_target_clips_at_2x(ohlc_da_chiusure) -> None:
     # Vol molto bassa → size > 2 → deve essere clippata a 2.0
     closes = [100.0 + i * 0.0001 for i in range(30)]  # vol quasi zero
-    data = _make_ohlc(closes)
+    data = ohlc_da_chiusure(closes)
     pos = pd.Series([1.0] * 30, index=data.index)
     result = compute_position_size(data, pos, method="vol_target", param=15.0)
     assert float(result.max()) <= 2.0 + 1e-9
@@ -249,15 +244,19 @@ def test_compute_position_size_vol_target_clips_at_2x() -> None:
 
 # ── Metriche economiche ────────────────────────────────────────────────────
 
-def _run_simple_bt(closes: list[float], signal_values: list[float], spread: float = 1.0):
-    """Wrapper per test: crea OHLC simmetrico e lancia un backtest senza fee."""
-    data = _make_ohlc(closes, spread=spread)
+def _run_simple_bt(ohlc, closes: list[float], signal_values: list[float], spread: float = 1.0):
+    """Wrapper per test: crea OHLC simmetrico e lancia un backtest senza fee.
+
+    ``ohlc`` è la fabbrica ``ohlc_da_chiusure`` (una fixture non è utilizzabile
+    da una funzione normale, quindi arriva come argomento).
+    """
+    data = ohlc(closes, spread=spread)
     signal = pd.Series(signal_values, index=data.index)
     return run_backtest(data=data, signal=signal, initial_capital=10_000.0, fee_bps=0.0)
 
 
-def test_summary_includes_new_metrics() -> None:
-    result = _run_simple_bt([100.0, 110.0, 121.0, 110.0, 100.0, 110.0], [1.0] * 6)
+def test_summary_includes_new_metrics(ohlc_da_chiusure) -> None:
+    result = _run_simple_bt(ohlc_da_chiusure, [100.0, 110.0, 121.0, 110.0, 100.0, 110.0], [1.0] * 6)
     for key in (
         "sortino_ratio", "calmar_ratio", "win_rate_pct",
         "profit_factor", "avg_win_pct", "avg_loss_pct", "expectancy_pct",
@@ -265,27 +264,27 @@ def test_summary_includes_new_metrics() -> None:
         assert key in result.summary, f"manca metrica {key}"
 
 
-def test_win_rate_correct_with_known_trades() -> None:
+def test_win_rate_correct_with_known_trades(ohlc_da_chiusure) -> None:
     # 2 trade chiusi, uno in profitto e uno in perdita → win_rate = 50%.
     # signal = [1, 1, 0, 1, 1, 0, 0]  → executed (shift 1) = [0, 1, 1, 0, 1, 1, 0]
     # Trade 1 (chiuso): entry@bar1 (close=110), exit@bar3 (close=121) → +10%
     # Trade 2 (chiuso): entry@bar4 (close=115), exit@bar6 (close=105) → -8.7%
     closes = [100.0, 110.0, 120.0, 121.0, 115.0, 110.0, 105.0]
     signal = [1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0]
-    data = _make_ohlc(closes, spread=0.5)
+    data = ohlc_da_chiusure(closes, spread=0.5)
     sig = pd.Series(signal, index=data.index)
     result = run_backtest(data=data, signal=sig, initial_capital=10_000.0, fee_bps=0.0)
     assert result.summary["trade_count"] == 2
     assert result.summary["win_rate_pct"] == 50.0
 
 
-def test_profit_factor_no_losses_caps_at_999() -> None:
+def test_profit_factor_no_losses_caps_at_999(ohlc_da_chiusure) -> None:
     # Trade chiuso in profitto, nessun trade in perdita → profit_factor = 999.
     # signal = [1, 1, 0, 0]  → executed = [0, 1, 1, 0]
     # Trade chiuso: entry@bar1 (close=105), exit@bar3 (close=110) → +4.76%
     closes = [100.0, 105.0, 108.0, 110.0]
     signal = [1.0, 1.0, 0.0, 0.0]
-    data = _make_ohlc(closes, spread=0.5)
+    data = ohlc_da_chiusure(closes, spread=0.5)
     sig = pd.Series(signal, index=data.index)
     result = run_backtest(data=data, signal=sig, initial_capital=10_000.0, fee_bps=0.0)
     assert result.summary["trade_count"] >= 1
@@ -294,23 +293,23 @@ def test_profit_factor_no_losses_caps_at_999() -> None:
     assert result.summary["profit_factor"] == 999.0
 
 
-def test_calmar_ratio_zero_when_no_drawdown() -> None:
+def test_calmar_ratio_zero_when_no_drawdown(ohlc_da_chiusure) -> None:
     # Equity sempre crescente: drawdown = 0 → calmar capped a 999 se return > 0.
     closes = [100.0, 105.0, 110.0, 115.0, 120.0]
     signal = [1.0, 1.0, 1.0, 1.0, 1.0]
-    data = _make_ohlc(closes, spread=0.5)
+    data = ohlc_da_chiusure(closes, spread=0.5)
     sig = pd.Series(signal, index=data.index)
     result = run_backtest(data=data, signal=sig, initial_capital=10_000.0, fee_bps=0.0)
     # Calmar definito (non NaN)
     assert isinstance(result.summary["calmar_ratio"], float)
 
 
-def test_annual_return_falls_back_to_total_for_short_periods() -> None:
+def test_annual_return_falls_back_to_total_for_short_periods(ohlc_da_chiusure) -> None:
     # Periodo < 1 anno: annual_return_pct deve essere == total_return_pct,
     # per evitare CAGR amplificati.
     closes = [100.0, 110.0]  # +10% in 1 giorno
     signal = [1.0, 1.0]
-    data = _make_ohlc(closes, spread=0.5)
+    data = ohlc_da_chiusure(closes, spread=0.5)
     sig = pd.Series(signal, index=data.index)
     result = run_backtest(data=data, signal=sig, initial_capital=10_000.0, fee_bps=0.0)
     assert result.summary["annual_return_pct"] == result.summary["total_return_pct"]
@@ -335,12 +334,12 @@ def test_sl_tp_can_trigger_on_entry_bar() -> None:
     assert bool(mask.iloc[1]) is True
 
 
-def test_vol_target_does_not_create_fake_trades() -> None:
+def test_vol_target_does_not_create_fake_trades(ohlc_da_chiusure) -> None:
     # Con vol_target la posizione frazionaria varia molto, ma il trade tracking
     # deve basarsi sulla posizione binaria → un solo trade.
     closes = [100.0, 101.0, 99.0, 102.0, 98.0, 105.0, 103.0]
     signal = [1.0] * 7  # sempre long
-    data = _make_ohlc(closes, spread=0.5)
+    data = ohlc_da_chiusure(closes, spread=0.5)
     sig = pd.Series(signal, index=data.index)
     result = run_backtest(
         data=data, signal=sig, initial_capital=10_000.0, fee_bps=0.0,
@@ -350,14 +349,132 @@ def test_vol_target_does_not_create_fake_trades() -> None:
     assert int(result.summary["trade_count"]) <= 1
 
 
-def test_sortino_handles_no_downside_returns() -> None:
+def test_sortino_handles_no_downside_returns(ohlc_da_chiusure) -> None:
     # Solo rendimenti positivi: sortino deve essere finito (cap a 999) o 0.
     closes = [100.0, 101.0, 102.0, 103.0, 104.0]
     signal = [1.0] * 5
-    data = _make_ohlc(closes, spread=0.5)
+    data = ohlc_da_chiusure(closes, spread=0.5)
     sig = pd.Series(signal, index=data.index)
     result = run_backtest(data=data, signal=sig, initial_capital=10_000.0, fee_bps=0.0)
     sortino = result.summary["sortino_ratio"]
     assert isinstance(sortino, float)
     assert not (sortino != sortino)  # not NaN
 
+
+# ── Annualizzazione dedotta dal calendario ───────────────────────────────────
+
+def test_infer_periods_per_year_daily_resta_252() -> None:
+    """Le serie giornaliere devono restare a 252: i report già salvati non
+    devono cambiare valore."""
+    idx = pd.bdate_range("2022-01-03", periods=300)
+    assert infer_periods_per_year(idx) == 252.0
+
+
+def test_infer_periods_per_year_intraday_conta_le_barre_del_giorno() -> None:
+    # 7 barre orarie al giorno per 40 giorni di borsa.
+    idx = pd.DatetimeIndex(
+        [
+            giorno + pd.Timedelta(hours=ora)
+            for giorno in pd.bdate_range("2024-01-02", periods=40)
+            for ora in range(9, 16)
+        ]
+    )
+    assert infer_periods_per_year(idx) == pytest.approx(252 * 7)
+
+
+def test_infer_periods_per_year_settimanale_e_mensile() -> None:
+    settimanale = pd.date_range("2020-01-06", periods=120, freq="W-MON")
+    mensile = pd.date_range("2015-01-31", periods=60, freq="ME")
+    # ~50 barre l'anno sul settimanale, ~12 sul mensile.
+    assert infer_periods_per_year(settimanale) == pytest.approx(252 / 5)
+    assert 10.0 <= infer_periods_per_year(mensile) <= 13.0
+
+
+def test_infer_periods_per_year_fallback_su_serie_corte() -> None:
+    assert infer_periods_per_year(pd.date_range("2024-01-01", periods=4)) == 252.0
+    assert infer_periods_per_year(pd.Index([1, 2, 3])) == 252.0
+
+
+def test_sharpe_orario_non_annualizzato_come_giornaliero() -> None:
+    """Regressione: su barre orarie ogni barra veniva contata come un giorno,
+    quindi Sharpe risultava schiacciato di un fattore radice(barre al giorno) e
+    il rendimento annuo veniva spalmato su sette volte il tempo reale."""
+    idx = pd.DatetimeIndex(
+        [
+            giorno + pd.Timedelta(hours=ora)
+            for giorno in pd.bdate_range("2024-01-02", periods=60)
+            for ora in range(9, 16)
+        ]
+    )
+    rendimenti = [0.001 if i % 2 else 0.002 for i in range(len(idx))]
+    closes = 100.0 * pd.Series(rendimenti, index=idx).add(1).cumprod()
+    data = pd.DataFrame({"close": closes, "high": closes, "low": closes}, index=idx)
+    signal = pd.Series(1.0, index=idx)
+
+    orario = run_backtest(data=data, signal=signal, fee_bps=0.0)
+
+    # Stessa identica serie di rendimenti, ma su barre giornaliere.
+    idx_daily = pd.bdate_range("2020-01-01", periods=len(idx))
+    closes_daily = pd.Series(closes.to_numpy(), index=idx_daily)
+    data_daily = pd.DataFrame(
+        {"close": closes_daily, "high": closes_daily, "low": closes_daily}, index=idx_daily
+    )
+    giornaliero = run_backtest(
+        data=data_daily, signal=pd.Series(1.0, index=idx_daily), fee_bps=0.0
+    )
+
+    # Stessi rendimenti per barra, ma le barre orarie sono 7 volte più fitte:
+    # annualizzate correttamente danno uno Sharpe radice(7) volte più alto.
+    rapporto = orario.summary["sharpe_ratio"] / giornaliero.summary["sharpe_ratio"]
+    assert rapporto == pytest.approx(math.sqrt(7), rel=0.01)
+    # Stesso guadagno totale concentrato in 60 giorni invece che in 420: il
+    # rendimento annuo orario deve risultare molto più alto, non uguale.
+    assert orario.summary["annual_return_pct"] > giornaliero.summary["annual_return_pct"]
+
+
+# ── Divisioni protette senza degradare a dtype "object" ──────────────────────
+
+
+def test_indicatori_restano_numerici_su_mercato_piatto(mercato_piatto) -> None:
+    """Regressione: sostituire lo zero con pd.NA rendeva la serie di tipo
+    object, e da lì in poi fillna avvisava del cambio di comportamento."""
+    import warnings
+
+    data = mercato_piatto()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        indicatori = {
+            "rsi": relative_strength_index(data["close"], period=14),
+            "cci": commodity_channel_index(data, period=20),
+            "williams_r": williams_r_indicator(data, period=14),
+            "mfi": money_flow_index(data, period=14),
+        }
+
+    for nome, serie in indicatori.items():
+        assert serie.dtype == float, f"{nome} non è numerico: {serie.dtype}"
+        assert not serie.isna().any(), f"{nome} contiene valori mancanti"
+
+
+def test_adx_su_mercato_piatto_non_solleva(mercato_piatto) -> None:
+    """Regressione: con ATR a zero la serie diventava object e la media
+    esponenziale falliva, facendo sparire in silenzio l'intera strategia."""
+    componenti = adx_components(mercato_piatto(), period=14)
+
+    assert list(componenti.columns) == ["adx", "plus_di", "minus_di"]
+    assert all(componenti[colonna].dtype == float for colonna in componenti.columns)
+
+
+def test_strategie_su_mercato_piatto_non_operano(mercato_piatto) -> None:
+    """Su un mercato che non si muove nessuna strategia deve entrare."""
+    import warnings
+
+    data = mercato_piatto()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        for strategy_id in ("adx_trend", "stochastic_reversion", "mfi_reversion",
+                            "roc_momentum", "williams_r_reversion", "cci_reversion"):
+            segnale = build_strategy_signal(
+                strategy_id=strategy_id, data=data,
+                parameters=STRATEGY_SPECS[strategy_id].defaults(),
+            )
+            assert segnale.sum() == 0.0, f"{strategy_id} ha operato su un mercato fermo"

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Ricerca in corso…{% endblock %}
+{% block body_class %}home-dashboard-body{% endblock %}
+
+{% block content %}
+{% set depth_labels = {'rapida': 'Rapida', 'media': 'Media', 'lunga': 'Approfondita', 'xl': 'Massima'} %}
+<div class="page-header">
+  <p class="eyebrow">ricerca automatica</p>
+  <h1>Sto cercando la strategia migliore…</h1>
+  <p class="inline-note">
+    Mercati: <strong>{{ job.symbols | join(', ') }}</strong> &middot;
+    profondità: <strong>{{ depth_labels.get(job.scan_mode, job.scan_mode) }}</strong>
+  </p>
+</div>
+
+<section class="panel">
+  <p class="inline-note">
+    Puoi lasciare questa pagina aperta: il test gira in background. Ogni strategia viene
+    testata a fondo, quindi a profondità alta un singolo passo può richiedere minuti —
+    è normale che la barra si muova a scatti.
+  </p>
+
+  <div class="search-progress-track">
+    <div class="search-progress-fill" id="search-bar-fill"></div>
+  </div>
+  <div class="search-progress-meta">
+    <p class="inline-note" id="search-msg">{{ job.message }}</p>
+    <strong id="search-pct">0%</strong>
+  </div>
+  <p class="search-progress-count" id="search-count">Preparazione…</p>
+  <p class="inline-note search-progress-timing" id="search-timing">In corso…</p>
+</section>
+
+<div class="button-row" style="margin-top:1rem">
+  <a class="ghost-button" href="{{ url_for('new_backtest_home') }}">← Annulla e torna indietro</a>
+</div>
+
+<script>
+  (function () {
+    var jobId = "{{ job_id }}";
+    var bar = document.getElementById('search-bar-fill');
+    var msg = document.getElementById('search-msg');
+    var pct = document.getElementById('search-pct');
+    var timing = document.getElementById('search-timing');
+    var count = document.getElementById('search-count');
+    var numero = new Intl.NumberFormat('it-IT');
+
+    function durata(secondi) {
+      if (secondi === null || secondi === undefined) return null;
+      if (secondi < 60) return Math.round(secondi) + ' secondi';
+      var minuti = Math.round(secondi / 60);
+      if (minuti < 60) return minuti + (minuti === 1 ? ' minuto' : ' minuti');
+      var ore = Math.floor(minuti / 60);
+      var resto = minuti % 60;
+      return ore + (ore === 1 ? ' ora' : ' ore') + (resto ? ' e ' + resto + ' min' : '');
+    }
+
+    function aggiornaTempi(s) {
+      if (!timing) return;
+      var parti = [];
+      var trascorso = durata(s.elapsed_seconds);
+      if (trascorso) parti.push('In corso da ' + trascorso);
+      var rimanente = durata(s.remaining_seconds);
+      if (rimanente) parti.push('mancano circa ' + rimanente);
+      timing.textContent = parti.length ? parti.join(' · ') : 'In corso…';
+    }
+
+    function poll() {
+      fetch('/searches/' + jobId + '/status')
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (s) {
+          if (!s) { setTimeout(poll, 2500); return; }
+          var p = s.total ? Math.round(s.progress / s.total * 100) : 0;
+          if (bar) bar.style.width = p + '%';
+          if (pct) pct.textContent = p + '%';
+          if (msg) msg.textContent = s.message ? 'Sto testando: ' + s.message : '';
+          if (count) {
+            count.textContent = s.total > 1
+              ? numero.format(s.progress) + ' di ' + numero.format(s.total) + ' opzioni controllate'
+              : 'Preparazione…';
+          }
+          aggiornaTempi(s);
+          if (s.status === 'done') { window.location.reload(); return; }
+          if (s.status === 'error') {
+            if (msg) msg.textContent = 'Errore: ' + (s.error || 'ricerca non riuscita');
+            if (timing) timing.textContent = '';
+            return;
+          }
+          setTimeout(poll, 1500);
+        })
+        .catch(function () { setTimeout(poll, 2500); });
+    }
+    poll();
+  })();
+</script>
+{% endblock %}

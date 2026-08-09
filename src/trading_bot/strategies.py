@@ -3,7 +3,15 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Mapping
 
+import numpy as np
 import pandas as pd
+
+# Divisioni protette: si sostituisce lo zero al denominatore con NaN, non con
+# pd.NA. Con pd.NA la serie diventa di tipo "object" e da lì in poi ogni
+# operazione si porta dietro il problema: fillna avvisa che il comportamento
+# cambierà, i confronti restituiscono pd.NA invece di True/False e ewm() sui
+# valori object solleva un errore (una media mobile su un mercato piatto
+# faceva sparire in silenzio l'intera strategia dalla ricerca).
 
 
 @dataclass(frozen=True)
@@ -96,7 +104,7 @@ def relative_strength_index(close: pd.Series, period: int = 14) -> pd.Series:
     losses = -delta.clip(upper=0.0)
     avg_gain = gains.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
     avg_loss = losses.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
-    rs = avg_gain / avg_loss.replace(0.0, pd.NA)
+    rs = avg_gain / avg_loss.replace(0.0, np.nan)
     rsi = 100 - (100 / (1 + rs))
     return rsi.fillna(50.0).rename("rsi")
 
@@ -160,7 +168,7 @@ def stochastic_reversion(
     close = data["close"].astype(float)
     lowest_low = low.rolling(window=k_period, min_periods=k_period).min()
     highest_high = high.rolling(window=k_period, min_periods=k_period).max()
-    denominator = (highest_high - lowest_low).replace(0.0, pd.NA)
+    denominator = (highest_high - lowest_low).replace(0.0, np.nan)
     raw_k = ((close - lowest_low) / denominator) * 100
     slow_k = raw_k.rolling(window=smooth, min_periods=smooth).mean()
     slow_d = slow_k.rolling(window=d_period, min_periods=d_period).mean()
@@ -180,7 +188,7 @@ def commodity_channel_index(data: pd.DataFrame, period: int = 20) -> pd.Series:
     typical_price = (high + low + close) / 3.0
     basis = typical_price.rolling(window=period, min_periods=period).mean()
     mean_deviation = (typical_price - basis).abs().rolling(window=period, min_periods=period).mean()
-    cci = (typical_price - basis) / (0.015 * mean_deviation.replace(0.0, pd.NA))
+    cci = (typical_price - basis) / (0.015 * mean_deviation.replace(0.0, np.nan))
     return cci.fillna(0.0).rename("cci")
 
 
@@ -202,7 +210,7 @@ def williams_r_indicator(data: pd.DataFrame, period: int = 14) -> pd.Series:
     close = data["close"].astype(float)
     highest_high = high.rolling(window=period, min_periods=period).max()
     lowest_low = low.rolling(window=period, min_periods=period).min()
-    denominator = (highest_high - lowest_low).replace(0.0, pd.NA)
+    denominator = (highest_high - lowest_low).replace(0.0, np.nan)
     williams_r = -100 * ((highest_high - close) / denominator)
     return williams_r.fillna(-50.0).rename("williams_r")
 
@@ -239,9 +247,9 @@ def adx_components(data: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     ).max(axis=1)
 
     atr = true_range.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
-    plus_di = 100 * plus_dm.ewm(alpha=1 / period, adjust=False, min_periods=period).mean() / atr.replace(0.0, pd.NA)
-    minus_di = 100 * minus_dm.ewm(alpha=1 / period, adjust=False, min_periods=period).mean() / atr.replace(0.0, pd.NA)
-    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0.0, pd.NA)
+    plus_di = 100 * plus_dm.ewm(alpha=1 / period, adjust=False, min_periods=period).mean() / atr.replace(0.0, np.nan)
+    minus_di = 100 * minus_dm.ewm(alpha=1 / period, adjust=False, min_periods=period).mean() / atr.replace(0.0, np.nan)
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0.0, np.nan)
     adx = dx.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
     return pd.DataFrame({"adx": adx.fillna(0.0), "plus_di": plus_di.fillna(0.0), "minus_di": minus_di.fillna(0.0)})
 
@@ -312,7 +320,7 @@ def roc_momentum(data: pd.DataFrame, period: int = 10, threshold: float = 5.0) -
         raise ValueError("La soglia ROC deve essere positiva.")
 
     close = data["close"].astype(float)
-    prev_close = close.shift(period).replace(0.0, pd.NA)
+    prev_close = close.shift(period).replace(0.0, np.nan)
     roc = ((close - prev_close) / prev_close) * 100.0
     roc = roc.fillna(0.0)
     return _stateful_signal(entry_condition=roc >= threshold, exit_condition=roc <= 0.0, index=data.index)
@@ -366,7 +374,7 @@ def money_flow_index(data: pd.DataFrame, period: int = 14) -> pd.Series:
 
     positive_flow = money_flow.where(price_diff > 0, 0.0).rolling(window=period, min_periods=period).sum()
     negative_flow = money_flow.where(price_diff < 0, 0.0).rolling(window=period, min_periods=period).sum()
-    money_ratio = positive_flow / negative_flow.replace(0.0, pd.NA)
+    money_ratio = positive_flow / negative_flow.replace(0.0, np.nan)
     mfi = 100.0 - (100.0 / (1.0 + money_ratio))
     return mfi.fillna(50.0).rename("mfi")
 

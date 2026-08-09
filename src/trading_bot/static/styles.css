@@ -44,10 +44,6 @@ body.panel-expanded {
   overflow: hidden;
 }
 
-body.strategy-modal-open {
-  overflow: hidden;
-}
-
 body.chart-indicator-modal-open {
   overflow: hidden;
 }
@@ -1498,135 +1494,6 @@ td {
 
 .chart-trades-panel {
   margin-top: 1.2rem;
-}
-
-.strategy-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 220;
-  display: grid;
-  place-items: center;
-  padding: 1.25rem;
-}
-
-.strategy-modal[hidden] {
-  display: none;
-}
-
-.strategy-modal-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(27, 27, 24, 0.4);
-  backdrop-filter: blur(14px);
-}
-
-.strategy-modal-dialog {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  gap: 1rem;
-  width: min(760px, calc(100vw - 2rem));
-  max-height: calc(100vh - 2.5rem);
-  overflow: auto;
-  padding: 1.15rem;
-  border-radius: var(--radius-xl);
-  background: rgba(255, 249, 240, 0.97);
-  border: 1px solid rgba(255, 255, 255, 0.75);
-  box-shadow: 0 34px 110px rgba(27, 27, 24, 0.3);
-}
-
-.strategy-modal-dialog-compact {
-  scrollbar-gutter: stable;
-}
-
-.strategy-modal-header,
-.strategy-modal-footer,
-.strategy-modal-status-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  align-items: center;
-}
-
-.strategy-modal-copy {
-  max-width: 34rem;
-}
-
-.strategy-modal-header-copy {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.strategy-modal-status-row {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-}
-
-.strategy-detail-panel {
-  display: none;
-  gap: 0.85rem;
-}
-
-.strategy-detail-panel.is-active {
-  display: grid;
-}
-
-.strategy-modal-panel-card {
-  display: grid;
-  gap: 0.9rem;
-  padding: 0.9rem;
-}
-
-.strategy-modal-parameter-grid {
-  display: grid;
-  gap: 0.8rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.strategy-modal-field {
-  display: grid;
-  gap: 0.42rem;
-}
-
-.strategy-modal-field small {
-  display: block;
-}
-
-.strategy-modal-sweep-card {
-  gap: 0.8rem;
-}
-
-.strategy-modal-sweep-grid {
-  display: grid;
-  gap: 0.8rem;
-}
-
-.strategy-modal-sweep-box {
-  display: grid;
-  gap: 0.7rem;
-  padding: 0.85rem;
-  border-radius: var(--radius-md);
-  border: 1px solid rgba(27, 27, 24, 0.08);
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.parameter-hint {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.4;
-}
-
-.strategy-modal-footer {
-  padding-top: 0.25rem;
-  border-top: 1px solid rgba(27, 27, 24, 0.08);
-}
-
-.strategy-modal-footer .inline-note {
-  max-width: 28rem;
-}
-
-.strategy-modal-footer .button-row {
-  justify-content: flex-end;
 }
 
 .chart-terminal-body {
@@ -3569,6 +3436,148 @@ td {
   gap: 0.3rem;
 }
 
+.auto-hero-panel {
+  border: 1px solid var(--accent-border, rgba(59, 130, 246, 0.35));
+  box-shadow: 0 8px 30px rgba(59, 130, 246, 0.08);
+}
+
+/* Barra di avanzamento della ricerca automatica */
+.search-progress-track {
+  margin: 1rem 0 0.5rem;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(27, 27, 24, 0.1);
+  overflow: hidden;
+}
+
+.home-dashboard-body .search-progress-track {
+  background: rgba(163, 177, 204, 0.16);
+}
+
+.search-progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: var(--accent, #3b82f6);
+  transition: width 0.4s ease;
+}
+
+.search-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.search-progress-meta .inline-note {
+  margin: 0;
+}
+
+.search-progress-count {
+  margin: 0.45rem 0 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.search-progress-timing {
+  margin-top: 0.2rem;
+}
+
+/* Home semplificata: una sola azione in evidenza + elenchi leggibili */
+.home-start-panel {
+  display: grid;
+  gap: 0.5rem;
+  border: 1px solid var(--accent-border, rgba(59, 130, 246, 0.35));
+  box-shadow: 0 8px 30px rgba(59, 130, 246, 0.08);
+}
+
+.home-start-copy {
+  max-width: 46rem;
+}
+
+.home-start-button {
+  font-size: 1.05rem;
+  padding: 0.85rem 1.6rem;
+  margin-top: 0.35rem;
+}
+
+.home-simple-list {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.home-simple-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border, rgba(27, 27, 24, 0.1));
+  border-radius: var(--radius-md, 12px);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.home-simple-row:hover {
+  border-color: var(--accent-border, rgba(59, 130, 246, 0.45));
+  transform: translateY(-1px);
+}
+
+.home-simple-row-main {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.home-simple-row-main .inline-note {
+  margin: 0;
+}
+
+.home-simple-metric {
+  display: grid;
+  justify-items: flex-end;
+  gap: 0.1rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.home-simple-metric small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.auto-search-button {
+  width: 100%;
+  font-size: 1.02rem;
+}
+
+.advanced-manual {
+  margin-top: 0.25rem;
+}
+
+.advanced-manual > summary {
+  cursor: pointer;
+  padding: 0.75rem 1rem;
+  border: 1px dashed var(--border, rgba(27, 27, 24, 0.18));
+  border-radius: var(--radius-md, 12px);
+  color: var(--muted);
+  font-size: 0.92rem;
+  list-style: none;
+}
+
+.advanced-manual > summary::-webkit-details-marker {
+  display: none;
+}
+
+.advanced-manual[open] > summary {
+  margin-bottom: 0.75rem;
+}
+
 .home-step-actions {
   align-items: center;
   justify-content: flex-start;
@@ -4227,16 +4236,6 @@ td {
   color: #93c5fd;
 }
 
-.home-dashboard-body .strategy-modal-sweep-box {
-  border-color: rgba(163, 177, 204, 0.1);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.home-dashboard-body .strategy-modal-dialog {
-  background: rgba(11, 15, 23, 0.98);
-  border-color: rgba(163, 177, 204, 0.1);
-}
-
 .home-dashboard-body .home-session-option,
 .home-dashboard-body .home-session-metric {
   border-color: rgba(163, 177, 204, 0.1);
@@ -4281,10 +4280,7 @@ td {
   .chart-terminal-topbar,
   .chart-preview-indicators-head,
   .strategy-picker-top,
-  .strategy-modal-header,
-  .chart-indicator-header,
-  .strategy-modal-status-row,
-  .strategy-modal-footer {
+  .chart-indicator-header {
     flex-direction: column;
     align-items: flex-start;
   }
@@ -4299,9 +4295,7 @@ td {
   .report-overview-cards,
   .report-metric-grid,
   .report-card-metrics,
-  .comparison-grid,
-  .strategy-modal-parameter-grid,
-  .strategy-modal-sweep-grid {
+  .comparison-grid {
     grid-template-columns: 1fr;
   }
 
@@ -4312,15 +4306,6 @@ td {
 
   .report-file-links {
     justify-content: flex-start;
-  }
-
-  .strategy-modal {
-    padding: 0.75rem;
-  }
-
-  .strategy-modal-dialog {
-    width: min(100vw - 0.75rem, 100%);
-    max-height: calc(100vh - 1.5rem);
   }
 
   .panel-expandable.is-expanded {

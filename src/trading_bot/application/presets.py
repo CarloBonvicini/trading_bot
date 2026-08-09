@@ -7,8 +7,9 @@ from pathlib import Path
 from typing import Mapping
 
 from trading_bot.application.constants import DEFAULT_REPORTS_DIR, PRESETS_FILENAME, RUN_MODE_OPTIONS, STRATEGY_OPTIONS
-from trading_bot.application.requests import BacktestRequest
+from trading_bot.application.requests import BacktestRequest, sweep_parameter_names
 from trading_bot.errors import FormValidationError
+from trading_bot.strategies import STRATEGY_SPECS
 
 PRESET_NAME_PATTERN = re.compile(r"[^a-z0-9]+")
 
@@ -60,15 +61,7 @@ def save_strategy_preset(raw: Mapping[str, object], output_dir: str | Path = DEF
             rule.strategy_id: dict(rule.parameters)
             for rule in request.active_rules()
         },
-        "sweep_settings": {
-            "sort_by": str(raw.get("sort_by", "total_return_pct")),
-            "fast_start": int(float(raw.get("fast_start", 10))),
-            "fast_end": int(float(raw.get("fast_end", 40))),
-            "fast_step": int(float(raw.get("fast_step", 10))),
-            "slow_start": int(float(raw.get("slow_start", 80))),
-            "slow_end": int(float(raw.get("slow_end", 200))),
-            "slow_step": int(float(raw.get("slow_step", 20))),
-        },
+        "sweep_settings": _sweep_settings_from_form(raw=raw, strategy_id=request.strategy),
         "saved_at": datetime.now().isoformat(timespec="seconds"),
     }
 
@@ -81,6 +74,38 @@ def save_strategy_preset(raw: Mapping[str, object], output_dir: str | Path = DEF
     with path.open("w", encoding="utf-8") as handle:
         json.dump(updated, handle, indent=2)
     return preset
+
+
+def _sweep_settings_from_form(*, raw: Mapping[str, object], strategy_id: str) -> dict[str, object]:
+    """Estrae dal form i campi range sweep della strategia selezionata.
+
+    I campi seguono la convenzione ``<strategia>__<parametro>_start/_end/_step``
+    (stessa dei template e di ``_parse_parameter_ranges``), con fallback sulla
+    forma globale ``<parametro>_start`` per i form pre-namespacing. Vengono
+    salvati solo i campi presenti e non vuoti: al ripristino quelli mancanti
+    restano sui default del form.
+    """
+    settings: dict[str, object] = {"sort_by": str(raw.get("sort_by", "total_return_pct"))}
+    spec = STRATEGY_SPECS[strategy_id]
+    if not spec.supports_sweep:
+        return settings
+
+    parameter_map = spec.parameter_map()
+    for name in sweep_parameter_names(strategy_id):
+        value_type = parameter_map[name].value_type
+        for suffisso in ("start", "end", "step"):
+            key = f"{strategy_id}__{name}_{suffisso}"
+            text = str(raw.get(key, "") or "").strip()
+            if not text:
+                text = str(raw.get(f"{name}_{suffisso}", "") or "").strip()
+            if not text:
+                continue
+            try:
+                value = float(text)
+            except ValueError:
+                continue
+            settings[key] = int(value) if value_type == "int" else value
+    return settings
 
 
 def _preset_slug(name: str) -> str:

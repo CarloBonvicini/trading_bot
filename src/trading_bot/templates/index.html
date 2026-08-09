@@ -11,24 +11,11 @@
   <section class="home-dashboard-shell">
     <header class="panel home-tabs-header">
       <div class="home-tabs-header-copy">
-        <p class="eyebrow">workspace locale</p>
-        <h2>Testing</h2>
-        <p class="inline-note">Gestisci backtest, strategie e sessioni.</p>
-      </div>
-      <div class="home-tabs-header-meta">
-        <article class="home-tabs-stat-pill">
-          <span>Sessioni</span>
-          <strong>{{ dashboard.total_saved }}</strong>
-        </article>
-        <article class="home-tabs-stat-pill">
-          <span>Strategie</span>
-          <strong>{{ dashboard.strategy_count }}</strong>
-        </article>
-        <div class="home-sidebar-chip-row">
-          <span class="home-symbol-chip">Intraday</span>
-          <span class="home-symbol-chip">Replay</span>
-          <span class="home-symbol-chip">Sweep</span>
-        </div>
+        <p class="eyebrow">il tuo laboratorio locale</p>
+        <h2>Trading Bot</h2>
+        <p class="inline-note">
+          Provi una strategia sui dati storici e vedi come sarebbe andata, prima di rischiare denaro vero.
+        </p>
       </div>
     </header>
 
@@ -42,7 +29,7 @@
           data-home-tab-button="dashboard"
           data-home-tab-route="{{ home_routes['dashboard'] }}"
         >
-          Dashboard
+          Home
         </button>
         <button
           class="home-nav-link {% if current_home_view in ['setup', 'strategies'] %}is-active{% endif %}"
@@ -52,7 +39,7 @@
           data-home-tab-button="backtest"
           data-home-tab-route="{{ home_routes['setup'] }}"
         >
-          Backtest
+          Nuovo test
         </button>
         <button
           class="home-nav-link {% if current_home_view == 'results' %}is-active{% endif %}"
@@ -62,7 +49,7 @@
           data-home-tab-button="results"
           data-home-tab-route="{{ home_routes['results'] }}"
         >
-          Sessioni
+          Risultati salvati
         </button>
       </nav>
 
@@ -74,155 +61,103 @@
         aria-label="Dashboard"
         {% if current_home_view != 'dashboard' %}hidden{% endif %}
       >
-        <section class="panel home-dashboard-hero">
-          <div class="home-dashboard-hero-copy">
-            <p class="eyebrow">dashboard</p>
-            <h2>Panoramica workspace</h2>
-            <p class="inline-note">
-              Qui vedi subito lo stato generale del laboratorio: ultima sessione, metriche migliori registrate e il contesto operativo prima di lanciare un nuovo backtest.
-            </p>
-            <div class="home-dashboard-hero-pills">
-              <article class="home-dashboard-hero-pill">
-                <span>Report</span>
-                <strong>{{ dashboard.report_count }}</strong>
-                <small>backtest completati</small>
-              </article>
-              <article class="home-dashboard-hero-pill">
-                <span>Sweep</span>
-                <strong>{{ dashboard.sweep_count }}</strong>
-                <small>sessioni parametriche</small>
-              </article>
-              <article class="home-dashboard-hero-pill">
-                <span>Run sopra hold</span>
-                <strong>{{ dashboard.positive_edge_display }}</strong>
-                <small>vantaggio sul benchmark</small>
-              </article>
-            </div>
-          </div>
-          <div class="button-row home-dashboard-hero-actions">
+        {# ── Un'unica azione chiara: è da qui che si comincia ──────────────── #}
+        <section class="panel home-start-panel">
+          <p class="eyebrow">si comincia da qui</p>
+          <h2>Avvia un test</h2>
+          <p class="inline-note home-start-copy">
+            Scegli uno o più mercati e lascia che il sistema provi tutte le strategie al posto tuo.
+            Alla fine ti dice in parole semplici quale ha funzionato, quanto avresti guadagnato
+            e se c'è da fidarsi.
+          </p>
+          <div class="button-row">
             <button
-              class="action-button home-dashboard-button"
+              class="action-button home-start-button"
               type="button"
               data-home-tab-trigger="backtest"
               data-home-backtest-stage="setup"
               data-home-tab-route="{{ home_routes['setup'] }}"
             >
-              Backtest
+              Avvia un test →
             </button>
           </div>
         </section>
 
-        <section class="home-metrics-grid">
-          {% for card in dashboard.cards %}
-            <article class="panel home-metric-card">
-              <p>{{ card.label }}</p>
-              <strong>{{ card.value }}</strong>
-              <span>{{ card.hint }}</span>
-            </article>
-          {% endfor %}
-        </section>
-
-        <section class="home-dashboard-summary-grid">
-          <article class="panel home-dashboard-latest-card">
-            <div class="panel-header home-panel-header">
-              <div>
-                <p class="eyebrow">ultima sessione</p>
-                <h3>
-                  {% if dashboard.latest_session %}
-                    {{ dashboard.latest_session.title }}
-                  {% else %}
-                    Nessuna sessione ancora
-                  {% endif %}
-                </h3>
-              </div>
-              {% if dashboard.latest_session %}
-                <span class="strategy-chip {% if dashboard.latest_session.tone == 'positive' %}strategy-chip-accent{% endif %}">
-                  {{ dashboard.latest_session.artifact_label }}
-                </span>
-              {% endif %}
+        {# ── Storico delle ricerche automatiche ────────────────────────────── #}
+        <section class="panel">
+          <div class="panel-header home-panel-header">
+            <div>
+              <p class="eyebrow">le tue ricerche automatiche</p>
+              <h3>Strategie trovate dal sistema</h3>
             </div>
-
-            {% if dashboard.latest_session %}
-              <p class="inline-note">{{ dashboard.latest_session.subtitle }}</p>
-              <div class="home-session-summary-meta">
-                <span>{{ dashboard.latest_session.period_label }}</span>
-                <span>timeframe {{ dashboard.latest_session.interval }}</span>
-                <span>{{ dashboard.latest_session.created_at_display }}</span>
-              </div>
-              <div class="home-dashboard-latest-kpi">
-                <span>{{ dashboard.latest_session.list_metric_label }}</span>
-                <strong>{{ dashboard.latest_session.list_metric }}</strong>
-              </div>
-              <p class="inline-note">{{ dashboard.latest_session.description }}</p>
-              <div class="mini-chart-shell">
-                <svg
-                  viewBox="0 0 {{ dashboard.latest_session.preview_chart.width }} {{ dashboard.latest_session.preview_chart.height }}"
-                  class="mini-chart-svg home-dashboard-latest-chart"
-                  aria-label="Anteprima ultima sessione"
-                >
-                  {% for series in dashboard.latest_session.preview_chart.series %}
-                    <polyline points="{{ series.points }}" stroke="{{ series.color }}" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></polyline>
-                  {% endfor %}
-                </svg>
-                <div class="mini-chart-legend" aria-label="Legenda anteprima ultima sessione">
-                  {% for series in dashboard.latest_session.preview_chart.series %}
-                    <span class="mini-chart-legend-item">
-                      <span class="mini-chart-legend-swatch" style="--legend-color: {{ series.color }}"></span>
-                      {{ series.label }}
-                    </span>
-                  {% endfor %}
-                </div>
-              </div>
-              <div class="button-row">
-                <a class="action-button" href="{{ dashboard.latest_session.open_url }}">{{ dashboard.latest_session.open_label }}</a>
-                <button
-                  class="ghost-button"
-                  type="button"
-                  data-home-tab-trigger="results"
-                  data-home-tab-route="{{ home_routes['results'] }}"
-                >
-                  Apri sessioni
-                </button>
-                {% if dashboard.latest_session.resume_url %}
-                  <a class="ghost-link" href="{{ dashboard.latest_session.resume_url }}">Riprendi strategie</a>
-                {% endif %}
-              </div>
-            {% else %}
-              <p class="inline-note">
-                Non ci sono sessioni salvate. Parti dal tab Backtest e la dashboard iniziera' a popolarsi con statistiche aggregate e ultima attivita'.
-              </p>
-            {% endif %}
-          </article>
-
-          <article class="panel home-dashboard-insights-card">
-            <div class="panel-header home-panel-header">
-              <div>
-                <p class="eyebrow">insight generali</p>
-                <h3>Metriche da tenere d'occhio</h3>
-              </div>
-            </div>
-            <div class="home-dashboard-highlights">
-              {% for item in dashboard.highlights %}
-                <article class="home-dashboard-highlight">
-                  <span>{{ item.label }}</span>
-                  <strong>{{ item.value }}</strong>
-                  <p>{{ item.hint }}</p>
-                </article>
+          </div>
+          {% if saved_searches %}
+            <div class="home-simple-list">
+              {% for search in saved_searches %}
+                <a class="home-simple-row" href="{{ url_for('search_detail', job_id=search.id) }}">
+                  <div class="home-simple-row-main">
+                    <strong>{{ search.symbols_display }}</strong>
+                    <p class="inline-note">
+                      {% if search.champion_label %}
+                        Migliore: {{ search.champion_label }}
+                      {% else %}
+                        Nessuna strategia solida trovata
+                      {% endif %}
+                      · {{ search.saved_at_display }}
+                    </p>
+                  </div>
+                  <span class="strategy-chip {% if search.markets_reliable > 0 %}strategy-chip-accent{% endif %}">
+                    {% if search.markets_reliable > 0 %}
+                      affidabile su {{ search.markets_reliable }}/{{ search.markets_count }}
+                    {% else %}
+                      nessuna conferma
+                    {% endif %}
+                  </span>
+                </a>
               {% endfor %}
             </div>
-            <div class="home-dashboard-symbols">
-              <span class="section-label">Simboli piu' usati</span>
-              {% if dashboard.top_symbols %}
-                <div class="home-sidebar-chip-row">
-                  {% for item in dashboard.top_symbols %}
-                    <span class="home-symbol-chip">{{ item.symbol }} · {{ item.count }}</span>
-                  {% endfor %}
-                </div>
-              {% else %}
-                <p class="inline-note">Ancora nessuna frequenza disponibile.</p>
-              {% endif %}
+          {% else %}
+            <p class="inline-note">
+              Non hai ancora lanciato una ricerca automatica: è il modo più semplice per iniziare.
+              Scegli un mercato e pensa a tutto il sistema.
+            </p>
+          {% endif %}
+        </section>
+
+        {# ── Test salvati, in lingua semplice ──────────────────────────────── #}
+        <section class="panel">
+          <div class="panel-header home-panel-header">
+            <div>
+              <p class="eyebrow">i tuoi test</p>
+              <h3>Test salvati</h3>
             </div>
-          </article>
+            {% if session_items %}
+              <button
+                class="ghost-button"
+                type="button"
+                data-home-tab-trigger="results"
+                data-home-tab-route="{{ home_routes['results'] }}"
+              >Vedi tutti</button>
+            {% endif %}
+          </div>
+          {% if session_items %}
+            <div class="home-simple-list">
+              {% for item in session_items[:6] %}
+                <a class="home-simple-row" href="{{ item.open_url }}">
+                  <div class="home-simple-row-main">
+                    <strong>{{ item.title }}</strong>
+                    <p class="inline-note">{{ item.subtitle }} · {{ item.created_at_display }}</p>
+                  </div>
+                  <span class="home-simple-metric tone-{{ item.tone }}">
+                    {{ item.list_metric }}
+                    <small>{{ item.list_metric_label | lower }}</small>
+                  </span>
+                </a>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="inline-note">Nessun test salvato per ora: il primo che lanci comparirà qui.</p>
+          {% endif %}
         </section>
       </section>
 
@@ -236,11 +171,84 @@
       >
         <section class="home-workspace-grid is-active">
 
+          {# ── Modalità automatica (consigliata): il sistema sceglie la strategia ── #}
+          <article class="panel panel-form auto-hero-panel">
+            <div class="panel-header home-panel-header">
+              <div>
+                <p class="eyebrow">consigliato</p>
+                <h3>Avvia un test automatico</h3>
+              </div>
+            </div>
+            <p class="inline-note">
+              Scegli uno o più mercati e quanto vuoi che il sistema scavi. Trova lui la strategia
+              migliore e ti dice, in parole semplici, se è affidabile su dati mai visti.
+            </p>
+
+            <form action="{{ url_for('start_search') }}" method="post" class="auto-search-form">
+              <div class="field-block">
+                <label>
+                  <span>Mercati (uno o più)</span>
+                  <input name="symbols" value="{{ form_values.symbol }}" placeholder="SPY, AAPL, BTC-USD" required>
+                </label>
+                <p class="field-hint">Separa più simboli con una virgola. Più mercati = test più robusto ma più lungo.</p>
+              </div>
+
+              <div class="input-grid">
+                <div class="field-block">
+                  <label><span>Da</span><input type="date" name="start" value="{{ form_values.start }}" required></label>
+                </div>
+                <div class="field-block">
+                  <label><span>A</span><input type="date" name="end" value="{{ form_values.end }}" required></label>
+                </div>
+              </div>
+
+              <div class="input-grid">
+                <div class="field-block">
+                  <label>
+                    <span>Timeframe</span>
+                    <select name="interval">
+                      {% for interval in intervals %}
+                        <option value="{{ interval }}" {% if form_values.interval == interval %}selected{% endif %}>{{ interval }}</option>
+                      {% endfor %}
+                    </select>
+                  </label>
+                </div>
+                <div class="field-block">
+                  <label>
+                    <span>Quanto scavare</span>
+                    <select name="depth">
+                      <option value="rapida">Rapida — pochi secondi</option>
+                      <option value="media">Media — circa un minuto</option>
+                      <option value="lunga">Approfondita — qualche minuto</option>
+                      <option value="xl">Massima — lenta, fino a ore su più mercati</option>
+                    </select>
+                  </label>
+                  <p class="field-hint">Test lunghi girano in background con barra di avanzamento.</p>
+                </div>
+              </div>
+
+              <div class="input-grid">
+                <div class="field-block">
+                  <label><span>Capitale iniziale (€)</span><input type="number" step="100" min="100" name="initial_capital" value="{{ form_values.initial_capital }}"></label>
+                </div>
+                <div class="field-block">
+                  <label><span>Commissioni (bps)</span><input type="number" step="0.1" min="0" name="fee_bps" value="{{ form_values.fee_bps }}"></label>
+                </div>
+              </div>
+
+              <div class="button-row" style="margin-top:0.75rem">
+                <button class="action-button auto-search-button" type="submit">Trova la strategia migliore →</button>
+              </div>
+            </form>
+          </article>
+
+          <details class="advanced-manual">
+            <summary>Opzioni avanzate — preferisco scegliere io la strategia</summary>
           <article class="panel panel-form home-launch-panel">
             <div class="panel-header home-panel-header">
               <div>
-                <p class="eyebrow">apri grafico</p>
-                <h3>Configura il test</h3>
+                <p class="eyebrow">modalità manuale</p>
+                <h3>Scelgo io la strategia</h3>
               </div>
               <span class="strategy-chip strategy-chip-accent">{{ saved_items|length }} sessioni salvate</span>
             </div>
@@ -419,7 +427,7 @@
 
               {# ── Walk-Forward ──────────────────────────────────────────────── #}
               <details class="risk-details" id="wf-details" {% if form_values.run_mode != 'walkforward' %}{% endif %}>
-                <summary class="risk-summary">Walk-Forward Validation <span class="eyebrow">(solo strategia singola con sweep)</span></summary>
+                <summary class="risk-summary">Walk-Forward Validation <span class="eyebrow">(solo strategia singola)</span></summary>
                 <div class="risk-body">
                   <div class="input-grid">
                     <div class="field-block">
@@ -463,11 +471,12 @@
               </div>
 
               <div class="button-row home-step-actions">
-                <button class="action-button" type="submit" id="submit-button">Apri grafico →</button>
+                <button class="action-button" type="submit" id="submit-button">Lancia il test →</button>
                 <button class="ghost-button" type="submit" formaction="{{ url_for('create_preset') }}">Salva preset</button>
               </div>
             </form>
           </article>
+          </details>
 
           <div class="home-side-stack">
             <article class="panel home-insight-panel">

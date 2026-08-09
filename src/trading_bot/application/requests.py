@@ -352,13 +352,34 @@ class IntegerRange:
 
 
 @dataclass(frozen=True)
+class FloatRange:
+    start: float
+    end: float
+    step: float
+
+    def values(self) -> list[float]:
+        if self.step <= 0:
+            raise ValueError("Il passo deve essere maggiore di zero.")
+        if self.end < self.start:
+            raise ValueError("Il valore finale deve essere maggiore o uguale a quello iniziale.")
+        # La tolleranza evita di perdere l'ultimo valore per errori di
+        # rappresentazione floating point (es. (0.3-0.1)/0.1 → 1.9999...).
+        conteggio = int((self.end - self.start) / self.step + 1e-9) + 1
+        return [round(self.start + indice * self.step, 10) for indice in range(conteggio)]
+
+    def as_dict(self) -> dict[str, float]:
+        return {"start": self.start, "end": self.end, "step": self.step}
+
+
+@dataclass(frozen=True)
 class SweepRequest:
     """Sweep parametrico generico.
 
-    Conserva un mapping ``parameter_ranges`` ``{nome_parametro → IntegerRange}``
-    invece di hardcodare fast/slow: questo permette di estendere lo sweep a
-    strategie con altri nomi parametro (entry_period/exit_period, ecc.) e a
-    qualsiasi numero di dimensioni nel grid search.
+    Conserva un mapping ``parameter_ranges`` ``{nome_parametro → range}``
+    (``IntegerRange`` o ``FloatRange`` in base al tipo del parametro) invece di
+    hardcodare fast/slow: questo permette di estendere lo sweep a strategie con
+    altri nomi parametro (entry_period/exit_period, ecc.) e a qualsiasi numero
+    di dimensioni nel grid search.
 
     Per retro-compatibilità ``fast_range`` e ``slow_range`` restano accessibili
     come proprietà che attingono al mapping.
@@ -372,7 +393,7 @@ class SweepRequest:
     strategy: str = "sma_cross"
     initial_capital: float = 10_000.0
     fee_bps: float = 5.0
-    parameter_ranges: dict[str, IntegerRange] = field(
+    parameter_ranges: dict[str, IntegerRange | FloatRange] = field(
         default_factory=lambda: {
             "fast": IntegerRange(10, 40, 10),
             "slow": IntegerRange(80, 200, 20),
@@ -430,12 +451,12 @@ class SweepRequest:
         return tuple(self.parameter_ranges.keys())
 
     @property
-    def fast_range(self) -> IntegerRange:
+    def fast_range(self) -> IntegerRange | FloatRange:
         """Retro-compat: prima dimensione dello sweep."""
         return next(iter(self.parameter_ranges.values()))
 
     @property
-    def slow_range(self) -> IntegerRange:
+    def slow_range(self) -> IntegerRange | FloatRange:
         """Retro-compat: seconda dimensione dello sweep (se presente)."""
         values = list(self.parameter_ranges.values())
         return values[1] if len(values) > 1 else values[0]
@@ -465,7 +486,7 @@ class SweepRequest:
             "sort_by": self.sort_by,
         }
 
-    def iter_parameter_combinations(self) -> list[dict[str, int]]:
+    def iter_parameter_combinations(self) -> list[dict[str, int | float]]:
         """Produce dict di parametri (chiave→valore) per ogni combinazione del grid."""
         import itertools
 
@@ -478,39 +499,71 @@ def _parse_parameter_ranges(
     *,
     raw: Mapping[str, object],
     spec,
-) -> dict[str, IntegerRange]:
+) -> dict[str, IntegerRange | FloatRange]:
     """Costruisce i range per il sweep leggendoli dal form.
 
-    Convenzione campi form: ``<param>_start``, ``<param>_end``, ``<param>_step``.
-    Per retro-compatibilità con i form esistenti che usano ``fast_*`` / ``slow_*``,
-    se la strategia ha esattamente i parametri "fast" e "slow" useremo quei nomi;
-    per le altre strategie ``supports_sweep`` prendiamo i primi due parametri
-    interi dello spec.
+    Convenzione campi form: ``<strategia>__<parametro>_start/_end/_step``
+    (es. ``sma_cross__fast_start``, ``donchian_breakout__entry_period_start``),
+    con fallback sulla forma globale ``<parametro>_start`` per retro-compat con
+    form e preset salvati prima del namespacing. Campi assenti o vuoti ricadono
+    sui default dello spec. Il tipo di range (``IntegerRange``/``FloatRange``)
+    segue il ``value_type`` del parametro.
     """
-    sweep_param_names = _sweep_param_names_for(spec)
+    parameter_map = spec.parameter_map()
 
-    parameter_ranges: dict[str, IntegerRange] = {}
-    for name in sweep_param_names:
-        start_key = f"{name}_start"
-        end_key = f"{name}_end"
-        step_key = f"{name}_step"
-        # Fallback ai default dello spec se i campi non sono nel form
-        param_spec = spec.parameter_map().get(name)
-        default = int(param_spec.default) if param_spec else 1
-        start = int(float(_text_value(raw, start_key, str(default))))
-        end = int(float(_text_value(raw, end_key, str(default * 2))))
-        step = int(float(_text_value(raw, step_key, "1")))
-        parameter_ranges[name] = IntegerRange(start=start, end=end, step=max(1, step))
+    parameter_ranges: dict[str, IntegerRange | FloatRange] = {}
+    for name in _sweep_param_names_for(spec):
+        param_spec = parameter_map.get(name)
+        raw_start = _sweep_field_value(raw, spec.key, name, "start")
+        raw_end = _sweep_field_value(raw, spec.key, name, "end")
+        raw_step = _sweep_field_value(raw, spec.key, name, "step")
+        if param_spec is not None and param_spec.value_type == "float":
+            default = float(param_spec.default)
+            default_step = float(param_spec.step) if param_spec.step else 1.0
+            step = float(raw_step or default_step)
+            parameter_ranges[name] = FloatRange(
+                start=float(raw_start or default),
+                end=float(raw_end or default * 2),
+                step=step if step > 0 else default_step,
+            )
+        else:
+            default = int(param_spec.default) if param_spec else 1
+            step = int(float(raw_step or 1))
+            parameter_ranges[name] = IntegerRange(
+                start=int(float(raw_start or default)),
+                end=int(float(raw_end or default * 2)),
+                step=max(1, step),
+            )
     return parameter_ranges
+
+
+def _sweep_field_value(raw: Mapping[str, object], strategy_id: str, name: str, suffisso: str) -> str:
+    """Legge un campo range sweep dal form.
+
+    Prova prima la forma con namespace strategia (``<strategia>__<parametro>_<suffisso>``,
+    stessa convenzione dei campi parametro), poi la forma globale
+    ``<parametro>_<suffisso>`` per retro-compatibilità con form e preset vecchi.
+    """
+    namespaced = _text_value(raw, f"{strategy_id}__{name}_{suffisso}", "")
+    if namespaced:
+        return namespaced
+    return _text_value(raw, f"{name}_{suffisso}", "")
 
 
 def _sweep_param_names_for(spec) -> list[str]:
     """Restituisce i nomi dei parametri da sweep per una strategia.
 
-    Logica: prende i parametri interi dello spec, massimo 2 dimensioni (per non
-    far esplodere il numero di combinazioni e per la compatibilità col layout
-    form fast/slow). Le strategie con parametri non interi non sono mai marcate
-    ``supports_sweep=True`` quindi non finiscono qui.
+    Logica: prende i primi due parametri dello spec (l'ordine di dichiarazione
+    conta), massimo 2 dimensioni per non far esplodere il numero di combinazioni
+    e per il layout del form a due box range.
     """
-    int_params = [p.name for p in spec.parameters if p.value_type == "int"]
-    return int_params[:2] if int_params else [spec.parameters[0].name]
+    return [parameter.name for parameter in spec.parameters[:2]]
+
+
+def sweep_parameter_names(strategy_id: str) -> list[str]:
+    """Nomi dei parametri coinvolti nello sweep per la strategia indicata.
+
+    È la stessa convenzione usata dai campi form ``<parametro>_start/_end/_step``:
+    templates, form e preset devono passare da qui per restare allineati.
+    """
+    return _sweep_param_names_for(STRATEGY_SPECS[strategy_id])

@@ -219,6 +219,16 @@ def _resolve_sweep_sort_columns(sort_by: str, results_df: pd.DataFrame) -> list[
     return sort_columns
 
 
+def _parametro_nativo(value: object) -> int | float:
+    """Riporta un valore parametro letto dal DataFrame al tipo numerico nativo.
+
+    Un cast cieco a int troncherebbe i parametri float (es. step=0.02 → 0)
+    impedendo di ritrovare la chiave in ``completed_by_parameters``.
+    """
+    numero = float(value)
+    return int(numero) if numero.is_integer() else numero
+
+
 def _build_sweep_summary(
     *,
     results_df: pd.DataFrame,
@@ -227,7 +237,7 @@ def _build_sweep_summary(
     param_names: list[str],
 ) -> tuple[BacktestResult, dict[str, object]]:
     best_row = results_df.iloc[0].to_dict()
-    best_parameters = tuple(int(best_row[name]) for name in param_names)
+    best_parameters = tuple(_parametro_nativo(best_row[name]) for name in param_names)
     best_result = completed_by_parameters[best_parameters]
 
     # Espone i parametri vincenti con prefisso ``best_`` per ciascun parametro

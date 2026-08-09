@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import hashlib
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
 
 import pandas as pd
 import yfinance as yf
 
 from trading_bot.errors import FormValidationError
+
+# ── Cache su disco degli scaricamenti ────────────────────────────────────────
+# Una ricerca multi-mercato riscarica gli stessi identici dati a ogni lancio:
+# con la cache il secondo lancio parte subito e funziona anche offline.
+DATA_CACHE_DIR = Path("reports") / ".cache_dati"
+# Finestra che arriva a oggi: i dati possono ancora cambiare durante la giornata.
+CACHE_TTL_APERTA = timedelta(hours=12)
+# Finestra tutta nel passato: i dati sono storici, ma non li teniamo per sempre
+# (Yahoo corregge split e dividendi a posteriori).
+CACHE_TTL_CHIUSA = timedelta(days=30)
 
 INTRADAY_LOOKBACK_DAYS = {
     "1m": 8,
@@ -74,12 +86,29 @@ def download_price_data(
     start: str,
     end: str,
     interval: str = "1d",
+    use_cache: bool = True,
+    cache_dir: str | Path | None = None,
 ) -> pd.DataFrame:
-    """Download OHLCV data for a single symbol."""
+    """Download OHLCV data for a single symbol.
+
+    Se ``use_cache`` è attivo la stessa richiesta (simbolo, finestra, timeframe)
+    viene servita dal disco finché non scade: vedi ``CACHE_TTL_APERTA`` e
+    ``CACHE_TTL_CHIUSA``.
+    """
     normalized_interval = interval.strip().lower()
     resolved_symbol = resolve_market_data_symbol(symbol)
     start_dt, end_dt = normalize_request_window(start=start, end=end)
     validate_interval_window(interval=normalized_interval, start=start_dt, end=end_dt)
+
+    cache_file = None
+    if use_cache:
+        cache_file = _cache_file_path(
+            symbol=resolved_symbol, start=start_dt, end=end_dt,
+            interval=normalized_interval, cache_dir=cache_dir,
+        )
+        cached = _read_cache(cache_file, end=end_dt)
+        if cached is not None:
+            return cached
 
     raw = yf.download(
         resolved_symbol,
@@ -112,8 +141,75 @@ def download_price_data(
     keep = [column for column in ["open", "high", "low", "close", "volume"] if column in data.columns]
     data = data[keep].dropna(subset=["close"]).copy()
     data.index = pd.to_datetime(data.index).tz_localize(None)
+    # Nome dell'indice azzerato: così i dati letti dalla cache sono identici a
+    # quelli appena scaricati (il CSV reintrodurrebbe l'etichetta "date").
+    data.index.name = None
     data.sort_index(inplace=True)
+
+    if cache_file is not None:
+        _write_cache(cache_file, data)
     return data
+
+
+def _cache_file_path(
+    *,
+    symbol: str,
+    start: datetime,
+    end: datetime,
+    interval: str,
+    cache_dir: str | Path | None = None,
+) -> Path:
+    """Percorso del file di cache per una richiesta (una richiesta, un file)."""
+    directory = Path(cache_dir) if cache_dir is not None else DATA_CACHE_DIR
+    chiave = f"{symbol}|{start.isoformat()}|{end.isoformat()}|{interval}"
+    impronta = hashlib.sha1(chiave.encode("utf-8")).hexdigest()[:12]
+    nome_sicuro = "".join(c if c.isalnum() else "_" for c in symbol)[:24]
+    return directory / f"{nome_sicuro}-{interval}-{impronta}.csv"
+
+
+def _read_cache(path: Path, *, end: datetime, now: datetime | None = None) -> pd.DataFrame | None:
+    """Legge la cache se esiste ed è ancora valida, altrimenti ``None``."""
+    if not path.exists():
+        return None
+
+    reference_now = now or datetime.now()
+    scaduta_dopo = CACHE_TTL_APERTA if end >= reference_now else CACHE_TTL_CHIUSA
+    eta = reference_now - datetime.fromtimestamp(path.stat().st_mtime)
+    if eta > scaduta_dopo:
+        return None
+
+    try:
+        cached = pd.read_csv(path, index_col=0, parse_dates=True)
+    except Exception:
+        return None  # cache corrotta o troncata: si riscarica e si riscrive
+    if cached.empty or "close" not in cached.columns:
+        return None
+    cached.index.name = None
+    return cached
+
+
+def _write_cache(path: Path, data: pd.DataFrame) -> None:
+    """Salva i dati in cache. Un errore di scrittura non deve far fallire il run."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data.to_csv(path, index_label="date")
+    except OSError:
+        pass
+
+
+def clear_data_cache(cache_dir: str | Path | None = None) -> int:
+    """Svuota la cache dei dati. Restituisce quanti file sono stati rimossi."""
+    directory = Path(cache_dir) if cache_dir is not None else DATA_CACHE_DIR
+    if not directory.exists():
+        return 0
+    rimossi = 0
+    for file in directory.glob("*.csv"):
+        try:
+            file.unlink()
+            rimossi += 1
+        except OSError:
+            continue
+    return rimossi
 
 
 def resolve_market_data_symbol(symbol: str) -> str:
