@@ -819,6 +819,30 @@ def build_strategy_signal(
     return STRATEGY_FUNCTIONS[strategy_id](data, **parameters, **extra)
 
 
+def _combina_versi(frame: pd.DataFrame, logica: str) -> pd.Series:
+    """Combina piu' segnali tenendo conto del verso (-1 / 0 / +1).
+
+    - ``all`` (E): si sta a mercato solo se tutte le regole indicano lo stesso
+      verso; se una dice rialzo e un'altra ribasso non si fa niente.
+    - ``any`` (O): basta una regola per entrare, ma se due regole si
+      contraddicono sul verso si resta fuori.
+
+    Sui segnali solo long (0/1) il risultato coincide esattamente con la
+    vecchia logica booleana, quindi i backtest esistenti non cambiano.
+    """
+    valori = frame.fillna(0.0)
+    minimo = valori.min(axis=1)
+    massimo = valori.max(axis=1)
+
+    if logica == "any":
+        rialzo = (massimo > 0.0) & (minimo >= 0.0)
+        ribasso = (minimo < 0.0) & (massimo <= 0.0)
+        return rialzo.astype(float) - ribasso.astype(float)
+
+    concordi = minimo == massimo
+    return minimo.where(concordi, 0.0).astype(float)
+
+
 def _eval_expression(node: dict, signals_by_id: dict[str, "pd.Series"]) -> "pd.Series":
     """Valuta ricorsivamente un nodo dell'albero di espressione.
 
@@ -844,9 +868,7 @@ def _eval_expression(node: dict, signals_by_id: dict[str, "pd.Series"]) -> "pd.S
         if len(series) == 1:
             return series[0]
         frame = _pd.concat(series, axis=1).fillna(0.0)
-        if str(node.get("logic", "all")) == "any":
-            return (frame.max(axis=1) > 0.0).astype(float)
-        return (frame.min(axis=1) > 0.0).astype(float)
+        return _combina_versi(frame, str(node.get("logic", "all")))
 
     if "children" in node:
         # Nodo composito: combina i figli
@@ -856,9 +878,7 @@ def _eval_expression(node: dict, signals_by_id: dict[str, "pd.Series"]) -> "pd.S
         if len(children) == 1:
             return children[0]
         frame = _pd.concat(children, axis=1).fillna(0.0)
-        if str(node.get("op", "all")) == "any":
-            return (frame.max(axis=1) > 0.0).astype(float)
-        return (frame.min(axis=1) > 0.0).astype(float)
+        return _combina_versi(frame, str(node.get("op", "all")))
 
     return _pd.Series(0.0)
 
@@ -870,6 +890,7 @@ def build_combined_signal(
     combination_mode: str = "all",
     groups: list[dict[str, object]] | None = None,
     expression: dict[str, object] | None = None,
+    consenti_short: bool = False,
 ) -> pd.Series:
     """Costruisce il segnale combinato da più regole.
 
@@ -886,9 +907,12 @@ def build_combined_signal(
     signals_by_id: dict[str, pd.Series] = {}
     for strategy_id, parameters in rules:
         signals_by_id[strategy_id] = (
-            build_strategy_signal(strategy_id=strategy_id, data=data, parameters=parameters)
+            build_strategy_signal(
+                strategy_id=strategy_id, data=data, parameters=parameters,
+                consenti_short=consenti_short,
+            )
             .fillna(0.0)
-            .clip(lower=0.0, upper=1.0)
+            .clip(lower=-1.0, upper=1.0)
         )
 
     # Albero di espressione con precedenza esplicita (parentesi)
@@ -907,10 +931,7 @@ def build_combined_signal(
                 gsig = member_series[0]
             else:
                 frame = pd.concat(member_series, axis=1).fillna(0.0)
-                if str(group.get("logic", "all")) == "any":
-                    gsig = (frame.max(axis=1) > 0.0).astype(float)
-                else:
-                    gsig = (frame.min(axis=1) > 0.0).astype(float)
+                gsig = _combina_versi(frame, str(group.get("logic", "all")))
             # op_before: operatore con cui questo gruppo si combina al precedente
             op_before = str(group.get("op_before", combination_mode))
             group_signals.append((gsig, op_before))
@@ -923,12 +944,9 @@ def build_combined_signal(
         # Valutazione sinistra→destra con operatori per-coppia
         result = group_signals[0][0].fillna(0.0)
         for gsig, op in group_signals[1:]:
-            right = gsig.fillna(0.0)
-            if op == "any":
-                result = (result + right).clip(upper=1.0)
-            else:
-                result = (result * right)
-        return (result > 0.0).astype(float).rename("position")
+            coppia = pd.concat([result, gsig.fillna(0.0)], axis=1)
+            result = _combina_versi(coppia, op)
+        return result.rename("position")
 
     # Logica piatta (comportamento originale)
     signals = list(signals_by_id.values())

@@ -5,6 +5,8 @@ import json
 import time
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from trading_bot.application.multi_search import MultiMarketSearchResult, run_multi_market_search
@@ -303,14 +305,15 @@ def test_affidabilita_alta_richiede_guadagno_e_tenuta() -> None:
 def test_classifica_multi_mercato_conta_chi_batte_il_mercato() -> None:
     """L'aggregato deve contare i mercati battuti, non quelli chiusi in positivo."""
     from trading_bot.application.multi_search import _aggregate
+    from trading_bot.application.strategy_search import Candidato
 
     scores = _aggregate({
-        "sma_cross": {
+        Candidato("sma_cross", False): {
             # Perde meno del mercato in entrambi: due mercati battuti.
             "returns": [-4.0, -6.0], "excess": [10.0, 8.0],
             "dev_sharpe": [0.4, 0.3], "reliable": 0, "beat": 2,
         },
-        "ema_cross": {
+        Candidato("ema_cross", False): {
             # Guadagna, ma meno del mercato: nessun mercato battuto.
             "returns": [5.0, 7.0], "excess": [-6.0, -4.0],
             "dev_sharpe": [0.9, 0.8], "reliable": 0, "beat": 0,
@@ -320,6 +323,30 @@ def test_classifica_multi_mercato_conta_chi_batte_il_mercato() -> None:
     assert [s.strategy_id for s in scores] == ["sma_cross", "ema_cross"]
     assert scores[0].markets_beat_market == 2
     assert scores[0].avg_holdout_excess_pct == 9.0
+
+
+def test_le_due_versioni_della_stessa_strategia_restano_separate() -> None:
+    """La stessa strategia al rialzo e nei due versi sono due candidati: i loro
+    risultati non devono finire nello stesso mucchio."""
+    from trading_bot.application.multi_search import _aggregate
+    from trading_bot.application.strategy_search import Candidato
+
+    scores = _aggregate({
+        Candidato("sma_cross", False): {
+            "returns": [2.0], "excess": [1.0], "dev_sharpe": [0.2],
+            "reliable": 0, "beat": 1, "label": "SMA Crossover",
+        },
+        Candidato("sma_cross", True): {
+            "returns": [20.0], "excess": [18.0], "dev_sharpe": [1.2],
+            "reliable": 1, "beat": 1, "label": "SMA Crossover · anche al ribasso",
+        },
+    })
+
+    assert len(scores) == 2
+    # Vince la versione che regge su dati nuovi, e si vede dall'etichetta.
+    assert scores[0].consenti_short is True
+    assert "ribasso" in scores[0].label
+    assert scores[1].consenti_short is False
 
 
 @pytest.mark.lento
@@ -360,3 +387,73 @@ def test_avanzamento_arriva_al_totale_anche_in_parallelo(mercato_sintetico) -> N
     assert [e[0] for e in eventi] == sorted(e[0] for e in eventi)
     assert eventi[-1][0] == atteso
     assert all(e[0] <= atteso for e in eventi)
+
+
+# ── Ricerca con il ribasso attivo ────────────────────────────────────────────
+
+def _mercato_in_discesa(n: int = 400, seed: int = 3) -> pd.DataFrame:
+    """Mercato che scende: comprando e basta si perde, quindi è il caso in cui
+    il ribasso dovrebbe fare la differenza."""
+    rng = np.random.default_rng(seed)
+    chiusure = 100.0 * np.exp(np.cumsum(rng.normal(-0.0035, 0.015, n)))
+    return pd.DataFrame(
+        {"open": chiusure, "high": chiusure * 1.008, "low": chiusure * 0.992,
+         "close": chiusure, "volume": rng.integers(1000, 5000, n).astype(float)},
+        index=pd.date_range("2022-01-01", periods=n, freq="D"),
+    )
+
+
+def test_costruisci_candidati_raddoppia_col_ribasso() -> None:
+    from trading_bot.application.strategy_search import costruisci_candidati
+
+    solo_long = costruisci_candidati(_STRATS, consenti_short=False)
+    entrambi = costruisci_candidati(_STRATS, consenti_short=True)
+
+    assert [c.consenti_short for c in solo_long] == [False] * 3
+    assert len(entrambi) == 6
+    assert sum(c.consenti_short for c in entrambi) == 3
+    # L'etichetta dice il verso, così in classifica le due righe si distinguono.
+    ribassiste = [c for c in entrambi if c.consenti_short]
+    assert all("ribasso" in c.label for c in ribassiste)
+
+
+def test_stima_combinazioni_raddoppia_col_ribasso() -> None:
+    from trading_bot.application.strategy_search import estimate_search_combinations
+
+    solo_long = estimate_search_combinations(320, strategy_ids=_STRATS)
+    entrambi = estimate_search_combinations(320, strategy_ids=_STRATS, consenti_short=True)
+
+    assert entrambi == solo_long * 2
+
+
+@pytest.mark.lento
+def test_ricerca_col_ribasso_mette_in_gara_entrambi_i_versi() -> None:
+    from trading_bot.application.strategy_search import run_strategy_search
+
+    result = run_strategy_search(
+        data=_mercato_in_discesa(), symbol="GIU", fee_bps=0.0,
+        strategy_ids=_STRATS, consenti_short=True, max_workers=1,
+    )
+
+    versi = {(r.strategy_id, r.consenti_short) for r in result.ranking}
+    assert len(versi) == 6  # tre strategie per due versi
+    assert any(r.consenti_short for r in result.ranking)
+    # Il campione dichiara in che verso ha corso.
+    assert isinstance(result.champion_consenti_short, bool)
+
+
+@pytest.mark.lento
+def test_su_un_mercato_in_discesa_il_ribasso_vince() -> None:
+    """La prova del nove: dove il mercato scende del 70%, comprare e basta non
+    può funzionare, e la versione al ribasso deve risultare la migliore."""
+    from trading_bot.application.strategy_search import run_strategy_search
+
+    data = _mercato_in_discesa()
+    result = run_strategy_search(
+        data=data, symbol="GIU", fee_bps=0.0,
+        strategy_ids=_STRATS, consenti_short=True, max_workers=1,
+    )
+
+    assert result.holdout_benchmark_return_pct < 0
+    assert result.champion_consenti_short is True
+    assert "ribasso" in (result.champion_label or "")

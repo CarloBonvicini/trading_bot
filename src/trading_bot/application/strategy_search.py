@@ -107,6 +107,7 @@ def estimate_search_combinations(
     *,
     scan_mode: str = "rapida",
     strategy_ids: list[str] | None = None,
+    consenti_short: bool = False,
     holdout_ratio: float = HOLDOUT_RATIO,
     target_windows: int = TARGET_WINDOWS,
 ) -> int:
@@ -116,7 +117,7 @@ def estimate_search_combinations(
     combinazione viene provata una volta per finestra walk-forward più una volta
     nell'ottimizzazione finale sull'intero sviluppo.
     """
-    candidati = strategy_ids or list(AUTOSETTING_GRIDS.keys())
+    candidati = costruisci_candidati(strategy_ids, consenti_short)
     holdout_len = max(1, int(round(n_bars * holdout_ratio)))
     dev_len = n_bars - holdout_len
     if dev_len <= 0:
@@ -124,7 +125,43 @@ def estimate_search_combinations(
     is_days, oos_days = _auto_windows(dev_len, target_windows)
     finestre = count_windows(dev_len, is_days, oos_days)
     passaggi = finestre + 1  # finestre walk-forward + ottimizzazione finale
-    return sum(count_valid_combinations(sid, scan_mode) * passaggi for sid in candidati)
+    return sum(
+        count_valid_combinations(c.strategy_id, scan_mode) * passaggi for c in candidati
+    )
+
+
+SUFFISSO_SHORT = " · anche al ribasso"
+
+
+@dataclass(frozen=True)
+class Candidato:
+    """Una strategia in un verso: e' l'unita' che la ricerca mette in gara.
+
+    Con il ribasso attivo la stessa strategia corre due volte, solo al rialzo e
+    nei due versi, perche' sono due modi di operare diversi e non c'e' motivo di
+    dare per scontato quale dei due regga meglio su un certo mercato.
+    """
+
+    strategy_id: str
+    consenti_short: bool = False
+
+    @property
+    def label(self) -> str:
+        etichetta = STRATEGY_SPECS[self.strategy_id].label
+        return etichetta + SUFFISSO_SHORT if self.consenti_short else etichetta
+
+
+def costruisci_candidati(
+    strategy_ids: list[str] | None, consenti_short: bool
+) -> list[Candidato]:
+    """Elenco dei candidati: solo rialzo, piu' il ribasso dove ha senso."""
+    ids = [sid for sid in (strategy_ids or list(AUTOSETTING_GRIDS.keys())) if sid in STRATEGY_SPECS]
+    candidati = [Candidato(sid, False) for sid in ids]
+    if consenti_short:
+        candidati += [
+            Candidato(sid, True) for sid in ids if STRATEGY_SPECS[sid].supports_short
+        ]
+    return candidati
 
 
 @dataclass
@@ -156,6 +193,9 @@ class StrategyRanking:
     # le strategie dello stesso mercato, ma serve a chi valuta in un processo
     # separato per restituire un risultato completo).
     holdout_benchmark_return_pct: float | None = None
+    # Verso in cui ha corso questa riga: la stessa strategia puo' comparire due
+    # volte, solo al rialzo e nei due versi.
+    consenti_short: bool = False
     error: str | None = None    # motivo se la strategia non è stata valutabile
 
 
@@ -173,6 +213,9 @@ class StrategySearchResult:
     holdout_benchmark_return_pct: float
     data_span: dict[str, object]
     settings: dict[str, object]
+    # Verso in cui ha corso il campione: la stessa strategia puo' comparire in
+    # classifica due volte, solo al rialzo e nei due versi.
+    champion_consenti_short: bool = False
 
 
 def _auto_windows(dev_len: int, target_windows: int = TARGET_WINDOWS) -> tuple[int, int]:
@@ -194,6 +237,7 @@ def run_strategy_search(
     optimize_by: str = "sharpe_ratio",
     scan_mode: str = "rapida",
     strategy_ids: list[str] | None = None,
+    consenti_short: bool = False,
     progress_callback: ProgressCallback | None = None,
     max_workers: int | None = None,
 ) -> StrategySearchResult:
@@ -203,7 +247,7 @@ def run_strategy_search(
     ``None`` decide da sé in base ai core disponibili e alla mole di lavoro,
     ``1`` forza l'esecuzione sequenziale.
     """
-    candidate_ids = strategy_ids or list(AUTOSETTING_GRIDS.keys())
+    candidati = costruisci_candidati(strategy_ids, consenti_short)
 
     n = len(data)
     if n < MIN_TOTAL_BARS:
@@ -231,7 +275,9 @@ def run_strategy_search(
     # informativo del semplice "quante strategie ho finito".
     finestre = count_windows(dev_len, is_days, oos_days)
     passaggi = finestre + 1
-    total = sum(count_valid_combinations(sid, scan_mode) * passaggi for sid in candidate_ids)
+    total = sum(
+        count_valid_combinations(c.strategy_id, scan_mode) * passaggi for c in candidati
+    )
     provate = 0
     etichetta = ""
 
@@ -244,28 +290,27 @@ def run_strategy_search(
         provate += 1
         _segnala()
 
-    valutabili = [sid for sid in candidate_ids if sid in STRATEGY_SPECS]
     lavoro = _LavoroStrategia(
         data=data, dev_len=dev_len, is_days=is_days, oos_days=oos_days,
         fee_bps=fee_bps, initial_capital=initial_capital,
         optimize_by=optimize_by, scan_mode=scan_mode,
     )
 
-    if _usa_parallelo(total=total, n_strategie=len(valutabili), max_workers=max_workers):
-        etichetta = f"{len(valutabili)} strategie in parallelo"
+    if _usa_parallelo(total=total, n_strategie=len(candidati), max_workers=max_workers):
+        etichetta = f"{len(candidati)} strategie in parallelo"
         _segnala(forza=True)
         ranking = _valuta_in_parallelo(
-            lavoro=lavoro, strategy_ids=valutabili, max_workers=max_workers,
+            lavoro=lavoro, candidati=candidati, max_workers=max_workers,
             progress_callback=progress_callback, total=total,
         )
     else:
-        for strategy_id in valutabili:
+        for candidato in candidati:
             # Segnala la strategia PRIMA di testarla: a profondità alte una singola
             # strategia può richiedere minuti, e senza questo l'utente resterebbe a
             # guardare "avvio della ricerca" senza sapere cosa sta succedendo.
-            etichetta = STRATEGY_SPECS[strategy_id].label
+            etichetta = candidato.label
             _segnala(forza=True)
-            ranking.append(_valuta_strategia(lavoro, strategy_id, _combinazione_provata))
+            ranking.append(_valuta_strategia(lavoro, candidato, _combinazione_provata))
 
     for riga in ranking:
         if riga.error is None and riga.holdout_benchmark_return_pct is not None:
@@ -303,7 +348,7 @@ def run_strategy_search(
     if champion is None:
         return StrategySearchResult(
             symbol=symbol, ranking=ranking, champion_id=None, champion_label=None,
-            champion_params={}, holdout={}, development={},
+            champion_params={}, champion_consenti_short=False, holdout={}, development={},
             reliability=RELIABILITY_NONE,
             verdict_note="Nessuna strategia ha completato la validazione su questo periodo. "
                          "Prova con più storia o un timeframe diverso.",
@@ -327,7 +372,8 @@ def run_strategy_search(
     return StrategySearchResult(
         symbol=symbol, ranking=ranking,
         champion_id=champion.strategy_id, champion_label=champion.label,
-        champion_params=champion.params, holdout=holdout, development=development,
+        champion_params=champion.params, champion_consenti_short=champion.consenti_short,
+        holdout=holdout, development=development,
         reliability=champion.reliability,
         verdict_note=_verdict_note(champion, benchmark_return_pct),
         holdout_benchmark_return_pct=round(benchmark_return_pct, 2),
@@ -356,7 +402,7 @@ class _LavoroStrategia:
 
 def _valuta_strategia(
     lavoro: _LavoroStrategia,
-    strategy_id: str,
+    candidato: Candidato,
     on_combination: Callable[[], None] | None = None,
 ) -> StrategyRanking:
     """Walk-forward sullo sviluppo + prova sul holdout per una sola strategia.
@@ -364,7 +410,7 @@ def _valuta_strategia(
     Non solleva mai: una strategia non valutabile torna come riga in errore, in
     modo che non blocchi la ricerca sulle altre.
     """
-    spec = STRATEGY_SPECS[strategy_id]
+    strategy_id = candidato.strategy_id
     data = lavoro.data
     dev_data = data.iloc[: lavoro.dev_len]
     holdout_index = data.index[lavoro.dev_len:]
@@ -379,27 +425,30 @@ def _valuta_strategia(
             fee_bps=lavoro.fee_bps,
             initial_capital=lavoro.initial_capital,
             scan_mode=lavoro.scan_mode,
+            consenti_short=candidato.consenti_short,
             on_combination=on_combination,
         )
         # Parametri di produzione + prova su dati nuovi (holdout).
         params = _optimize_on_development(
             data=dev_data, strategy_id=strategy_id, fee_bps=lavoro.fee_bps,
             initial_capital=lavoro.initial_capital, optimize_by=lavoro.optimize_by,
-            scan_mode=lavoro.scan_mode, on_combination=on_combination,
+            scan_mode=lavoro.scan_mode, consenti_short=candidato.consenti_short,
+            on_combination=on_combination,
         )
         holdout_result = _evaluate_on_holdout(
             full_data=data, dev_len=lavoro.dev_len, holdout_index=holdout_index,
             strategy_id=strategy_id, params=params, fee_bps=lavoro.fee_bps,
-            initial_capital=lavoro.initial_capital,
+            initial_capital=lavoro.initial_capital, consenti_short=candidato.consenti_short,
         )
     except Exception as exc:  # una strategia non valutabile non blocca la ricerca
         return StrategyRanking(
-            strategy_id=strategy_id, label=spec.label,
+            strategy_id=strategy_id, label=candidato.label,
             avg_oos_sharpe=float("-inf"), avg_is_sharpe=0.0, avg_oos_return_pct=0.0,
             wf_efficiency=0.0, windows=0, params={},
             holdout_return_pct=0.0, holdout_sharpe=0.0,
             holdout_max_drawdown_pct=0.0, holdout_trades=0,
-            reliability=RELIABILITY_NONE, error=str(exc),
+            reliability=RELIABILITY_NONE, consenti_short=candidato.consenti_short,
+            error=str(exc),
         )
 
     hs = holdout_result.summary
@@ -411,7 +460,7 @@ def _valuta_strategia(
         holdout_trades=int(hs.get("trade_count", 0)),
     )
     return StrategyRanking(
-        strategy_id=strategy_id, label=spec.label,
+        strategy_id=strategy_id, label=candidato.label,
         avg_oos_sharpe=wf.avg_oos_sharpe, avg_is_sharpe=wf.avg_is_sharpe,
         avg_oos_return_pct=wf.avg_oos_return_pct,
         wf_efficiency=wf.wf_efficiency, windows=len(wf.windows),
@@ -424,6 +473,7 @@ def _valuta_strategia(
         holdout_excess_return_pct=round(float(hs.get("excess_return_pct", 0.0)), 2),
         dev_oos_trades=sum(int(w.oos_trades) for w in wf.windows),
         holdout_benchmark_return_pct=round(float(hs.get("benchmark_return_pct", 0.0)), 2),
+        consenti_short=candidato.consenti_short,
     )
 
 
@@ -483,10 +533,10 @@ def _scarica_contatore() -> None:
 _COMBINAZIONI_LOCALI = 0
 
 
-def _valuta_strategia_in_worker(argomenti: tuple[_LavoroStrategia, str]) -> StrategyRanking:
-    lavoro, strategy_id = argomenti
+def _valuta_strategia_in_worker(argomenti: tuple[_LavoroStrategia, Candidato]) -> StrategyRanking:
+    lavoro, candidato = argomenti
     try:
-        return _valuta_strategia(lavoro, strategy_id, _conta_nel_worker)
+        return _valuta_strategia(lavoro, candidato, _conta_nel_worker)
     finally:
         _scarica_contatore()
 
@@ -494,7 +544,7 @@ def _valuta_strategia_in_worker(argomenti: tuple[_LavoroStrategia, str]) -> Stra
 def _valuta_in_parallelo(
     *,
     lavoro: _LavoroStrategia,
-    strategy_ids: list[str],
+    candidati: list[Candidato],
     max_workers: int | None,
     progress_callback: ProgressCallback | None,
     total: int,
@@ -506,8 +556,8 @@ def _valuta_in_parallelo(
     """
     contesto = multiprocessing.get_context("spawn")
     contatore = contesto.Value("q", 0)
-    processi = _numero_processi(len(strategy_ids), max_workers)
-    etichetta = f"{len(strategy_ids)} strategie in parallelo"
+    processi = _numero_processi(len(candidati), max_workers)
+    etichetta = f"{len(candidati)} strategie in parallelo"
 
     try:
         with ProcessPoolExecutor(
@@ -518,12 +568,12 @@ def _valuta_in_parallelo(
             # lunga partisse per ultima, gli altri core resterebbero fermi ad
             # aspettarla e il guadagno svanirebbe.
             per_costo = sorted(
-                strategy_ids,
-                key=lambda sid: count_valid_combinations(sid, lavoro.scan_mode),
+                candidati,
+                key=lambda c: count_valid_combinations(c.strategy_id, lavoro.scan_mode),
                 reverse=True,
             )
             futures = {
-                sid: pool.submit(_valuta_strategia_in_worker, (lavoro, sid)) for sid in per_costo
+                c: pool.submit(_valuta_strategia_in_worker, (lavoro, c)) for c in per_costo
             }
             rimanenti = set(futures.values())
             while rimanenti:
@@ -534,14 +584,15 @@ def _valuta_in_parallelo(
                     progress_callback(min(provate, total), total, etichetta)
             # L'ordine dei risultati segue i candidati, non quello di arrivo né
             # quello di lancio: così la classifica non cambia fra due lanci.
-            return [futures[sid].result() for sid in strategy_ids]
+            return [futures[c].result() for c in candidati]
     except Exception:
-        return [_valuta_strategia(lavoro, sid) for sid in strategy_ids]
+        return [_valuta_strategia(lavoro, c) for c in candidati]
 
 
 def _optimize_on_development(
     *, data: pd.DataFrame, strategy_id: str, fee_bps: float,
     initial_capital: float, optimize_by: str, scan_mode: str = "rapida",
+    consenti_short: bool = False,
     on_combination: Callable[[], None] | None = None,
 ) -> dict[str, int | float]:
     """Trova i parametri migliori della strategia sull'intero set di sviluppo.
@@ -569,7 +620,10 @@ def _optimize_on_development(
         except ValueError:
             continue
         try:
-            signal = build_strategy_signal(strategy_id=strategy_id, data=data, parameters=params)
+            signal = build_strategy_signal(
+                strategy_id=strategy_id, data=data, parameters=params,
+                consenti_short=consenti_short,
+            )
             result = run_backtest(data=data, signal=signal, initial_capital=initial_capital, fee_bps=fee_bps)
         except Exception:
             continue
@@ -597,6 +651,7 @@ def _optimize_on_development(
 def _evaluate_on_holdout(
     *, full_data: pd.DataFrame, dev_len: int, holdout_index: pd.Index,
     strategy_id: str, params: dict[str, int | float], fee_bps: float, initial_capital: float,
+    consenti_short: bool = False,
 ):
     """Valuta i parametri sul holdout, con buffer di warm-up per innescare gli indicatori."""
     spec = STRATEGY_SPECS[strategy_id]
@@ -605,7 +660,9 @@ def _evaluate_on_holdout(
     warmup = min(warmup * 3, dev_len)
 
     context = full_data.iloc[dev_len - warmup:]
-    signal_ctx = build_strategy_signal(strategy_id=strategy_id, data=context, parameters=params)
+    signal_ctx = build_strategy_signal(
+        strategy_id=strategy_id, data=context, parameters=params, consenti_short=consenti_short,
+    )
     signal_holdout = signal_ctx.reindex(holdout_index).fillna(0.0)
     holdout_data = full_data.loc[holdout_index]
     return run_backtest(data=holdout_data, signal=signal_holdout, initial_capital=initial_capital, fee_bps=fee_bps)

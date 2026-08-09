@@ -20,6 +20,7 @@ from trading_bot.application.autosetting import AUTOSETTING_GRIDS
 from trading_bot.application.strategy_search import (
     MARGINE_MINIMO_PCT,
     RELIABILITY_HIGH,
+    Candidato,
     estimate_search_combinations,
     run_strategy_search,
 )
@@ -58,6 +59,9 @@ class StrategyAcrossMarkets:
     avg_holdout_return_pct: float
     avg_holdout_excess_pct: float
     avg_dev_sharpe: float
+    # Verso in cui ha corso: la stessa strategia compare due volte quando il
+    # ribasso è attivo, e le due righe non vanno mescolate.
+    consenti_short: bool = False
 
 
 @dataclass
@@ -69,6 +73,7 @@ class MultiMarketSearchResult:
     strategy_scores: list[StrategyAcrossMarkets] = field(default_factory=list)
     overall_champion_id: str | None = None
     overall_champion_label: str | None = None
+    overall_champion_consenti_short: bool = False
     verdict_note: str = ""
     settings: dict = field(default_factory=dict)
 
@@ -83,6 +88,7 @@ def run_multi_market_search(
     start: str = "",
     end: str = "",
     strategy_ids: list[str] | None = None,
+    consenti_short: bool = False,
     download_data: Callable[..., pd.DataFrame] = download_price_data,
     progress_callback: ProgressCallback | None = None,
     max_workers: int | None = None,
@@ -119,7 +125,7 @@ def run_multi_market_search(
                 data=data, symbol=symbol, interval=interval,
                 initial_capital=initial_capital, fee_bps=fee_bps,
                 scan_mode=scan_mode, strategy_ids=strategy_ids, progress_callback=inner_progress,
-                max_workers=max_workers,
+                consenti_short=consenti_short, max_workers=max_workers,
             )
         except Exception as exc:
             market_info[symbol] = {"error": str(exc)}
@@ -128,11 +134,14 @@ def run_multi_market_search(
             continue
 
         combinazioni_concluse += estimate_search_combinations(
-            len(data), scan_mode=scan_mode, strategy_ids=strategy_ids
+            len(data), scan_mode=scan_mode, strategy_ids=strategy_ids,
+            consenti_short=consenti_short,
         )
 
         by_strategy = {
-            row.strategy_id: {"return": row.holdout_return_pct, "reliability": row.reliability}
+            Candidato(row.strategy_id, row.consenti_short): {
+                "return": row.holdout_return_pct, "reliability": row.reliability,
+            }
             for row in result.ranking if row.error is None
         }
         market_info[symbol] = {
@@ -149,8 +158,9 @@ def run_multi_market_search(
             if row.error is not None:
                 continue
             bucket = per_strategy.setdefault(
-                row.strategy_id,
-                {"returns": [], "excess": [], "dev_sharpe": [], "reliable": 0, "beat": 0},
+                Candidato(row.strategy_id, row.consenti_short),
+                {"returns": [], "excess": [], "dev_sharpe": [], "reliable": 0, "beat": 0,
+                 "label": row.label},
             )
             bucket["returns"].append(row.holdout_return_pct)
             bucket["excess"].append(row.holdout_excess_return_pct)
@@ -162,16 +172,17 @@ def run_multi_market_search(
 
     strategy_scores = _aggregate(per_strategy)
     overall = strategy_scores[0] if strategy_scores else None
-    overall_id = None
+    campione = None
     if overall and (overall.markets_reliable > 0 or overall.markets_beat_market > 0):
-        overall_id = overall.strategy_id
-    overall_label = STRATEGY_SPECS[overall_id].label if overall_id else None
+        campione = Candidato(overall.strategy_id, overall.consenti_short)
+    overall_id = campione.strategy_id if campione else None
+    overall_label = overall.label if campione else None
 
     # Ogni scheda mostra come è andato il campione complessivo su quel mercato
     # (coerente con l'intestazione); se non c'è un campione complessivo, ripiega
     # sul campione locale del singolo mercato.
     markets = [_market_outcome(symbol, market_info.get(symbol, {"error": "nessun dato"}),
-                               overall_id, overall_label)
+                               campione, overall_label)
                for symbol in clean_symbols]
 
     return MultiMarketSearchResult(
@@ -182,20 +193,21 @@ def run_multi_market_search(
         strategy_scores=strategy_scores,
         overall_champion_id=overall_id,
         overall_champion_label=overall_label,
+        overall_champion_consenti_short=bool(campione.consenti_short) if campione else False,
         verdict_note=_overall_note(overall, len(clean_symbols)),
         settings={"initial_capital": float(initial_capital), "fee_bps": float(fee_bps)},
     )
 
 
-def _market_outcome(symbol: str, info: dict, overall_id: str | None, overall_label: str | None) -> MarketOutcome:
+def _market_outcome(symbol: str, info: dict, campione, overall_label: str | None) -> MarketOutcome:
     """Scheda di un mercato: mostra il campione complessivo su quel mercato,
     oppure il campione locale se non c'è un vincitore complessivo."""
     if info.get("error"):
         return MarketOutcome(symbol=symbol, champion_label=None, reliability="insufficiente",
                              holdout_return_pct=0.0, benchmark_return_pct=0.0, bars=0, error=info["error"])
     by_strategy = info.get("by_strategy", {})
-    if overall_id and overall_id in by_strategy:
-        entry = by_strategy[overall_id]
+    if campione is not None and campione in by_strategy:
+        entry = by_strategy[campione]
         return MarketOutcome(
             symbol=symbol, champion_label=overall_label,
             reliability=entry["reliability"], holdout_return_pct=entry["return"],
@@ -211,15 +223,16 @@ def _market_outcome(symbol: str, info: dict, overall_id: str | None, overall_lab
 
 def _aggregate(per_strategy: dict[str, dict[str, list]]) -> list[StrategyAcrossMarkets]:
     scores: list[StrategyAcrossMarkets] = []
-    for strategy_id, bucket in per_strategy.items():
+    for candidato, bucket in per_strategy.items():
         returns = bucket["returns"]
         excess = bucket["excess"]
         dev = bucket["dev_sharpe"]
         tested = len(returns)
         scores.append(
             StrategyAcrossMarkets(
-                strategy_id=strategy_id,
-                label=STRATEGY_SPECS[strategy_id].label,
+                strategy_id=candidato.strategy_id,
+                label=bucket.get("label") or STRATEGY_SPECS[candidato.strategy_id].label,
+                consenti_short=candidato.consenti_short,
                 markets_tested=tested,
                 markets_reliable=bucket["reliable"],
                 markets_beat_market=bucket["beat"],

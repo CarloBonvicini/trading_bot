@@ -75,6 +75,7 @@ def run_walk_forward(
     sizing_param: float = 100.0,
     initial_capital: float = 10_000.0,
     scan_mode: str = "rapida",
+    consenti_short: bool = False,
     on_combination: "Callable[[], None] | None" = None,
 ) -> WalkForwardResult:
     """Esegue la walk-forward validation su ``data`` per la strategia indicata.
@@ -118,7 +119,8 @@ def run_walk_forward(
         try:
             # Warm-up: il segnale nasce sull'intera serie e viene poi ritagliato.
             signal_full = build_strategy_signal(
-                strategy_id=strategy_id, data=data, parameters=params
+                strategy_id=strategy_id, data=data, parameters=params,
+                consenti_short=consenti_short,
             )
         except Exception:
             # La combinazione è inutilizzabile: conta comunque come provata su
@@ -163,7 +165,8 @@ def run_walk_forward(
         oos_signal = selezione.oos_signal
         if oos_signal is None:
             oos_signal = build_strategy_signal(
-                strategy_id=strategy_id, data=data, parameters=selezione.params
+                strategy_id=strategy_id, data=data, parameters=selezione.params,
+                consenti_short=consenti_short,
             ).iloc[split_i:end_i]
 
         oos_result = run_backtest(

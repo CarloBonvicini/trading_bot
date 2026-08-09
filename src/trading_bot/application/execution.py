@@ -45,6 +45,7 @@ def build_backtest_result(
         combination_mode=backtest_request.rule_logic,
         groups=list(backtest_request.groups) if backtest_request.groups else None,
         expression=backtest_request.expression,
+        consenti_short=backtest_request.consenti_short,
     )
     return run_backtest(
         data=data,
