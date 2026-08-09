@@ -44,6 +44,10 @@ class StrategySpec:
     description: str
     parameters: tuple[StrategyParameter, ...]
     supports_sweep: bool = False
+    # Tutte le strategie del catalogo hanno una regola al ribasso scritta
+    # esplicitamente; il campo resta perché una strategia futura potrebbe non
+    # averne una sensata (e allora è meglio dichiararlo che inventarsela).
+    supports_short: bool = True
 
     def defaults(self) -> dict[str, int | float]:
         return {parameter.name: parameter.default for parameter in self.parameters}
@@ -57,6 +61,7 @@ class StrategySpec:
             "label": self.label,
             "description": self.description,
             "supports_sweep": self.supports_sweep,
+            "supports_short": self.supports_short,
             "parameters": [
                 {
                     **parameter.as_dict(),
@@ -71,7 +76,9 @@ def strategy_field_name(strategy_id: str, parameter_name: str) -> str:
     return f"{strategy_id}__{parameter_name}"
 
 
-def sma_crossover(data: pd.DataFrame, fast: int = 20, slow: int = 100) -> pd.Series:
+def sma_crossover(
+    data: pd.DataFrame, fast: int = 20, slow: int = 100, consenti_short: bool = False
+) -> pd.Series:
     if fast <= 0 or slow <= 0:
         raise ValueError("Le finestre delle medie mobili devono essere positive.")
     if fast >= slow:
@@ -80,10 +87,12 @@ def sma_crossover(data: pd.DataFrame, fast: int = 20, slow: int = 100) -> pd.Ser
     close = data["close"].astype(float)
     fast_ma = close.rolling(window=fast, min_periods=fast).mean()
     slow_ma = close.rolling(window=slow, min_periods=slow).mean()
-    return (fast_ma > slow_ma).astype(float).rename("position")
+    return _verso_da_confronto(fast_ma, slow_ma, consenti_short)
 
 
-def ema_crossover(data: pd.DataFrame, fast: int = 12, slow: int = 26) -> pd.Series:
+def ema_crossover(
+    data: pd.DataFrame, fast: int = 12, slow: int = 26, consenti_short: bool = False
+) -> pd.Series:
     if fast <= 0 or slow <= 0:
         raise ValueError("Le finestre EMA devono essere positive.")
     if fast >= slow:
@@ -92,7 +101,7 @@ def ema_crossover(data: pd.DataFrame, fast: int = 12, slow: int = 26) -> pd.Seri
     close = data["close"].astype(float)
     fast_ema = close.ewm(span=fast, adjust=False, min_periods=fast).mean()
     slow_ema = close.ewm(span=slow, adjust=False, min_periods=slow).mean()
-    return (fast_ema > slow_ema).astype(float).rename("position")
+    return _verso_da_confronto(fast_ema, slow_ema, consenti_short)
 
 
 def relative_strength_index(close: pd.Series, period: int = 14) -> pd.Series:
@@ -114,15 +123,22 @@ def rsi_mean_reversion(
     period: int = 14,
     lower: float = 30.0,
     upper: float = 55.0,
+    consenti_short: bool = False,
 ) -> pd.Series:
     if lower >= upper:
         raise ValueError("RSI lower deve essere piu' piccolo di RSI upper.")
 
     rsi = relative_strength_index(data["close"].astype(float), period=period)
-    return _stateful_signal(entry_condition=rsi <= lower, exit_condition=rsi >= upper, index=data.index)
+    return _segnale_speculare(
+        ipervenduto=rsi <= lower, ipercomprato=rsi >= upper,
+        index=data.index, consenti_short=consenti_short,
+    )
 
 
-def macd_trend(data: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
+def macd_trend(
+    data: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9,
+    consenti_short: bool = False,
+) -> pd.Series:
     if fast <= 0 or slow <= 0 or signal <= 0:
         raise ValueError("I periodi MACD devono essere positivi.")
     if fast >= slow:
@@ -133,10 +149,13 @@ def macd_trend(data: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int =
     slow_ema = close.ewm(span=slow, adjust=False, min_periods=slow).mean()
     macd_line = fast_ema - slow_ema
     signal_line = macd_line.ewm(span=signal, adjust=False, min_periods=signal).mean()
-    return (macd_line > signal_line).astype(float).rename("position")
+    return _verso_da_confronto(macd_line, signal_line, consenti_short)
 
 
-def bollinger_reversion(data: pd.DataFrame, period: int = 20, std_dev: float = 2.0) -> pd.Series:
+def bollinger_reversion(
+    data: pd.DataFrame, period: int = 20, std_dev: float = 2.0,
+    consenti_short: bool = False,
+) -> pd.Series:
     if period <= 1:
         raise ValueError("Il periodo Bollinger deve essere maggiore di 1.")
     if std_dev <= 0:
@@ -146,7 +165,16 @@ def bollinger_reversion(data: pd.DataFrame, period: int = 20, std_dev: float = 2
     basis = close.rolling(window=period, min_periods=period).mean()
     deviation = close.rolling(window=period, min_periods=period).std(ddof=0)
     lower_band = basis - (deviation * std_dev)
-    return _stateful_signal(entry_condition=close <= lower_band, exit_condition=close >= basis, index=data.index)
+    upper_band = basis + (deviation * std_dev)
+    return _stateful_signal(
+        entry_condition=close <= lower_band,
+        exit_condition=close >= basis,
+        index=data.index,
+        # Al ribasso e' speculare: si vende sulla banda superiore e si chiude
+        # quando il prezzo rientra sulla media.
+        short_entry_condition=(close >= upper_band) if consenti_short else None,
+        short_exit_condition=close <= basis,
+    )
 
 
 def stochastic_reversion(
@@ -156,6 +184,7 @@ def stochastic_reversion(
     smooth: int = 3,
     lower: float = 20.0,
     upper: float = 80.0,
+    consenti_short: bool = False,
 ) -> pd.Series:
     if lower >= upper:
         raise ValueError("Stochastic lower deve essere piu' piccolo di upper.")
@@ -174,7 +203,10 @@ def stochastic_reversion(
     slow_d = slow_k.rolling(window=d_period, min_periods=d_period).mean()
     entry = (slow_k <= lower) & (slow_k > slow_d)
     exit = (slow_k >= upper) & (slow_k < slow_d)
-    return _stateful_signal(entry_condition=entry, exit_condition=exit, index=data.index)
+    return _segnale_speculare(
+        ipervenduto=entry, ipercomprato=exit,
+        index=data.index, consenti_short=consenti_short,
+    )
 
 
 def commodity_channel_index(data: pd.DataFrame, period: int = 20) -> pd.Series:
@@ -192,12 +224,18 @@ def commodity_channel_index(data: pd.DataFrame, period: int = 20) -> pd.Series:
     return cci.fillna(0.0).rename("cci")
 
 
-def cci_reversion(data: pd.DataFrame, period: int = 20, lower: float = -100.0, upper: float = 100.0) -> pd.Series:
+def cci_reversion(
+    data: pd.DataFrame, period: int = 20, lower: float = -100.0, upper: float = 100.0,
+    consenti_short: bool = False,
+) -> pd.Series:
     if lower >= upper:
         raise ValueError("CCI lower deve essere piu' piccolo di upper.")
 
     cci = commodity_channel_index(data, period=period)
-    return _stateful_signal(entry_condition=cci <= lower, exit_condition=cci >= upper, index=data.index)
+    return _segnale_speculare(
+        ipervenduto=cci <= lower, ipercomprato=cci >= upper,
+        index=data.index, consenti_short=consenti_short,
+    )
 
 
 def williams_r_indicator(data: pd.DataFrame, period: int = 14) -> pd.Series:
@@ -215,12 +253,18 @@ def williams_r_indicator(data: pd.DataFrame, period: int = 14) -> pd.Series:
     return williams_r.fillna(-50.0).rename("williams_r")
 
 
-def williams_r_reversion(data: pd.DataFrame, period: int = 14, lower: float = -80.0, upper: float = -20.0) -> pd.Series:
+def williams_r_reversion(
+    data: pd.DataFrame, period: int = 14, lower: float = -80.0, upper: float = -20.0,
+    consenti_short: bool = False,
+) -> pd.Series:
     if lower >= upper:
         raise ValueError("Williams %R lower deve essere piu' piccolo di upper.")
 
     williams_r = williams_r_indicator(data, period=period)
-    return _stateful_signal(entry_condition=williams_r <= lower, exit_condition=williams_r >= upper, index=data.index)
+    return _segnale_speculare(
+        ipervenduto=williams_r <= lower, ipercomprato=williams_r >= upper,
+        index=data.index, consenti_short=consenti_short,
+    )
 
 
 def adx_components(data: pd.DataFrame, period: int = 14) -> pd.DataFrame:
@@ -254,11 +298,28 @@ def adx_components(data: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     return pd.DataFrame({"adx": adx.fillna(0.0), "plus_di": plus_di.fillna(0.0), "minus_di": minus_di.fillna(0.0)})
 
 
-def adx_trend(data: pd.DataFrame, period: int = 14, threshold: float = 25.0) -> pd.Series:
+def adx_trend(
+    data: pd.DataFrame, period: int = 14, threshold: float = 25.0,
+    consenti_short: bool = False,
+) -> pd.Series:
+    """ADX Trend: segue il trend solo quando e' abbastanza forte.
+
+    Al ribasso serve la condizione esplicita (trend forte con il -DI davanti al
+    +DI): la condizione di uscita dal rialzo comprende anche "il trend si e'
+    spento", che non e' affatto un motivo per vendere allo scoperto.
+    """
     components = adx_components(data, period=period)
-    entry = (components["adx"] >= threshold) & (components["plus_di"] > components["minus_di"])
-    exit = (components["adx"] < threshold) | (components["plus_di"] <= components["minus_di"])
-    return _stateful_signal(entry_condition=entry, exit_condition=exit, index=data.index)
+    forte = components["adx"] >= threshold
+    debole = components["adx"] < threshold
+    rialzo = components["plus_di"] > components["minus_di"]
+    ribasso = components["minus_di"] > components["plus_di"]
+    return _stateful_signal(
+        entry_condition=forte & rialzo,
+        exit_condition=debole | ~rialzo,
+        index=data.index,
+        short_entry_condition=(forte & ribasso) if consenti_short else None,
+        short_exit_condition=debole | ~ribasso,
+    )
 
 
 def on_balance_volume(data: pd.DataFrame) -> pd.Series:
@@ -269,12 +330,20 @@ def on_balance_volume(data: pd.DataFrame) -> pd.Series:
     return (direction * volume).cumsum().rename("obv")
 
 
-def donchian_breakout(data: pd.DataFrame, entry_period: int = 20, exit_period: int = 10) -> pd.Series:
+def donchian_breakout(
+    data: pd.DataFrame, entry_period: int = 20, exit_period: int = 10,
+    consenti_short: bool = False,
+) -> pd.Series:
     """Breakout sul canale di Donchian.
 
     Entra long quando il close supera il massimo degli ultimi `entry_period` giorni
     (nuovo massimo storico recente). Esce quando il close scende sotto il minimo
     degli ultimi `exit_period` giorni.
+
+    Al ribasso il canale si rovescia: si vende quando il close rompe il **minimo**
+    degli ultimi `entry_period` giorni e si richiude sul massimo degli ultimi
+    `exit_period`. Nota che l'uscita dal rialzo non coincide con l'ingresso al
+    ribasso: la prima e' uno stop dinamico stretto, il secondo una rottura vera.
     """
     if entry_period <= 1 or exit_period <= 1:
         raise ValueError("I periodi Donchian devono essere maggiori di 1.")
@@ -290,13 +359,22 @@ def donchian_breakout(data: pd.DataFrame, entry_period: int = 20, exit_period: i
     # della barra corrente impedisca sempre alla condizione di scattare (high[t] >= close[t]).
     upper_channel = high.rolling(window=entry_period, min_periods=entry_period).max().shift(1)
     lower_channel = low.rolling(window=exit_period, min_periods=exit_period).min().shift(1)
+    # Canali speculari per il verso al ribasso.
+    lower_breakout = low.rolling(window=entry_period, min_periods=entry_period).min().shift(1)
+    upper_cover = high.rolling(window=exit_period, min_periods=exit_period).max().shift(1)
 
-    entry_condition = close >= upper_channel
-    exit_condition = close <= lower_channel
-    return _stateful_signal(entry_condition=entry_condition, exit_condition=exit_condition, index=data.index)
+    return _stateful_signal(
+        entry_condition=close >= upper_channel,
+        exit_condition=close <= lower_channel,
+        index=data.index,
+        short_entry_condition=(close <= lower_breakout) if consenti_short else None,
+        short_exit_condition=close >= upper_cover,
+    )
 
 
-def obv_trend(data: pd.DataFrame, fast: int = 10, slow: int = 30) -> pd.Series:
+def obv_trend(
+    data: pd.DataFrame, fast: int = 10, slow: int = 30, consenti_short: bool = False
+) -> pd.Series:
     if fast <= 0 or slow <= 0:
         raise ValueError("Le finestre OBV devono essere positive.")
     if fast >= slow:
@@ -305,14 +383,19 @@ def obv_trend(data: pd.DataFrame, fast: int = 10, slow: int = 30) -> pd.Series:
     obv = on_balance_volume(data)
     fast_ma = obv.ewm(span=fast, adjust=False, min_periods=fast).mean()
     slow_ma = obv.ewm(span=slow, adjust=False, min_periods=slow).mean()
-    return (fast_ma > slow_ma).astype(float).rename("position")
+    return _verso_da_confronto(fast_ma, slow_ma, consenti_short)
 
 
-def roc_momentum(data: pd.DataFrame, period: int = 10, threshold: float = 5.0) -> pd.Series:
+def roc_momentum(
+    data: pd.DataFrame, period: int = 10, threshold: float = 5.0,
+    consenti_short: bool = False,
+) -> pd.Series:
     """Rate of Change (ROC): momentum puro.
 
     Entra long quando il ROC supera la soglia positiva (slancio al rialzo)
-    ed esce quando il ROC torna sotto zero (momentum esaurito).
+    ed esce quando il ROC torna sotto zero (momentum esaurito). Al ribasso e'
+    speculare: si vende sotto la soglia negativa e si chiude quando il ROC
+    risale sopra lo zero.
     """
     if period <= 0:
         raise ValueError("ROC period deve essere positivo.")
@@ -323,10 +406,19 @@ def roc_momentum(data: pd.DataFrame, period: int = 10, threshold: float = 5.0) -
     prev_close = close.shift(period).replace(0.0, np.nan)
     roc = ((close - prev_close) / prev_close) * 100.0
     roc = roc.fillna(0.0)
-    return _stateful_signal(entry_condition=roc >= threshold, exit_condition=roc <= 0.0, index=data.index)
+    return _stateful_signal(
+        entry_condition=roc >= threshold,
+        exit_condition=roc <= 0.0,
+        index=data.index,
+        short_entry_condition=(roc <= -threshold) if consenti_short else None,
+        short_exit_condition=roc >= 0.0,
+    )
 
 
-def keltner_reversion(data: pd.DataFrame, period: int = 20, multiplier: float = 2.0) -> pd.Series:
+def keltner_reversion(
+    data: pd.DataFrame, period: int = 20, multiplier: float = 2.0,
+    consenti_short: bool = False,
+) -> pd.Series:
     """Keltner Channel Reversion: canale basato su EMA + ATR.
 
     Compra quando il prezzo scende sotto la banda inferiore (EMA - multiplier × ATR)
@@ -354,7 +446,14 @@ def keltner_reversion(data: pd.DataFrame, period: int = 20, multiplier: float = 
     ).max(axis=1)
     atr = true_range.ewm(span=period, adjust=False, min_periods=period).mean()
     lower_band = middle - multiplier * atr
-    return _stateful_signal(entry_condition=close <= lower_band, exit_condition=close >= middle, index=data.index)
+    upper_band = middle + multiplier * atr
+    return _stateful_signal(
+        entry_condition=close <= lower_band,
+        exit_condition=close >= middle,
+        index=data.index,
+        short_entry_condition=(close >= upper_band) if consenti_short else None,
+        short_exit_condition=close <= middle,
+    )
 
 
 def money_flow_index(data: pd.DataFrame, period: int = 14) -> pd.Series:
@@ -379,19 +478,31 @@ def money_flow_index(data: pd.DataFrame, period: int = 14) -> pd.Series:
     return mfi.fillna(50.0).rename("mfi")
 
 
-def mfi_reversion(data: pd.DataFrame, period: int = 14, lower: float = 20.0, upper: float = 80.0) -> pd.Series:
+def mfi_reversion(
+    data: pd.DataFrame, period: int = 14, lower: float = 20.0, upper: float = 80.0,
+    consenti_short: bool = False,
+) -> pd.Series:
     """MFI Mean Reversion: entra su ipervenduto MFI ed esce su ipercomprato."""
     if lower >= upper:
         raise ValueError("MFI lower deve essere piu' piccolo di upper.")
 
     mfi = money_flow_index(data, period=period)
-    return _stateful_signal(entry_condition=mfi <= lower, exit_condition=mfi >= upper, index=data.index)
+    return _segnale_speculare(
+        ipervenduto=mfi <= lower, ipercomprato=mfi >= upper,
+        index=data.index, consenti_short=consenti_short,
+    )
 
 
-def parabolic_sar(data: pd.DataFrame, step: float = 0.02, max_step: float = 0.20) -> pd.Series:
+def parabolic_sar(
+    data: pd.DataFrame, step: float = 0.02, max_step: float = 0.20,
+    consenti_short: bool = False,
+) -> pd.Series:
     """Parabolic SAR: trend following con stop parabolico accelerato.
 
-    Posizione long quando il prezzo e' sopra il SAR, flat quando e' sotto.
+    Posizione long quando il prezzo e' sopra il SAR. Quando e' sotto la
+    strategia sta ferma, oppure va al ribasso se `consenti_short` e' attivo: il
+    SAR e' simmetrico per costruzione, quindi il verso opposto e' gia' quello
+    che l'indicatore segnala, senza aggiungere regole.
     L'acceleration factor parte da `step` e si incrementa di `step` ogni volta
     che si registra un nuovo estremo, fino a `max_step`.
     """
@@ -409,6 +520,7 @@ def parabolic_sar(data: pd.DataFrame, step: float = 0.02, max_step: float = 0.20
     af = step
     ep = float(high_vals[0])
     sar = float(low_vals[0])
+    giu = -1.0 if consenti_short else 0.0  # verso quando il prezzo e' sotto il SAR
     positions: list[float] = []
 
     for i in range(n):
@@ -430,7 +542,7 @@ def parabolic_sar(data: pd.DataFrame, step: float = 0.02, max_step: float = 0.20
                 sar = ep
                 ep = float(low_vals[i])
                 af = step
-                positions.append(0.0)
+                positions.append(giu)
             else:
                 if float(high_vals[i]) > ep:
                     ep = float(high_vals[i])
@@ -455,7 +567,7 @@ def parabolic_sar(data: pd.DataFrame, step: float = 0.02, max_step: float = 0.20
                 if float(low_vals[i]) < ep:
                     ep = float(low_vals[i])
                     af = min(af + step, max_step)
-                positions.append(0.0)
+                positions.append(giu)
 
     return pd.Series(positions, index=data.index, name="position", dtype=float)
 
@@ -687,11 +799,24 @@ def validate_strategy_parameters(strategy_id: str, parameters: Mapping[str, int 
             raise ValueError(message)
 
 
-def build_strategy_signal(strategy_id: str, data: pd.DataFrame, parameters: Mapping[str, int | float]) -> pd.Series:
+def build_strategy_signal(
+    strategy_id: str,
+    data: pd.DataFrame,
+    parameters: Mapping[str, int | float],
+    consenti_short: bool = False,
+) -> pd.Series:
+    """Costruisce il segnale di una strategia.
+
+    Con ``consenti_short`` il segnale può valere anche -1 (posizione al
+    ribasso). Il parametro non entra fra quelli della strategia: è una scelta
+    di come si opera, non una taratura da ottimizzare barra per barra.
+    """
     if strategy_id not in STRATEGY_FUNCTIONS:
         raise ValueError(f"Strategia non supportata: {strategy_id}.")
     validate_strategy_parameters(strategy_id, parameters)
-    return STRATEGY_FUNCTIONS[strategy_id](data, **parameters)
+    spec = STRATEGY_SPECS[strategy_id]
+    extra = {"consenti_short": True} if (consenti_short and spec.supports_short) else {}
+    return STRATEGY_FUNCTIONS[strategy_id](data, **parameters, **extra)
 
 
 def _eval_expression(node: dict, signals_by_id: dict[str, "pd.Series"]) -> "pd.Series":
@@ -827,15 +952,86 @@ def _require_columns(data: pd.DataFrame, required_columns: tuple[str, ...]) -> N
         raise ValueError(f"Dati mancanti per la strategia: servono le colonne {', '.join(missing)}.")
 
 
-def _stateful_signal(entry_condition: pd.Series, exit_condition: pd.Series, index: pd.Index) -> pd.Series:
+def _stateful_signal(
+    entry_condition: pd.Series,
+    exit_condition: pd.Series,
+    index: pd.Index,
+    short_entry_condition: pd.Series | None = None,
+    short_exit_condition: pd.Series | None = None,
+) -> pd.Series:
+    """Macchina a stati della posizione: -1 (ribasso), 0 (fuori), +1 (rialzo).
+
+    Senza le due condizioni al ribasso il comportamento è quello di sempre:
+    dentro sull'entrata, fuori sull'uscita.
+
+    Con le condizioni al ribasso è ammesso il ribaltamento diretto: se nella
+    stessa barra si esce dal rialzo e ricorre la condizione di ingresso al
+    ribasso, si passa da +1 a -1 senza sostare a zero — è quello che fa un
+    sistema che segue le inversioni. A parità di barra, se ricorressero
+    entrambe le condizioni di ingresso vince il rialzo.
+    """
+    consenti_short = short_entry_condition is not None
+    vuota = pd.Series(False, index=index)
+    entrata_short = (short_entry_condition if consenti_short else vuota).fillna(False)
+    uscita_short = (
+        short_exit_condition if short_exit_condition is not None else vuota
+    ).fillna(False)
+
     state = 0.0
     positions: list[float] = []
 
-    for entry, exit_ in zip(entry_condition.fillna(False), exit_condition.fillna(False), strict=False):
-        if state == 0.0 and bool(entry):
-            state = 1.0
-        elif state == 1.0 and bool(exit_):
-            state = 0.0
+    for entry, exit_, entry_s, exit_s in zip(
+        entry_condition.fillna(False),
+        exit_condition.fillna(False),
+        entrata_short,
+        uscita_short,
+        strict=False,
+    ):
+        if state == 1.0 and bool(exit_):
+            state = -1.0 if bool(entry_s) else 0.0
+        elif state == -1.0 and bool(exit_s):
+            state = 1.0 if bool(entry) else 0.0
+        elif state == 0.0:
+            if bool(entry):
+                state = 1.0
+            elif bool(entry_s):
+                state = -1.0
         positions.append(state)
 
     return pd.Series(positions, index=index, name="position", dtype=float)
+
+
+def _segnale_speculare(
+    *,
+    ipervenduto: pd.Series,
+    ipercomprato: pd.Series,
+    index: pd.Index,
+    consenti_short: bool,
+) -> pd.Series:
+    """Segnale per le strategie di ritorno alla media.
+
+    Al rialzo: si compra sull'ipervenduto e si chiude sull'ipercomprato — è il
+    comportamento di sempre. Al ribasso è esattamente lo specchio: si vende
+    sull'ipercomprato e si richiude sull'ipervenduto, quindi le due condizioni
+    si scambiano di ruolo senza bisogno di inventarne altre.
+    """
+    return _stateful_signal(
+        entry_condition=ipervenduto,
+        exit_condition=ipercomprato,
+        index=index,
+        short_entry_condition=ipercomprato if consenti_short else None,
+        short_exit_condition=ipervenduto,
+    )
+
+
+def _verso_da_confronto(sopra: pd.Series, sotto: pd.Series, consenti_short: bool) -> pd.Series:
+    """Segnale per le strategie di tendenza costruite su un confronto.
+
+    Rialzo quando la prima serie sta sopra la seconda; al ribasso il verso è
+    quello opposto — nelle barre di riscaldamento, dove gli indicatori non
+    esistono ancora, entrambi i confronti sono falsi e la posizione resta zero.
+    """
+    rialzo = (sopra > sotto).astype(float)
+    if not consenti_short:
+        return rialzo.rename("position")
+    return (rialzo - (sopra < sotto).astype(float)).rename("position")
