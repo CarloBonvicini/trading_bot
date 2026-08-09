@@ -1234,6 +1234,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <thead>
             <tr>
               <th>Esito</th>
+              <th>Verso</th>
               <th>Entrata</th>
               <th>Uscita</th>
               <th>PnL</th>
@@ -1244,6 +1245,7 @@ document.addEventListener("DOMContentLoaded", () => {
             ${trades.map((trade) => `
               <tr>
                 <td><span class="trade-badge trade-badge-${escapeHtml(trade.status_class || "neutral")}">${escapeHtml(trade.status_label || "-")}</span></td>
+                <td><span class="strategy-chip">${escapeHtml(trade.direction_display || "Rialzo")}</span></td>
                 <td>
                   <div class="trade-cell">
                     <strong>${escapeHtml(trade.entry_price_display || "-")}</strong>

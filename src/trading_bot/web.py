@@ -24,6 +24,7 @@ from trading_bot.application.chart_lab import (
 from trading_bot.application.dashboard import build_dashboard_context, build_session_catalog
 from trading_bot.application.execution import build_backtest_result
 from trading_bot.application.forms import as_form_values_from_saved_metadata
+from trading_bot.application.requests import flag_value
 from trading_bot.data import INTRADAY_LOOKBACK_DAYS, coerce_interval_date_window
 from trading_bot.errors import FormValidationError
 from trading_bot.reporting import (
@@ -185,6 +186,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             depth = "rapida"
         initial_capital = float(str(form.get("initial_capital", "10000")).strip() or "10000")
         fee_bps = float(str(form.get("fee_bps", "5")).strip() or "5")
+        consenti_short = flag_value(form, "consenti_short")
 
         job_id = start_multi_search_job(
             symbols=symbols,
@@ -195,6 +197,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             start=str(form.get("start", "")).strip(),
             end=str(form.get("end", "")).strip(),
             reports_dir=current_app.config["REPORTS_DIR"],
+            consenti_short=consenti_short,
         )
         return redirect(url_for("search_detail", job_id=job_id))
 

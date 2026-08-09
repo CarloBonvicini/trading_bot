@@ -14,7 +14,7 @@ def _text_value(raw: Mapping[str, object], name: str, default: str = "") -> str:
     return str(value).strip() if value is not None else default
 
 
-def _flag_value(raw: Mapping[str, object], name: str) -> bool:
+def flag_value(raw: Mapping[str, object], name: str) -> bool:
     """Legge una casella di spunta.
 
     Un form HTML manda il campo solo quando è spuntato, e col valore "on";
@@ -173,7 +173,7 @@ class BacktestRequest:
         if sizing_method not in {"full", "fixed", "vol_target"}:
             sizing_method = "full"
         sizing_param = float(_text_value(raw, "sizing_param", "100") or "100")
-        consenti_short = _flag_value(raw, "consenti_short")
+        consenti_short = flag_value(raw, "consenti_short")
 
         return cls(
             symbol=symbol,

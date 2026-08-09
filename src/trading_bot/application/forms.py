@@ -60,6 +60,7 @@ def default_form_values() -> dict[str, object]:
         "tp_pct": "",
         "sizing_method": "full",
         "sizing_param": 100.0,
+        "consenti_short": False,
         "wf_is_days": 252,
         "wf_oos_days": 63,
         "wf_optimize_by": "sharpe_ratio",
@@ -84,6 +85,7 @@ def as_form_values(backtest_request: BacktestRequest | None = None) -> dict[str,
             "rule_logic": backtest_request.rule_logic,
             "initial_capital": backtest_request.initial_capital,
             "fee_bps": backtest_request.fee_bps,
+            "consenti_short": backtest_request.consenti_short,
         }
     )
     for rule in backtest_request.active_rules():
@@ -129,6 +131,9 @@ def as_form_values_from_saved_metadata(metadata: dict[str, object]) -> dict[str,
             "rule_logic": str(metadata.get("rule_logic") or values["rule_logic"]).strip(),
             "initial_capital": metadata.get("initial_capital", values["initial_capital"]),
             "fee_bps": metadata.get("fee_bps", values["fee_bps"]),
+            # I report salvati prima del supporto al ribasso non hanno la
+            # chiave: erano tutti solo al rialzo.
+            "consenti_short": bool(metadata.get("consenti_short", False)),
         }
     )
 
