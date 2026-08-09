@@ -478,3 +478,133 @@ def test_strategie_su_mercato_piatto_non_operano(mercato_piatto) -> None:
                 parameters=STRATEGY_SPECS[strategy_id].defaults(),
             )
             assert segnale.sum() == 0.0, f"{strategy_id} ha operato su un mercato fermo"
+
+
+# ── Posizioni al ribasso ─────────────────────────────────────────────────────
+
+def test_posizione_al_ribasso_guadagna_quando_il_prezzo_scende(ohlc_da_chiusure) -> None:
+    data = ohlc_da_chiusure([100.0, 90.0, 81.0])
+    signal = pd.Series([-1.0, -1.0, -1.0], index=data.index)
+
+    result = run_backtest(data=data, signal=signal, initial_capital=1_000.0, fee_bps=0.0)
+
+    # Lo shift di una barra vale anche al ribasso: la prima barra è fuori mercato.
+    assert result.equity_curve["position"].tolist() == [0.0, -1.0, -1.0]
+    # -10% e -10% di mercato diventano +10% e +10% per chi è al ribasso.
+    assert round(result.summary["final_equity"], 2) == 1210.0
+    # Il mercato ha perso: il confronto col comprare-e-tenere è nettamente positivo.
+    assert result.summary["benchmark_return_pct"] < 0
+    assert result.summary["excess_return_pct"] > 0
+
+
+def test_segnale_negativo_non_viene_piu_azzerato(ohlc_da_chiusure) -> None:
+    """Regressione: il clip a 0..1 buttava via qualsiasi segnale al ribasso."""
+    data = ohlc_da_chiusure([100.0, 95.0, 90.0])
+    result = run_backtest(
+        data=data, signal=pd.Series([-1.0, -1.0, -1.0], index=data.index), fee_bps=0.0
+    )
+
+    assert result.equity_curve["signal"].tolist() == [-1.0, -1.0, -1.0]
+    assert result.summary["short_exposure_pct"] > 0
+    assert result.summary["long_exposure_pct"] == 0
+
+
+def test_esposizione_conta_il_valore_assoluto(ohlc_da_chiusure) -> None:
+    """Una strategia sempre a mercato che alterna i due versi è esposta al 100%,
+    non a zero: senza valore assoluto long e short si annullerebbero."""
+    data = ohlc_da_chiusure([100.0, 101.0, 102.0, 103.0])
+    signal = pd.Series([1.0, 1.0, -1.0, -1.0], index=data.index)
+
+    result = run_backtest(data=data, signal=signal, fee_bps=0.0)
+
+    # Con lo shift di una barra le posizioni sono [0, +1, +1, -1].
+    assert result.summary["exposure_pct"] == 75.0
+    assert result.summary["long_exposure_pct"] == 50.0
+    assert result.summary["short_exposure_pct"] == 25.0
+
+
+def test_stop_loss_al_ribasso_scatta_quando_il_prezzo_sale(ohlc_da_chiusure) -> None:
+    """Chi è al ribasso perde quando il mercato sale: le soglie si scambiano."""
+    # Entrata al ribasso alla barra 1 (prezzo di entrata = close[0] = 100).
+    # SL al 5% → soglia a 105. Barra 2: high = 108 + 2 = 110 → scatta.
+    data = ohlc_da_chiusure([100.0, 100.0, 108.0, 90.0], spread=2.0)
+    signal = pd.Series([-1.0, -1.0, -1.0, -1.0], index=data.index)
+
+    result = run_backtest(data=data, signal=signal, sl_pct=5.0, fee_bps=0.0)
+
+    assert result.equity_curve["position"].iloc[2] == 0.0
+    assert result.summary["sl_tp_exit_count"] == 1
+
+
+def test_take_profit_al_ribasso_scatta_quando_il_prezzo_scende(ohlc_da_chiusure) -> None:
+    # Entrata al ribasso a 100, TP al 10% → soglia a 90. Barra 2: low = 88 - 2 = 86.
+    data = ohlc_da_chiusure([100.0, 100.0, 88.0, 95.0], spread=2.0)
+    signal = pd.Series([-1.0, -1.0, -1.0, -1.0], index=data.index)
+
+    result = run_backtest(data=data, signal=signal, tp_pct=10.0, fee_bps=0.0)
+
+    assert result.equity_curve["position"].iloc[2] == 0.0
+    assert result.summary["sl_tp_exit_count"] == 1
+
+
+def test_trade_al_ribasso_registra_direzione_e_pnl_corretto(ohlc_da_chiusure) -> None:
+    data = ohlc_da_chiusure([100.0, 100.0, 80.0, 80.0])
+    # Al ribasso dalla barra 1, chiuso alla barra 3.
+    signal = pd.Series([-1.0, -1.0, 0.0, 0.0], index=data.index)
+
+    result = run_backtest(data=data, signal=signal, fee_bps=0.0)
+    trades = result.trades
+
+    assert len(trades) == 1
+    assert trades.iloc[0]["direction"] == "short"
+    # Entrata a 100, uscita a 80: al ribasso è un guadagno del 20%.
+    assert trades.iloc[0]["pnl_pct"] == 20.0
+    assert result.summary["short_trade_count"] == 1
+
+
+def test_ribaltamento_diretto_produce_due_operazioni(ohlc_da_chiusure) -> None:
+    """Passare da rialzo a ribasso senza tornare a zero è una chiusura più
+    un'apertura, non un'unica operazione."""
+    data = ohlc_da_chiusure([100.0, 110.0, 120.0, 100.0, 90.0])
+    signal = pd.Series([1.0, 1.0, -1.0, -1.0, -1.0], index=data.index)
+
+    result = run_backtest(data=data, signal=signal, fee_bps=0.0)
+    trades = result.trades
+
+    assert len(trades) == 2
+    assert trades.iloc[0]["direction"] == "long"
+    assert trades.iloc[1]["direction"] == "short"
+    # La chiusura del primo e l'apertura del secondo cadono sulla stessa barra.
+    assert trades.iloc[0]["exit_date"] == trades.iloc[1]["entry_date"]
+    assert result.summary["trade_count"] == 2
+    assert result.summary["short_trade_count"] == 1
+
+
+def test_conto_azzerato_se_il_ribasso_va_oltre_il_capitale(ohlc_da_chiusure) -> None:
+    """Al ribasso la perdita non ha tetto: oltre il -100% il capitale non deve
+    diventare negativo, altrimenti ogni metrica successiva è priva di senso."""
+    data = ohlc_da_chiusure([100.0, 100.0, 260.0, 200.0, 150.0], spread=0.0)
+    signal = pd.Series([-1.0, -1.0, -1.0, -1.0, -1.0], index=data.index)
+
+    result = run_backtest(data=data, signal=signal, initial_capital=10_000.0, fee_bps=0.0)
+
+    assert result.summary["wiped_out"] is True
+    assert result.summary["wiped_out_date"]
+    assert result.summary["final_equity"] == 0.0
+    assert result.summary["total_return_pct"] == -100.0
+    # Niente valori negativi e nessuna operazione dopo il tracollo.
+    assert (result.equity_curve["equity"] >= 0).all()
+    assert result.equity_curve["position"].iloc[3:].abs().sum() == 0.0
+    assert round(result.summary["max_drawdown_pct"], 2) == -100.0
+
+
+def test_backtest_solo_long_non_segnala_mai_il_tracollo(ohlc_da_chiusure) -> None:
+    """Senza posizioni al ribasso il capitale non può azzerarsi: la guardia non
+    deve intromettersi nei backtest normali."""
+    data = ohlc_da_chiusure([100.0, 50.0, 25.0, 12.0])
+    result = run_backtest(
+        data=data, signal=pd.Series([1.0] * 4, index=data.index), fee_bps=0.0
+    )
+
+    assert result.summary["wiped_out"] is False
+    assert result.summary["final_equity"] > 0

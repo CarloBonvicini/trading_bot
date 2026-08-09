@@ -25,6 +25,10 @@ SIZING_VOL_TARGET = "vol_target"  # Target di volatilità annualizzata
 # (evita di marcare microvariazioni di sizing come trade reali).
 _POSITION_EQ_TOL = 1e-9
 
+# Verso di un'operazione, come compare nella colonna "direction" di trades.csv.
+DIREZIONE_LONG = "long"
+DIREZIONE_SHORT = "short"
+
 
 @dataclass
 class BacktestResult:
@@ -79,10 +83,13 @@ def apply_sl_tp(
     maschera è True nelle barre in cui è scattato lo SL o il TP.
 
     Convenzione: la ``position`` in ingresso è già stata shiftata di una barra
-    in ``run_backtest``, quindi ``position[i] > 0`` significa che siamo entrati
+    in ``run_backtest``, quindi ``position[i] != 0`` significa che siamo entrati
     al close della barra ``i-1`` (l'entry price è ``close[i-1]``). Nella stessa
-    barra ``i`` controlliamo se ``low[i] <= entry*(1-sl)`` o
-    ``high[i] >= entry*(1+tp)`` per chiudere subito la posizione.
+    barra ``i`` si controlla se il prezzo ha toccato una delle due soglie.
+
+    Le soglie sono speculari a seconda del verso: al rialzo si perde quando il
+    prezzo scende (``low``) e si guadagna quando sale (``high``), al ribasso
+    esattamente il contrario.
 
     Quando entrambi SL e TP sono colpiti nella stessa candela non possiamo
     sapere quale è scattato per primo: in questo caso assumiamo
@@ -99,41 +106,39 @@ def apply_sl_tp(
     sl_tp_exit = np.zeros(len(pos), dtype=bool)
     n = len(pos)
     entry_price = 0.0
-    in_trade = False
+    verso = 0.0  # +1 al rialzo, -1 al ribasso, 0 fuori mercato
 
     for i in range(n):
-        if not in_trade and pos[i] > 0:
+        verso_barra = math.copysign(1.0, pos[i]) if pos[i] != 0 else 0.0
+
+        # Fuori mercato, oppure ribaltamento da long a short (o viceversa):
+        # in entrambi i casi qui comincia una posizione nuova.
+        if verso_barra != 0.0 and verso_barra != verso:
             # Nuova entry: prezzo entrata = close della barra precedente
             # (coerente con lo shift di 1 applicato in run_backtest).
             entry_price = close[i - 1] if i > 0 else close[i]
-            in_trade = True
+            verso = verso_barra
             # Controllo SL/TP anche nello stesso bar di entry: il low/high
             # corrente potrebbe già aver toccato la soglia.
             if _check_sl_tp_hit(
-                entry_price=entry_price,
-                low=low[i],
-                high=high[i],
-                sl_pct=sl_pct,
-                tp_pct=tp_pct,
+                entry_price=entry_price, low=low[i], high=high[i],
+                sl_pct=sl_pct, tp_pct=tp_pct, verso=verso,
             ):
                 pos[i] = 0.0
                 sl_tp_exit[i] = True
-                in_trade = False
+                verso = 0.0
                 entry_price = 0.0
-        elif in_trade:
-            if pos[i] == 0:
-                in_trade = False
+        elif verso != 0.0:
+            if verso_barra == 0.0:
+                verso = 0.0
                 entry_price = 0.0
             elif _check_sl_tp_hit(
-                entry_price=entry_price,
-                low=low[i],
-                high=high[i],
-                sl_pct=sl_pct,
-                tp_pct=tp_pct,
+                entry_price=entry_price, low=low[i], high=high[i],
+                sl_pct=sl_pct, tp_pct=tp_pct, verso=verso,
             ):
                 pos[i] = 0.0
                 sl_tp_exit[i] = True
-                in_trade = False
+                verso = 0.0
                 entry_price = 0.0
 
     return pd.Series(pos, index=position.index, name=position.name), pd.Series(
@@ -148,11 +153,23 @@ def _check_sl_tp_hit(
     high: float,
     sl_pct: float | None,
     tp_pct: float | None,
+    verso: float = 1.0,
 ) -> bool:
-    """True se nel bar corrente è stato colpito SL o TP."""
-    if sl_pct is not None and low <= entry_price * (1.0 - sl_pct / 100.0):
+    """True se nel bar corrente è stato colpito SL o TP.
+
+    ``verso`` vale +1 per una posizione al rialzo e -1 per una al ribasso: chi
+    è short perde quando il prezzo sale, quindi le due soglie si scambiano.
+    """
+    if verso >= 0:
+        if sl_pct is not None and low <= entry_price * (1.0 - sl_pct / 100.0):
+            return True
+        if tp_pct is not None and high >= entry_price * (1.0 + tp_pct / 100.0):
+            return True
+        return False
+
+    if sl_pct is not None and high >= entry_price * (1.0 + sl_pct / 100.0):
         return True
-    if tp_pct is not None and high >= entry_price * (1.0 + tp_pct / 100.0):
+    if tp_pct is not None and low <= entry_price * (1.0 - tp_pct / 100.0):
         return True
     return False
 
@@ -212,32 +229,66 @@ def run_backtest(
     periods_per_year = infer_periods_per_year(data.index)
 
     close = data["close"].astype(float)
-    position = signal.reindex(data.index).fillna(0.0).clip(lower=0.0, upper=1.0)
+    # Da -1 (tutto al ribasso) a +1 (tutto al rialzo). Un segnale negativo su un
+    # motore solo long veniva azzerato qui in silenzio.
+    position = signal.reindex(data.index).fillna(0.0).clip(lower=-1.0, upper=1.0)
     # Shift di 1 barra: il segnale generato dalla barra t è eseguibile dalla t+1.
     # Questo è il presidio chiave contro il lookahead bias — non rimuovere.
     executed_position = position.shift(1).fillna(0.0)
 
     # Stop loss / take profit (path-dependent, applicato dopo lo shift).
-    # IMPORTANT: SL/TP lavora sulla posizione binaria 0/1 PRIMA del sizing,
-    # così possiamo distinguere chiaramente trade reali (binari) da variazioni
+    # IMPORTANT: SL/TP lavora sulla posizione a verso pieno (-1/0/+1) PRIMA del
+    # sizing, così possiamo distinguere chiaramente trade reali da variazioni
     # di sizing (vol_target ecc.) ai fini del tracking trade.
     executed_position, sl_tp_mask = apply_sl_tp(data, executed_position, sl_pct, tp_pct)
-    binary_position = executed_position.copy()
-
-    # Position sizing (può creare frazioni 0..2 della posizione binaria)
-    executed_position = compute_position_size(
-        data, executed_position, sizing_method, sizing_param, periods_per_year=periods_per_year
-    )
 
     daily_returns = close.pct_change().fillna(0.0)
-    position_change = executed_position.diff().abs().fillna(executed_position.abs())
-    transaction_cost = position_change * (fee_bps / 10_000.0)
-    gross_strategy_return = executed_position * daily_returns
-    strategy_returns = gross_strategy_return - transaction_cost
 
-    equity = initial_capital * (1 + strategy_returns).cumprod()
+    def _conti(posizione_intera: pd.Series) -> dict[str, pd.Series]:
+        """Dalla posizione a verso pieno a rendimenti, costi ed equity."""
+        dimensionata = compute_position_size(
+            data, posizione_intera, sizing_method, sizing_param,
+            periods_per_year=periods_per_year,
+        )
+        variazione = dimensionata.diff().abs().fillna(dimensionata.abs())
+        costo = variazione * (fee_bps / 10_000.0)
+        lordo = dimensionata * daily_returns
+        netto = lordo - costo
+        return {
+            "posizione": dimensionata,
+            "costo": costo,
+            "lordo": lordo,
+            "netto": netto,
+            "equity": initial_capital * (1 + netto).cumprod(),
+        }
+
+    conti = _conti(executed_position)
+
+    # Rovina: al ribasso la perdita non ha un tetto. Se in una barra il
+    # rendimento scende sotto il -100% il capitale sarebbe negativo, e da lì in
+    # poi ogni metrica (drawdown, Sharpe, grafico) sarebbe priva di senso.
+    # Chiudiamo tutto da quella barra e teniamo il conto a zero.
+    barra_rovina = _prima_barra_di_rovina(conti["netto"])
+    if barra_rovina is not None:
+        executed_position = executed_position.copy()
+        executed_position.iloc[barra_rovina + 1:] = 0.0
+        sl_tp_mask = sl_tp_mask.copy()
+        sl_tp_mask.iloc[barra_rovina + 1:] = False
+        conti = _conti(executed_position)
+
+    binary_position = executed_position
+    executed_position = conti["posizione"]
+    transaction_cost = conti["costo"]
+    gross_strategy_return = conti["lordo"]
+    strategy_returns = conti["netto"]
+    equity = conti["equity"]
+
     benchmark_equity = initial_capital * (1 + daily_returns).cumprod()
     gross_equity = initial_capital * (1 + gross_strategy_return).cumprod()
+    if barra_rovina is not None:
+        equity.iloc[barra_rovina:] = 0.0
+        gross_equity.iloc[barra_rovina:] = 0.0
+
     equity_before = equity.shift(1).fillna(initial_capital)
     transaction_cost_amount = equity_before * transaction_cost
     drawdown = equity / equity.cummax() - 1
@@ -277,8 +328,21 @@ def run_backtest(
         trades=trades,
         initial_capital=initial_capital,
         periods_per_year=periods_per_year,
+        barra_rovina=barra_rovina,
     )
     return BacktestResult(summary=summary, equity_curve=equity_curve, trades=trades)
+
+
+def _prima_barra_di_rovina(strategy_returns: pd.Series) -> int | None:
+    """Indice della prima barra che azzera (o supera) l'intero capitale.
+
+    Serve solo con posizioni al ribasso o a leva: al rialzo senza leva il
+    rendimento di una barra non può scendere sotto il -100%.
+    """
+    rovina = strategy_returns <= -1.0
+    if not bool(rovina.any()):
+        return None
+    return int(np.argmax(rovina.to_numpy()))
 
 
 def save_report(
@@ -304,6 +368,7 @@ def _build_summary(
     trades: pd.DataFrame,
     initial_capital: float,
     periods_per_year: float = float(TRADING_DAYS_PER_YEAR),
+    barra_rovina: int | None = None,
 ) -> dict[str, float | int | str]:
     strategy_returns = equity_curve["strategy_return"]
     final_equity = float(equity_curve["equity"].iloc[-1])
@@ -353,7 +418,19 @@ def _build_summary(
         "avg_loss_pct": trade_stats["avg_loss_pct"],
         "expectancy_pct": trade_stats["expectancy_pct"],
         "sl_tp_exit_count": int(equity_curve["sl_tp_exit"].sum()) if "sl_tp_exit" in equity_curve.columns else 0,
-        "exposure_pct": round(float(equity_curve["position"].mean()) * 100, 2),
+        # Valore assoluto: senza, una strategia sempre a mercato che alterna
+        # rialzo e ribasso risulterebbe ferma (i due versi si annullano).
+        "exposure_pct": round(float(equity_curve["position"].abs().mean()) * 100, 2),
+        "long_exposure_pct": round(float(equity_curve["position"].clip(lower=0).mean()) * 100, 2),
+        "short_exposure_pct": round(float(equity_curve["position"].clip(upper=0).abs().mean()) * 100, 2),
+        "short_trade_count": int(trade_stats["short_trade_count"]),
+        # Capitale azzerato: possibile solo con posizioni al ribasso o a leva.
+        "wiped_out": barra_rovina is not None,
+        "wiped_out_date": (
+            _format_trade_timestamp(equity_curve.index[barra_rovina])
+            if barra_rovina is not None
+            else ""
+        ),
         "benchmark_return_pct": round(benchmark_return * 100, 2),
     }
 
@@ -419,6 +496,7 @@ def _compute_trade_stats(trades: pd.DataFrame) -> dict[str, float | int | None]:
     if trades.empty:
         return {
             "trade_count": 0,
+            "short_trade_count": 0,
             "win_rate_pct": None,
             "profit_factor": None,
             "avg_win_pct": None,
@@ -427,6 +505,11 @@ def _compute_trade_stats(trades: pd.DataFrame) -> dict[str, float | int | None]:
         }
 
     total_count = int(len(trades))
+    short_count = (
+        int((trades["direction"] == DIREZIONE_SHORT).sum())
+        if "direction" in trades.columns
+        else 0
+    )
     pnl_series = (
         pd.to_numeric(trades["pnl_pct"], errors="coerce").dropna()
         if "pnl_pct" in trades.columns
@@ -436,6 +519,7 @@ def _compute_trade_stats(trades: pd.DataFrame) -> dict[str, float | int | None]:
     if pnl_series.empty:
         return {
             "trade_count": total_count,
+            "short_trade_count": short_count,
             "win_rate_pct": None,
             "profit_factor": None,
             "avg_win_pct": None,
@@ -469,6 +553,7 @@ def _compute_trade_stats(trades: pd.DataFrame) -> dict[str, float | int | None]:
 
     return {
         "trade_count": total_count,
+        "short_trade_count": short_count,
         "win_rate_pct": win_rate,
         "profit_factor": profit_factor,
         "avg_win_pct": avg_win,
@@ -482,41 +567,64 @@ def _build_trades(
     binary_position: pd.Series,
     sl_tp_mask: pd.Series | None = None,
 ) -> pd.DataFrame:
-    """Estrae la lista trade dalla posizione binaria 0/1.
+    """Estrae la lista trade dalla posizione a verso pieno (-1 / 0 / +1).
 
-    Lavoriamo sulla posizione binaria (prima del sizing) così le variazioni
-    di frazione introdotte da ``vol_target`` non generano trade fittizi.
-    Un trade è la sequenza ``0 → 1 → … → 1 → 0`` (l'ultimo può essere ancora
-    aperto se la serie termina con ``1``).
+    Lavoriamo sulla posizione prima del sizing, così le variazioni di frazione
+    introdotte da ``vol_target`` non generano trade fittizi. Un trade dura da
+    quando la posizione diventa diversa da zero a quando torna a zero **o
+    cambia verso**: un ribaltamento diretto da rialzo a ribasso chiude il primo
+    trade e ne apre subito un altro nella stessa barra.
+
+    Il P&L segue il verso: al rialzo si guadagna se il prezzo sale, al ribasso
+    se scende.
     """
-    binary = binary_position.fillna(0.0).round().clip(lower=0, upper=1)
-    diff = binary.diff().fillna(binary)
-    entries = list(diff[diff > 0].index)
-    exits = list(diff[diff < 0].index)
+    verso = binary_position.fillna(0.0).round().clip(lower=-1, upper=1)
+    versi = verso.to_numpy(dtype=float)
+    prezzi = close.to_numpy(dtype=float)
+    indice = verso.index
 
     sl_tp_set: set = set()
     if sl_tp_mask is not None:
         sl_tp_set = set(sl_tp_mask[sl_tp_mask].index)
 
     trades: list[dict[str, object]] = []
-    for index, entry_date in enumerate(entries):
-        exit_date = exits[index] if index < len(exits) else None
-        entry_price = float(close.loc[entry_date])
-        exit_price = float(close.loc[exit_date]) if exit_date is not None else None
-        pnl_pct = ((exit_price / entry_price) - 1) * 100 if exit_price is not None else None
-        holding_days = int((exit_date - entry_date).days) if exit_date is not None else None
-        exit_reason = "sl_tp" if exit_date in sl_tp_set else "segnale"
+    verso_aperto = 0.0
+    barra_entrata: int | None = None
+
+    def _chiudi(barra_uscita: int | None) -> None:
+        entry_date = indice[barra_entrata]
+        entry_price = float(prezzi[barra_entrata])
+        chiuso = barra_uscita is not None
+        exit_date = indice[barra_uscita] if chiuso else None
+        exit_price = float(prezzi[barra_uscita]) if chiuso else None
+        pnl_pct = (
+            verso_aperto * ((exit_price / entry_price) - 1) * 100 if chiuso else None
+        )
         trades.append(
             {
                 "entry_date": _format_trade_timestamp(entry_date),
                 "entry_price": round(entry_price, 4),
-                "exit_date": _format_trade_timestamp(exit_date) if exit_date is not None else "",
-                "exit_price": round(exit_price, 4) if exit_price is not None else "",
+                "exit_date": _format_trade_timestamp(exit_date) if chiuso else "",
+                "exit_price": round(exit_price, 4) if chiuso else "",
                 "pnl_pct": round(pnl_pct, 2) if pnl_pct is not None else "",
-                "holding_days": holding_days if holding_days is not None else "",
-                "exit_reason": exit_reason if exit_date is not None else "",
+                "holding_days": int((exit_date - entry_date).days) if chiuso else "",
+                "exit_reason": ("sl_tp" if exit_date in sl_tp_set else "segnale") if chiuso else "",
+                "direction": DIREZIONE_LONG if verso_aperto > 0 else DIREZIONE_SHORT,
             }
         )
+
+    for i in range(len(versi)):
+        corrente = versi[i]
+        if verso_aperto != 0.0 and corrente != verso_aperto:
+            _chiudi(i)
+            verso_aperto = 0.0
+            barra_entrata = None
+        if corrente != 0.0 and verso_aperto == 0.0:
+            verso_aperto = corrente
+            barra_entrata = i
+
+    if verso_aperto != 0.0:
+        _chiudi(None)  # trade ancora aperto a fine serie
 
     return pd.DataFrame(trades)
 
