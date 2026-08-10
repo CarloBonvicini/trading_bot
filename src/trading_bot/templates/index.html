@@ -236,6 +236,19 @@
                 </div>
               </div>
 
+              <div class="field-block">
+                <label class="checkbox-row">
+                  <input type="checkbox" name="consenti_short" value="on" {% if form_values.consenti_short %}checked{% endif %}>
+                  <span>Prova anche a guadagnare quando il mercato scende</span>
+                </label>
+                <p class="field-hint">
+                  Normalmente il bot compra e aspetta che salga. Con questa opzione prova
+                  <strong>anche</strong> la strada opposta (vendita allo scoperto) e ti dice quale
+                  delle due regge meglio. La ricerca dura il doppio, e attenzione: puntando sulla
+                  discesa la perdita non ha un tetto, perché un titolo può salire senza limite.
+                </p>
+              </div>
+
               <div class="button-row" style="margin-top:0.75rem">
                 <button class="action-button auto-search-button" type="submit">Trova la strategia migliore →</button>
               </div>
@@ -421,6 +434,17 @@
                       </label>
                       <p class="field-hint" id="sizing-param-hint"></p>
                     </div>
+                  </div>
+                  <div class="field-block">
+                    <label class="checkbox-row">
+                      <input type="checkbox" name="consenti_short" value="on" {% if form_values.consenti_short %}checked{% endif %}>
+                      <span>Consenti posizioni al ribasso (vendita allo scoperto)</span>
+                    </label>
+                    <p class="field-hint">
+                      La strategia potrà anche puntare sulla discesa, non solo sulla salita.
+                      Ricorda che al ribasso la perdita non ha un tetto: se il prezzo raddoppia,
+                      il capitale è azzerato.
+                    </p>
                   </div>
                 </div>
               </details>

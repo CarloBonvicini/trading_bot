@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "trading-bot",
-      "runtimeExecutable": "python",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
       "runtimeArgs": ["-m", "trading_bot.web"],
       "port": 8000
     }

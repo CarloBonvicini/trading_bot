@@ -1482,3 +1482,62 @@ def test_snapshot_cards_missing_key_returns_nd() -> None:
     for card in cards:
         assert card["value"] in ("n/d", "0"), \
             f"Valore inatteso per summary vuoto: {card}"
+
+
+# ── Vendita allo scoperto nell'interfaccia ───────────────────────────────────
+
+def test_form_espone_la_casella_del_ribasso(tmp_path: Path) -> None:
+    """La scelta deve essere raggiungibile sia nella ricerca automatica sia
+    nel form manuale."""
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+    page = app.test_client().get("/backtests/new").get_data(as_text=True)
+
+    assert page.count('name="consenti_short"') == 2
+    assert "quando il mercato scende" in page
+    # L'avvertenza sul rischio non deve mancare: al ribasso si può perdere tutto.
+    assert "non ha un tetto" in page
+
+
+def test_backtest_dal_form_col_ribasso_apre_posizioni_al_ribasso(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Percorso completo dal form: la casella spuntata deve arrivare fino al
+    motore e produrre operazioni al ribasso nel report salvato."""
+    import numpy as np
+
+    rng = np.random.default_rng(4)
+    chiusure = 100.0 * np.exp(np.cumsum(rng.normal(-0.004, 0.015, 300)))
+    data = pd.DataFrame(
+        {"open": chiusure, "high": chiusure * 1.008, "low": chiusure * 0.992,
+         "close": chiusure, "volume": rng.integers(1000, 5000, 300).astype(float)},
+        index=pd.date_range("2022-01-01", periods=300, freq="D"),
+    )
+    monkeypatch.setattr(
+        "trading_bot.services.download_price_data",
+        lambda symbol, start, end, interval: data,
+    )
+
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+    risposta = app.test_client().post("/backtests", data={
+        "symbol": "TEST", "start": "2022-01-01", "end": "2022-10-27", "interval": "1d",
+        "active_strategies": ["sma_cross"], "rule_logic": "all",
+        "sma_cross__fast": "10", "sma_cross__slow": "30",
+        "initial_capital": "10000", "fee_bps": "0",
+        "consenti_short": "on",
+    })
+
+    assert risposta.status_code == 302
+    salvati = sorted(tmp_path.glob("TEST-*/trades.csv"))
+    assert salvati, "nessun report salvato"
+    trades = pd.read_csv(salvati[-1])
+    assert "direction" in trades.columns
+    assert (trades["direction"] == "short").any()
+
+
+def test_metadata_ricorda_la_scelta_del_ribasso() -> None:
+    """Riaprendo un test salvato la casella deve tornare com'era."""
+    from trading_bot.application.forms import as_form_values_from_saved_metadata
+
+    assert as_form_values_from_saved_metadata({"consenti_short": True})["consenti_short"] is True
+    # I report salvati prima del supporto al ribasso non hanno la chiave.
+    assert as_form_values_from_saved_metadata({})["consenti_short"] is False

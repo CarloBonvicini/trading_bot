@@ -40,6 +40,7 @@ def start_multi_search_job(
     start: str,
     end: str,
     reports_dir: str | Path,
+    consenti_short: bool = False,
 ) -> str:
     """Avvia una ricerca multi-mercato in background e restituisce l'id del job."""
     job_id = uuid.uuid4().hex[:12]
@@ -54,6 +55,7 @@ def start_multi_search_job(
         "symbols": symbols,
         "interval": interval,
         "scan_mode": scan_mode,
+        "consenti_short": consenti_short,
         "started_at": datetime.now().isoformat(timespec="seconds"),
         "result": None,
         "error": None,
@@ -72,7 +74,7 @@ def start_multi_search_job(
             result = run_multi_market_search(
                 symbols=symbols, interval=interval, initial_capital=initial_capital,
                 fee_bps=fee_bps, scan_mode=scan_mode, start=start, end=end,
-                progress_callback=_progress,
+                consenti_short=consenti_short, progress_callback=_progress,
             )
             payload = to_serializable(result)
             path = _job_dir(reports_dir) / f"{job_id}.json"

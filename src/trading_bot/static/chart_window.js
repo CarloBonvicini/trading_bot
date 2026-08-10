@@ -1850,6 +1850,7 @@ function initChartModule(dataNode, rootEl) {
             <tr>
               <th>#</th>
               <th>Esito</th>
+              <th>Verso</th>
               <th>Entrata</th>
               <th>Uscita</th>
               <th>PnL</th>
@@ -1861,6 +1862,7 @@ function initChartModule(dataNode, rootEl) {
               <tr class="chart-trade-row" tabindex="0" data-chart-trade-index="${start + index}">
                 <td class="trade-sequence-cell">${escapeHtml(String(trade.sequence ?? ""))}</td>
                 <td><span class="trade-badge trade-badge-${escapeHtml(trade.status_class || "neutral")}">${escapeHtml(trade.status_label || "-")}</span></td>
+                <td><span class="strategy-chip">${escapeHtml(trade.direction_display || "Rialzo")}</span></td>
                 <td>
                   <div class="trade-cell">
                     <strong>${escapeHtml(trade.entry_price_display || "-")}</strong>

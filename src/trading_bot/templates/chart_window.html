@@ -19,6 +19,17 @@
   } %}
 
   <section class="chart-terminal-shell">
+    {% if chart.summary and chart.summary.wiped_out %}
+      <section class="panel report-tone-negative" style="border-left:4px solid;">
+        <h2 style="margin-top:0;">Capitale azzerato</h2>
+        <p style="font-size:15px;line-height:1.7;margin:0;">
+          Il {{ chart.summary.wiped_out_date }} una posizione al ribasso ha perso più
+          dell'intero capitale: il conto è finito a zero e da lì in poi il test si ferma.
+          È il rischio specifico della vendita allo scoperto — se il prezzo raddoppia,
+          chi ha puntato sulla discesa perde tutto.
+        </p>
+      </section>
+    {% endif %}
     <section class="panel chart-terminal-topbar">
       <div class="chart-terminal-overview">
         <p class="eyebrow">Chart sessione</p>

@@ -30,6 +30,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--d-period", type=int, default=3, help="Stochastic D period.")
     parser.add_argument("--smooth", type=int, default=3, help="Stochastic smoothing.")
     parser.add_argument("--threshold", type=float, default=25.0, help="Generic strength threshold, for example ADX.")
+    parser.add_argument(
+        "--consenti-short",
+        action="store_true",
+        help="Permette anche posizioni al ribasso (vendita allo scoperto). "
+             "Attenzione: al ribasso la perdita non ha un tetto.",
+    )
     parser.add_argument("--output-dir", default="reports", help="Directory for generated reports.")
     return parser
 
@@ -56,6 +62,7 @@ def main() -> None:
             "d_period": parsed.d_period,
             "smooth": parsed.smooth,
             "threshold": parsed.threshold,
+            "consenti_short": parsed.consenti_short,
         }
     )
     completed = run_backtest_request(

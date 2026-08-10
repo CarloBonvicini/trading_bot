@@ -37,6 +37,11 @@ SUMMARY_LABELS = {
     "expectancy_pct": "Attesa per trade",
     "sl_tp_exit_count": "Uscite SL/TP",
     "exposure_pct": "Esposizione",
+    "long_exposure_pct": "Esposizione al rialzo",
+    "short_exposure_pct": "Esposizione al ribasso",
+    "short_trade_count": "Operazioni al ribasso",
+    "wiped_out": "Capitale azzerato",
+    "wiped_out_date": "Data azzeramento",
     "benchmark_return_pct": "Buy & hold",
     "benchmark_max_drawdown_pct": "Max drawdown buy & hold",
     "excess_return_pct": "Delta vs hold",
@@ -2022,10 +2027,15 @@ def _format_trade_preview_row(
         else "Operazione ancora aperta: non esiste ancora una candela di uscita da analizzare."
     )
 
+    direzione = str(row.get("direction", "") or "long").strip().lower()
     return {
         "sequence": sequence,
         "status_label": status_label,
         "status_class": status_class,
+        # Verso dell'operazione: i report salvati prima del supporto al ribasso
+        # non hanno la colonna, e in quel caso erano tutte al rialzo.
+        "direction": direzione,
+        "direction_display": "Ribasso" if direzione == "short" else "Rialzo",
         "detail_title": f"Operazione #{sequence}",
         "entry_raw": entry_raw,
         "exit_raw": exit_raw,

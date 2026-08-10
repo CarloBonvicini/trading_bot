@@ -14,6 +14,20 @@ def _text_value(raw: Mapping[str, object], name: str, default: str = "") -> str:
     return str(value).strip() if value is not None else default
 
 
+def flag_value(raw: Mapping[str, object], name: str) -> bool:
+    """Legge una casella di spunta.
+
+    Un form HTML manda il campo solo quando è spuntato, e col valore "on";
+    da CLI o da un preset salvato in JSON arriva invece un booleano vero.
+    """
+    if name not in raw:
+        return False
+    value = raw.get(name)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"on", "true", "1", "si", "sì"}
+
+
 def _optional_positive_float(raw: Mapping[str, object], name: str) -> float | None:
     """Legge un float positivo opzionale. Restituisce None se assente o vuoto."""
     val = _text_value(raw, name, "")
@@ -90,6 +104,9 @@ class BacktestRequest:
     tp_pct: float | None = None       # take profit percentuale (None = disabilitato)
     sizing_method: str = "full"       # metodo di position sizing
     sizing_param: float = 100.0       # parametro del sizing (dipende dal metodo)
+    # Consente anche posizioni al ribasso (vendita allo scoperto). Di default
+    # il bot compra e basta: e' la scelta piu' prudente e la piu' comprensibile.
+    consenti_short: bool = False
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, object]) -> "BacktestRequest":
@@ -156,6 +173,7 @@ class BacktestRequest:
         if sizing_method not in {"full", "fixed", "vol_target"}:
             sizing_method = "full"
         sizing_param = float(_text_value(raw, "sizing_param", "100") or "100")
+        consenti_short = flag_value(raw, "consenti_short")
 
         return cls(
             symbol=symbol,
@@ -176,6 +194,7 @@ class BacktestRequest:
             tp_pct=tp_pct,
             sizing_method=sizing_method,
             sizing_param=sizing_param,
+            consenti_short=consenti_short,
         )
 
     @property
@@ -247,6 +266,8 @@ class BacktestRequest:
             "tp_pct": self.tp_pct,
             "sizing_method": self.sizing_method,
             "sizing_param": self.sizing_param,
+            "consenti_short": self.consenti_short,
+            "consenti_short": self.consenti_short,
             "parameters": self.strategy_parameters(),
         }
 
@@ -405,6 +426,7 @@ class SweepRequest:
     tp_pct: float | None = None
     sizing_method: str = "full"
     sizing_param: float = 100.0
+    consenti_short: bool = False
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, object]) -> "SweepRequest":
@@ -440,6 +462,7 @@ class SweepRequest:
             tp_pct=base_request.tp_pct,
             sizing_method=base_request.sizing_method,
             sizing_param=base_request.sizing_param,
+            consenti_short=base_request.consenti_short,
         )
 
     @property
