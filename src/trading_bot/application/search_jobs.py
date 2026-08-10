@@ -37,6 +37,7 @@ def start_multi_search_job(
     initial_capital: float,
     fee_bps: float,
     scan_mode: str,
+    slippage_bps: float = 0.0,
     start: str,
     end: str,
     reports_dir: str | Path,
@@ -73,7 +74,8 @@ def start_multi_search_job(
         try:
             result = run_multi_market_search(
                 symbols=symbols, interval=interval, initial_capital=initial_capital,
-                fee_bps=fee_bps, scan_mode=scan_mode, start=start, end=end,
+                fee_bps=fee_bps, slippage_bps=slippage_bps,
+                scan_mode=scan_mode, start=start, end=end,
                 consenti_short=consenti_short, progress_callback=_progress,
             )
             payload = to_serializable(result)

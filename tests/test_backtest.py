@@ -608,3 +608,76 @@ def test_backtest_solo_long_non_segnala_mai_il_tracollo(ohlc_da_chiusure) -> Non
 
     assert result.summary["wiped_out"] is False
     assert result.summary["final_equity"] > 0
+
+
+# ── Slippage ─────────────────────────────────────────────────────────────────
+
+def test_slippage_zero_lascia_il_risultato_identico(ohlc_da_chiusure) -> None:
+    """Il default non deve cambiare nulla: i report già salvati restano validi."""
+    data = ohlc_da_chiusure([100.0, 110.0, 105.0, 115.0, 120.0])
+    signal = pd.Series([1.0, 0.0, 1.0, 1.0, 0.0], index=data.index)
+
+    senza = run_backtest(data=data, signal=signal, fee_bps=5.0)
+    con_zero = run_backtest(data=data, signal=signal, fee_bps=5.0, slippage_bps=0.0)
+
+    assert senza.summary == con_zero.summary
+    assert con_zero.summary["slippage_paid"] == 0.0
+
+
+def test_slippage_riduce_il_risultato_come_una_commissione(ohlc_da_chiusure) -> None:
+    """Si paga sul volume scambiato, quindi 5 bps di slippage pesano quanto
+    5 bps di commissione."""
+    data = ohlc_da_chiusure([100.0, 110.0, 105.0, 115.0, 120.0])
+    signal = pd.Series([1.0, 0.0, 1.0, 1.0, 0.0], index=data.index)
+
+    solo_fee = run_backtest(data=data, signal=signal, fee_bps=10.0, slippage_bps=0.0)
+    meta_e_meta = run_backtest(data=data, signal=signal, fee_bps=5.0, slippage_bps=5.0)
+
+    assert meta_e_meta.summary["final_equity"] == pytest.approx(
+        solo_fee.summary["final_equity"], rel=1e-9
+    )
+    # Ma le due voci restano distinte nel riepilogo.
+    assert meta_e_meta.summary["fees_paid"] == pytest.approx(
+        meta_e_meta.summary["slippage_paid"], abs=0.01
+    )
+    assert solo_fee.summary["slippage_paid"] == 0.0
+
+
+def test_slippage_separa_le_due_voci_di_costo(ohlc_da_chiusure) -> None:
+    data = ohlc_da_chiusure([100.0, 110.0, 105.0, 115.0])
+    signal = pd.Series([1.0, 0.0, 1.0, 0.0], index=data.index)
+
+    result = run_backtest(data=data, signal=signal, fee_bps=4.0, slippage_bps=6.0)
+    s = result.summary
+
+    # Lo slippage pesa una volta e mezza le commissioni (6 bps contro 4).
+    # Le voci del riepilogo sono arrotondate al centesimo di euro.
+    assert s["slippage_paid"] == pytest.approx(s["fees_paid"] * 1.5, abs=0.01)
+    assert s["trading_costs_paid"] == pytest.approx(s["fees_paid"] + s["slippage_paid"], abs=0.02)
+    # Il totale coincide con quanto separa la curva lorda da quella netta.
+    assert s["fee_drag_equity"] > 0
+    assert result.equity_curve["slippage_cost_amount"].sum() == pytest.approx(
+        s["slippage_paid"], abs=0.01
+    )
+
+
+def test_slippage_negativo_viene_rifiutato(ohlc_da_chiusure) -> None:
+    data = ohlc_da_chiusure([100.0, 110.0, 105.0])
+    with pytest.raises(ValueError, match="slippage_bps"):
+        run_backtest(
+            data=data, signal=pd.Series([1.0, 1.0, 1.0], index=data.index), slippage_bps=-1.0
+        )
+
+
+def test_slippage_penalizza_chi_opera_di_piu(ohlc_da_chiusure) -> None:
+    """A parità di mercato, una strategia che entra ed esce di continuo paga
+    molto più slippage di una che resta ferma: è il punto della modifica."""
+    chiusure = [100.0 + (i % 2) * 3 for i in range(40)]
+    data = ohlc_da_chiusure(chiusure)
+    nervosa = pd.Series([float(i % 2) for i in range(40)], index=data.index)
+    tranquilla = pd.Series([1.0] * 40, index=data.index)
+
+    a = run_backtest(data=data, signal=nervosa, fee_bps=0.0, slippage_bps=10.0)
+    b = run_backtest(data=data, signal=tranquilla, fee_bps=0.0, slippage_bps=10.0)
+
+    assert a.summary["slippage_paid"] > 10 * b.summary["slippage_paid"]

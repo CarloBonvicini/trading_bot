@@ -52,6 +52,7 @@ def build_backtest_result(
         signal=signal,
         initial_capital=backtest_request.initial_capital,
         fee_bps=backtest_request.fee_bps,
+        slippage_bps=backtest_request.slippage_bps,
         sl_pct=backtest_request.sl_pct,
         tp_pct=backtest_request.tp_pct,
         sizing_method=backtest_request.sizing_method,

@@ -19,6 +19,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--initial-capital", type=float, default=10_000.0, help="Initial capital.")
     parser.add_argument("--fee-bps", type=float, default=5.0, help="Fee in basis points per position change.")
+    parser.add_argument(
+        "--slippage-bps",
+        type=float,
+        default=0.0,
+        help="Slippage in basis points per position change: scarto fra il prezzo "
+             "visto e quello effettivamente ottenuto. Zero e' ottimista.",
+    )
     parser.add_argument("--fast", type=int, default=20, help="Fast window for crossover-based strategies.")
     parser.add_argument("--slow", type=int, default=100, help="Slow window for crossover-based strategies.")
     parser.add_argument("--period", type=int, default=14, help="Generic period for RSI, CCI, Williams, ADX or Bollinger.")
@@ -51,6 +58,7 @@ def main() -> None:
             "strategy": parsed.strategy,
             "initial_capital": parsed.initial_capital,
             "fee_bps": parsed.fee_bps,
+            "slippage_bps": parsed.slippage_bps,
             "fast": parsed.fast,
             "slow": parsed.slow,
             "period": parsed.period,

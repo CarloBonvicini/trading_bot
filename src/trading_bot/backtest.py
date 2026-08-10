@@ -213,6 +213,7 @@ def run_backtest(
     signal: pd.Series,
     initial_capital: float = 10_000.0,
     fee_bps: float = 5.0,
+    slippage_bps: float = 0.0,
     sl_pct: float | None = None,
     tp_pct: float | None = None,
     sizing_method: str = SIZING_FULL,
@@ -224,6 +225,8 @@ def run_backtest(
         raise ValueError("Initial capital must be positive.")
     if fee_bps < 0:
         raise ValueError("fee_bps cannot be negative.")
+    if slippage_bps < 0:
+        raise ValueError("slippage_bps cannot be negative.")
 
     # Barre per anno dedotte dal calendario: su intraday 252 sarebbe sbagliato.
     periods_per_year = infer_periods_per_year(data.index)
@@ -251,12 +254,20 @@ def run_backtest(
             periods_per_year=periods_per_year,
         )
         variazione = dimensionata.diff().abs().fillna(dimensionata.abs())
-        costo = variazione * (fee_bps / 10_000.0)
+        commissioni = variazione * (fee_bps / 10_000.0)
+        # Slippage: la differenza fra il prezzo che vedi e quello che ottieni
+        # davvero (spread e impatto dell'ordine). Come le commissioni si paga
+        # sul volume scambiato, ma è una voce diversa e va tenuta distinta:
+        # sulle commissioni si può trattare, sullo slippage no.
+        slippage = variazione * (slippage_bps / 10_000.0)
+        costo = commissioni + slippage
         lordo = dimensionata * daily_returns
         netto = lordo - costo
         return {
             "posizione": dimensionata,
             "costo": costo,
+            "commissioni": commissioni,
+            "slippage": slippage,
             "lordo": lordo,
             "netto": netto,
             "equity": initial_capital * (1 + netto).cumprod(),
@@ -279,6 +290,8 @@ def run_backtest(
     binary_position = executed_position
     executed_position = conti["posizione"]
     transaction_cost = conti["costo"]
+    fee_cost = conti["commissioni"]
+    slippage_cost = conti["slippage"]
     gross_strategy_return = conti["lordo"]
     strategy_returns = conti["netto"]
     equity = conti["equity"]
@@ -291,6 +304,8 @@ def run_backtest(
 
     equity_before = equity.shift(1).fillna(initial_capital)
     transaction_cost_amount = equity_before * transaction_cost
+    fee_cost_amount = equity_before * fee_cost
+    slippage_cost_amount = equity_before * slippage_cost
     drawdown = equity / equity.cummax() - 1
 
     market_columns = {
@@ -311,8 +326,12 @@ def run_backtest(
             "market_return": daily_returns,
             "gross_strategy_return": gross_strategy_return,
             "strategy_return": strategy_returns,
+            # transaction_cost_* e' il costo totale (commissioni + slippage):
+            # coincide con i report vecchi, dove lo slippage non esisteva.
             "transaction_cost_rate": transaction_cost,
             "transaction_cost_amount": transaction_cost_amount,
+            "fee_cost_amount": fee_cost_amount,
+            "slippage_cost_amount": slippage_cost_amount,
             "equity": equity,
             "gross_equity": gross_equity,
             "benchmark_equity": benchmark_equity,
@@ -374,7 +393,17 @@ def _build_summary(
     final_equity = float(equity_curve["equity"].iloc[-1])
     gross_final_equity = float(equity_curve["gross_equity"].iloc[-1])
     benchmark_final_equity = float(equity_curve["benchmark_equity"].iloc[-1])
-    total_fees_paid = float(equity_curve["transaction_cost_amount"].sum())
+    total_costs_paid = float(equity_curve["transaction_cost_amount"].sum())
+    total_fees_paid = float(
+        equity_curve["fee_cost_amount"].sum()
+        if "fee_cost_amount" in equity_curve.columns
+        else total_costs_paid
+    )
+    total_slippage_paid = float(
+        equity_curve["slippage_cost_amount"].sum()
+        if "slippage_cost_amount" in equity_curve.columns
+        else 0.0
+    )
     total_return = (final_equity / initial_capital) - 1
     benchmark_return = (benchmark_final_equity / initial_capital) - 1
     periods = len(equity_curve)
@@ -404,6 +433,8 @@ def _build_summary(
         "excess_return_pct": round((total_return - benchmark_return) * 100, 2),
         "fees_paid": round(total_fees_paid, 2),
         "fees_paid_pct_initial_capital": round((total_fees_paid / initial_capital) * 100, 2),
+        "slippage_paid": round(total_slippage_paid, 2),
+        "trading_costs_paid": round(total_costs_paid, 2),
         "fee_drag_equity": round(gross_final_equity - final_equity, 2),
         "annual_return_pct": round(annual_return * 100, 2),
         "annual_volatility_pct": round(annual_volatility * 100, 2),

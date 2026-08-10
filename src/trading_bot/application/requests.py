@@ -95,6 +95,10 @@ class BacktestRequest:
     rule_logic: str = "all"
     initial_capital: float = 10_000.0
     fee_bps: float = 5.0
+    # Slippage in basis point: quanto il prezzo ottenuto si discosta da quello
+    # visto a schermo. Default 0 perche' dipende dal mercato e dalla size, e un
+    # valore inventato renderebbe i risultati piu' credibili di quanto sono.
+    slippage_bps: float = 0.0
     parameters: dict[str, int | float] = field(default_factory=dict)
     rules: tuple[StrategyRuleSelection, ...] = field(default_factory=tuple)
     groups: tuple[dict[str, object], ...] = field(default_factory=tuple)
@@ -186,6 +190,7 @@ class BacktestRequest:
             rule_logic=rule_logic,
             initial_capital=float(_text_value(raw, "initial_capital", "10000")),
             fee_bps=float(_text_value(raw, "fee_bps", "5")),
+            slippage_bps=float(_text_value(raw, "slippage_bps", "0") or "0"),
             parameters=rules[0].parameters,
             rules=tuple(rules),
             groups=groups,
@@ -262,6 +267,7 @@ class BacktestRequest:
             "groups": [dict(g) for g in self.groups],
             "initial_capital": self.initial_capital,
             "fee_bps": self.fee_bps,
+            "slippage_bps": self.slippage_bps,
             "sl_pct": self.sl_pct,
             "tp_pct": self.tp_pct,
             "sizing_method": self.sizing_method,
