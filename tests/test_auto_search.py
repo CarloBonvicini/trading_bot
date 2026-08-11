@@ -457,3 +457,25 @@ def test_su_un_mercato_in_discesa_il_ribasso_vince() -> None:
     assert result.holdout_benchmark_return_pct < 0
     assert result.champion_consenti_short is True
     assert "ribasso" in (result.champion_label or "")
+
+
+@pytest.mark.lento
+def test_lo_slippage_arriva_fino_alla_ricerca(mercato_sintetico) -> None:
+    """Se lo slippage non attraversasse tutta la catena, la ricerca sceglierebbe
+    strategie iperattive che nella realtà si mangiano il guadagno in costi."""
+    from trading_bot.application.strategy_search import run_strategy_search
+
+    data = mercato_sintetico(n=400, seed=7, deriva=40)
+    comuni = dict(data=data, symbol="AAA", fee_bps=0.0, strategy_ids=_STRATS, max_workers=1)
+
+    senza = run_strategy_search(**comuni, slippage_bps=0.0)
+    con = run_strategy_search(**comuni, slippage_bps=50.0)
+
+    assert senza.settings["slippage_bps"] == 0.0
+    assert con.settings["slippage_bps"] == 50.0
+    # Con costi pesanti la resa su dati nuovi non può che peggiorare.
+    rese_senza = {r.strategy_id: r.holdout_return_pct for r in senza.ranking if r.error is None}
+    rese_con = {r.strategy_id: r.holdout_return_pct for r in con.ranking if r.error is None}
+    comuni_ids = set(rese_senza) & set(rese_con)
+    assert comuni_ids
+    assert any(rese_con[sid] < rese_senza[sid] for sid in comuni_ids)

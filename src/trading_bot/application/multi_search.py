@@ -84,6 +84,7 @@ def run_multi_market_search(
     *,
     initial_capital: float = 10_000.0,
     fee_bps: float = 5.0,
+    slippage_bps: float = 0.0,
     scan_mode: str = "rapida",
     start: str = "",
     end: str = "",
@@ -124,7 +125,7 @@ def run_multi_market_search(
             result = run_strategy_search(
                 data=data, symbol=symbol, interval=interval,
                 initial_capital=initial_capital, fee_bps=fee_bps,
-                scan_mode=scan_mode, strategy_ids=strategy_ids, progress_callback=inner_progress,
+                slippage_bps=slippage_bps, scan_mode=scan_mode, strategy_ids=strategy_ids, progress_callback=inner_progress,
                 consenti_short=consenti_short, max_workers=max_workers,
             )
         except Exception as exc:
@@ -195,7 +196,11 @@ def run_multi_market_search(
         overall_champion_label=overall_label,
         overall_champion_consenti_short=bool(campione.consenti_short) if campione else False,
         verdict_note=_overall_note(overall, len(clean_symbols)),
-        settings={"initial_capital": float(initial_capital), "fee_bps": float(fee_bps)},
+        settings={
+            "initial_capital": float(initial_capital),
+            "fee_bps": float(fee_bps),
+            "slippage_bps": float(slippage_bps),
+        },
     )
 
 

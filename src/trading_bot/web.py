@@ -186,6 +186,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             depth = "rapida"
         initial_capital = float(str(form.get("initial_capital", "10000")).strip() or "10000")
         fee_bps = float(str(form.get("fee_bps", "5")).strip() or "5")
+        slippage_bps = float(str(form.get("slippage_bps", "0")).strip() or "0")
         consenti_short = flag_value(form, "consenti_short")
 
         job_id = start_multi_search_job(
@@ -198,6 +199,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             end=str(form.get("end", "")).strip(),
             reports_dir=current_app.config["REPORTS_DIR"],
             consenti_short=consenti_short,
+            slippage_bps=slippage_bps,
         )
         return redirect(url_for("search_detail", job_id=job_id))
 

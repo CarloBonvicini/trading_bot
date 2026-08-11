@@ -45,9 +45,11 @@ SUMMARY_LABELS = {
     "benchmark_return_pct": "Buy & hold",
     "benchmark_max_drawdown_pct": "Max drawdown buy & hold",
     "excess_return_pct": "Delta vs hold",
-    "fees_paid": "Spese totali",
+    "fees_paid": "Commissioni",
+    "slippage_paid": "Slippage",
+    "trading_costs_paid": "Costi totali",
     "fees_paid_pct_initial_capital": "Spese su capitale",
-    "fee_drag_equity": "Impatto fee",
+    "fee_drag_equity": "Impatto costi",
 }
 
 # Glossario tooltip per le metriche e gli strumenti: testo conciso (1-2 frasi)
