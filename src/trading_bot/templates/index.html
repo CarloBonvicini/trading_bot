@@ -98,7 +98,9 @@
                   <div class="home-simple-row-main">
                     <strong>{{ search.symbols_display }}</strong>
                     <p class="inline-note">
-                      {% if search.champion_label %}
+                      {% if search.interrupted %}
+                        Interrotta · {{ search.strategies_done }} di {{ search.strategies_total }} strategie già fatte
+                      {% elif search.champion_label %}
                         Migliore: {{ search.champion_label }}
                       {% else %}
                         Nessuna strategia solida trovata
@@ -106,13 +108,17 @@
                       · {{ search.saved_at_display }}
                     </p>
                   </div>
-                  <span class="strategy-chip {% if search.markets_reliable > 0 %}strategy-chip-accent{% endif %}">
-                    {% if search.markets_reliable > 0 %}
-                      affidabile su {{ search.markets_reliable }}/{{ search.markets_count }}
-                    {% else %}
-                      nessuna conferma
-                    {% endif %}
-                  </span>
+                  {% if search.interrupted %}
+                    <span class="strategy-chip">da riprendere</span>
+                  {% else %}
+                    <span class="strategy-chip {% if search.markets_reliable > 0 %}strategy-chip-accent{% endif %}">
+                      {% if search.markets_reliable > 0 %}
+                        affidabile su {{ search.markets_reliable }}/{{ search.markets_count }}
+                      {% else %}
+                        nessuna conferma
+                      {% endif %}
+                    </span>
+                  {% endif %}
                 </a>
               {% endfor %}
             </div>

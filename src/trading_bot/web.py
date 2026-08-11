@@ -12,6 +12,7 @@ from trading_bot.application.search_jobs import (
     get_job,
     job_status,
     list_saved_searches,
+    resume_search_job,
     start_multi_search_job,
 )
 from trading_bot.strategies import STRATEGY_SPECS, build_strategy_signal, parse_strategy_parameters
@@ -211,6 +212,14 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
         if job["status"] == "done":
             return render_template("search_result.html", result=job["result"], job=job)
         return render_template("search_progress.html", job=job, job_id=job_id)
+
+    @app.post("/searches/<job_id>/resume")
+    def resume_search(job_id: str):
+        """Riprende una ricerca interrotta dal punto in cui era arrivata."""
+        if resume_search_job(job_id, current_app.config["REPORTS_DIR"]) is None:
+            flash("Non c'è un avanzamento da riprendere per questa ricerca.", "error")
+            return redirect(url_for("index"))
+        return redirect(url_for("search_detail", job_id=job_id))
 
     @app.get("/searches/<job_id>/status")
     def search_status(job_id: str):

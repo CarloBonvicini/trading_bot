@@ -133,6 +133,16 @@ def estimate_search_combinations(
 SUFFISSO_SHORT = " · anche al ribasso"
 
 
+def chiave_candidato(candidato_o_riga) -> str:
+    """Chiave del candidato nel file di avanzamento.
+
+    Comprende il verso: la stessa strategia corre due volte quando il ribasso è
+    attivo, e riprendendo una ricerca le due righe non vanno confuse.
+    """
+    verso = "short" if getattr(candidato_o_riga, "consenti_short", False) else "long"
+    return f"{candidato_o_riga.strategy_id}|{verso}"
+
+
 @dataclass(frozen=True)
 class Candidato:
     """Una strategia in un verso: e' l'unita' che la ricerca mette in gara.
@@ -241,12 +251,20 @@ def run_strategy_search(
     consenti_short: bool = False,
     progress_callback: ProgressCallback | None = None,
     max_workers: int | None = None,
+    precomputed_rows: dict[str, dict] | None = None,
+    benchmark_return_pct: float = 0.0,
+    on_row: Callable[["StrategyRanking", float], None] | None = None,
 ) -> StrategySearchResult:
     """Cerca la strategia migliore per un singolo mercato con validazione severa.
 
     ``max_workers`` regola quante strategie vengono valutate in parallelo:
     ``None`` decide da sé in base ai core disponibili e alla mole di lavoro,
     ``1`` forza l'esecuzione sequenziale.
+
+    ``precomputed_rows`` permette di riprendere una ricerca interrotta: i
+    candidati già valutati vengono riusati invece di essere ricalcolati.
+    ``on_row`` viene invocata appena un candidato è completato, così il
+    chiamante può salvarlo su disco prima di passare al successivo.
     """
     candidati = costruisci_candidati(strategy_ids, consenti_short)
 
@@ -270,7 +288,6 @@ def run_strategy_search(
     is_days, oos_days = _auto_windows(dev_len, target_windows)
 
     ranking: list[StrategyRanking] = []
-    benchmark_return_pct = 0.0
 
     # Contatore delle combinazioni: è l'avanzamento reale del lavoro, molto più
     # informativo del semplice "quante strategie ho finito".
@@ -297,21 +314,53 @@ def run_strategy_search(
         optimize_by=optimize_by, scan_mode=scan_mode,
     )
 
-    if _usa_parallelo(total=total, n_strategie=len(candidati), max_workers=max_workers):
-        etichetta = f"{len(candidati)} strategie in parallelo"
+    # Ripresa: i candidati già valutati prima dell'interruzione non si rifanno.
+    salvate = precomputed_rows or {}
+    da_fare: list[Candidato] = []
+    for candidato in candidati:
+        riga_salvata = salvate.get(chiave_candidato(candidato))
+        if riga_salvata is None:
+            da_fare.append(candidato)
+            continue
+        ranking.append(StrategyRanking(**riga_salvata))
+        provate += count_valid_combinations(candidato.strategy_id, scan_mode) * passaggi
+    if len(da_fare) < len(candidati):
+        etichetta = f"{len(candidati) - len(da_fare)} già calcolate, riprendo dalle altre"
         _segnala(forza=True)
-        ranking = _valuta_in_parallelo(
-            lavoro=lavoro, candidati=candidati, max_workers=max_workers,
-            progress_callback=progress_callback, total=total,
+
+    def _completata(riga: StrategyRanking) -> None:
+        """Una strategia è finita: la si consegna subito a chi salva su disco,
+        così un'interruzione più avanti non la fa ricalcolare.
+
+        Il rendimento del comprare-e-tenere lo porta la riga stessa (è uguale
+        per tutte le strategie dello stesso mercato); quello ricevuto in
+        ingresso serve solo quando si riprende una ricerca già avviata.
+        """
+        if on_row is None:
+            return
+        benchmark = riga.holdout_benchmark_return_pct
+        on_row(riga, benchmark if benchmark is not None else benchmark_return_pct)
+
+    if _usa_parallelo(total=total, n_strategie=len(da_fare), max_workers=max_workers):
+        etichetta = f"{len(da_fare)} strategie in parallelo"
+        _segnala(forza=True)
+        ranking.extend(
+            _valuta_in_parallelo(
+                lavoro=lavoro, candidati=da_fare, max_workers=max_workers,
+                progress_callback=progress_callback, total=total, base=provate,
+                on_row=_completata,
+            )
         )
     else:
-        for candidato in candidati:
+        for candidato in da_fare:
             # Segnala la strategia PRIMA di testarla: a profondità alte una singola
             # strategia può richiedere minuti, e senza questo l'utente resterebbe a
             # guardare "avvio della ricerca" senza sapere cosa sta succedendo.
             etichetta = candidato.label
             _segnala(forza=True)
-            ranking.append(_valuta_strategia(lavoro, candidato, _combinazione_provata))
+            riga = _valuta_strategia(lavoro, candidato, _combinazione_provata)
+            ranking.append(riga)
+            _completata(riga)
 
     for riga in ranking:
         if riga.error is None and riga.holdout_benchmark_return_pct is not None:
@@ -557,6 +606,8 @@ def _valuta_in_parallelo(
     max_workers: int | None,
     progress_callback: ProgressCallback | None,
     total: int,
+    base: int = 0,
+    on_row: Callable[[StrategyRanking], None] | None = None,
 ) -> list[StrategyRanking]:
     """Valuta le strategie su più processi, mantenendo l'ordine dei candidati.
 
@@ -586,16 +637,30 @@ def _valuta_in_parallelo(
             }
             rimanenti = set(futures.values())
             while rimanenti:
-                _, rimanenti = wait(rimanenti, timeout=0.5)
+                concluse, rimanenti = wait(rimanenti, timeout=0.5)
+                # Ogni strategia finita viene consegnata subito: se la ricerca
+                # si interrompe adesso, alla ripresa non verra' rifatta.
+                if on_row is not None:
+                    for future in concluse:
+                        try:
+                            on_row(future.result())
+                        except Exception:
+                            continue
                 if progress_callback is not None:
                     with contatore.get_lock():
-                        provate = int(contatore.value)
+                        provate = base + int(contatore.value)
                     progress_callback(min(provate, total), total, etichetta)
             # L'ordine dei risultati segue i candidati, non quello di arrivo né
             # quello di lancio: così la classifica non cambia fra due lanci.
             return [futures[c].result() for c in candidati]
     except Exception:
-        return [_valuta_strategia(lavoro, c) for c in candidati]
+        righe = []
+        for c in candidati:
+            riga = _valuta_strategia(lavoro, c)
+            righe.append(riga)
+            if on_row is not None:
+                on_row(riga)
+        return righe
 
 
 def _optimize_on_development(
