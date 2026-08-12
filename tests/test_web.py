@@ -1541,3 +1541,20 @@ def test_metadata_ricorda_la_scelta_del_ribasso() -> None:
     assert as_form_values_from_saved_metadata({"consenti_short": True})["consenti_short"] is True
     # I report salvati prima del supporto al ribasso non hanno la chiave.
     assert as_form_values_from_saved_metadata({})["consenti_short"] is False
+
+
+def test_form_espone_la_chiusura_di_fine_giornata(tmp_path: Path) -> None:
+    app = create_app({"TESTING": True, "REPORTS_DIR": tmp_path})
+    page = app.test_client().get("/backtests/new").get_data(as_text=True)
+
+    assert page.count('name="flat_at_close"') == 2
+    # Deve essere chiaro che vale solo dentro la giornata.
+    assert "intraday" in page.lower()
+    assert "giornalieri" in page
+
+
+def test_metadata_ricorda_la_chiusura_di_fine_giornata() -> None:
+    from trading_bot.application.forms import as_form_values_from_saved_metadata
+
+    assert as_form_values_from_saved_metadata({"flat_at_close": True})["flat_at_close"] is True
+    assert as_form_values_from_saved_metadata({})["flat_at_close"] is False

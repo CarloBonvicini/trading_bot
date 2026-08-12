@@ -249,6 +249,7 @@ def run_strategy_search(
     scan_mode: str = "rapida",
     strategy_ids: list[str] | None = None,
     consenti_short: bool = False,
+    flat_at_close: bool = False,
     progress_callback: ProgressCallback | None = None,
     max_workers: int | None = None,
     precomputed_rows: dict[str, dict] | None = None,
@@ -311,7 +312,7 @@ def run_strategy_search(
     lavoro = _LavoroStrategia(
         data=data, dev_len=dev_len, is_days=is_days, oos_days=oos_days,
         fee_bps=fee_bps, slippage_bps=slippage_bps, initial_capital=initial_capital,
-        optimize_by=optimize_by, scan_mode=scan_mode,
+        optimize_by=optimize_by, scan_mode=scan_mode, flat_at_close=flat_at_close,
     )
 
     # Ripresa: i candidati già valutati prima dell'interruzione non si rifanno.
@@ -396,6 +397,7 @@ def run_strategy_search(
         "initial_capital": float(initial_capital),
         "fee_bps": float(fee_bps),
         "slippage_bps": float(slippage_bps),
+        "flat_at_close": bool(flat_at_close),
     }
 
     champion = next((r for r in ranking if r.error is None and r.windows > 0), None)
@@ -453,6 +455,7 @@ class _LavoroStrategia:
     initial_capital: float
     optimize_by: str
     scan_mode: str
+    flat_at_close: bool = False
 
 
 def _valuta_strategia(
@@ -482,6 +485,7 @@ def _valuta_strategia(
             initial_capital=lavoro.initial_capital,
             scan_mode=lavoro.scan_mode,
             consenti_short=candidato.consenti_short,
+            flat_at_close=lavoro.flat_at_close,
             on_combination=on_combination,
         )
         # Parametri di produzione + prova su dati nuovi (holdout).
@@ -490,13 +494,14 @@ def _valuta_strategia(
             slippage_bps=lavoro.slippage_bps,
             initial_capital=lavoro.initial_capital, optimize_by=lavoro.optimize_by,
             scan_mode=lavoro.scan_mode, consenti_short=candidato.consenti_short,
-            on_combination=on_combination,
+            flat_at_close=lavoro.flat_at_close, on_combination=on_combination,
         )
         holdout_result = _evaluate_on_holdout(
             full_data=data, dev_len=lavoro.dev_len, holdout_index=holdout_index,
             strategy_id=strategy_id, params=params, fee_bps=lavoro.fee_bps,
             slippage_bps=lavoro.slippage_bps,
             initial_capital=lavoro.initial_capital, consenti_short=candidato.consenti_short,
+            flat_at_close=lavoro.flat_at_close,
         )
     except Exception as exc:  # una strategia non valutabile non blocca la ricerca
         return StrategyRanking(
@@ -666,7 +671,7 @@ def _valuta_in_parallelo(
 def _optimize_on_development(
     *, data: pd.DataFrame, strategy_id: str, fee_bps: float, slippage_bps: float = 0.0,
     initial_capital: float, optimize_by: str, scan_mode: str = "rapida",
-    consenti_short: bool = False,
+    consenti_short: bool = False, flat_at_close: bool = False,
     on_combination: Callable[[], None] | None = None,
 ) -> dict[str, int | float]:
     """Trova i parametri migliori della strategia sull'intero set di sviluppo.
@@ -700,7 +705,7 @@ def _optimize_on_development(
             )
             result = run_backtest(
                 data=data, signal=signal, initial_capital=initial_capital,
-                fee_bps=fee_bps, slippage_bps=slippage_bps,
+                fee_bps=fee_bps, slippage_bps=slippage_bps, flat_at_close=flat_at_close,
             )
         except Exception:
             continue
@@ -729,6 +734,7 @@ def _evaluate_on_holdout(
     *, full_data: pd.DataFrame, dev_len: int, holdout_index: pd.Index,
     strategy_id: str, params: dict[str, int | float], fee_bps: float, initial_capital: float,
     consenti_short: bool = False, slippage_bps: float = 0.0,
+    flat_at_close: bool = False,
 ):
     """Valuta i parametri sul holdout, con buffer di warm-up per innescare gli indicatori."""
     spec = STRATEGY_SPECS[strategy_id]
@@ -744,7 +750,7 @@ def _evaluate_on_holdout(
     holdout_data = full_data.loc[holdout_index]
     return run_backtest(
         data=holdout_data, signal=signal_holdout, initial_capital=initial_capital,
-        fee_bps=fee_bps, slippage_bps=slippage_bps,
+        fee_bps=fee_bps, slippage_bps=slippage_bps, flat_at_close=flat_at_close,
     )
 
 

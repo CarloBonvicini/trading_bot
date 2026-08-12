@@ -77,6 +77,7 @@ def run_walk_forward(
     initial_capital: float = 10_000.0,
     scan_mode: str = "rapida",
     consenti_short: bool = False,
+    flat_at_close: bool = False,
     on_combination: "Callable[[], None] | None" = None,
 ) -> WalkForwardResult:
     """Esegue la walk-forward validation su ``data`` per la strategia indicata.
@@ -144,6 +145,7 @@ def run_walk_forward(
                     tp_pct=tp_pct,
                     sizing_method=sizing_method,
                     sizing_param=sizing_param,
+                    flat_at_close=flat_at_close,
                 )
             except Exception:
                 continue
@@ -181,6 +183,7 @@ def run_walk_forward(
             tp_pct=tp_pct,
             sizing_method=sizing_method,
             sizing_param=sizing_param,
+            flat_at_close=flat_at_close,
         )
 
         oos_curves.append(oos_result.equity_curve)

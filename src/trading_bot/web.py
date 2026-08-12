@@ -189,6 +189,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
         fee_bps = float(str(form.get("fee_bps", "5")).strip() or "5")
         slippage_bps = float(str(form.get("slippage_bps", "0")).strip() or "0")
         consenti_short = flag_value(form, "consenti_short")
+        flat_at_close = flag_value(form, "flat_at_close")
 
         job_id = start_multi_search_job(
             symbols=symbols,
@@ -201,6 +202,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             reports_dir=current_app.config["REPORTS_DIR"],
             consenti_short=consenti_short,
             slippage_bps=slippage_bps,
+            flat_at_close=flat_at_close,
         )
         return redirect(url_for("search_detail", job_id=job_id))
 

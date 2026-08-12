@@ -262,6 +262,19 @@
                 </p>
               </div>
 
+              <div class="field-block">
+                <label class="checkbox-row">
+                  <input type="checkbox" name="flat_at_close" value="on" {% if form_values.flat_at_close %}checked{% endif %}>
+                  <span>Non tenere niente aperto durante la notte</span>
+                </label>
+                <p class="field-hint">
+                  Vale solo sui timeframe dentro la giornata (da 1 minuto a 1 ora): chiude tutto
+                  prima della chiusura e riparte la mattina dopo. Eviti il salto di prezzo fra una
+                  seduta e l'altra, che sull'intraday è spesso la sorpresa più grossa. Sui dati
+                  giornalieri l'opzione viene ignorata.
+                </p>
+              </div>
+
               <div class="button-row" style="margin-top:0.75rem">
                 <button class="action-button auto-search-button" type="submit">Trova la strategia migliore →</button>
               </div>
@@ -464,6 +477,16 @@
                       La strategia potrà anche puntare sulla discesa, non solo sulla salita.
                       Ricorda che al ribasso la perdita non ha un tetto: se il prezzo raddoppia,
                       il capitale è azzerato.
+                    </p>
+                  </div>
+                  <div class="field-block">
+                    <label class="checkbox-row">
+                      <input type="checkbox" name="flat_at_close" value="on" {% if form_values.flat_at_close %}checked{% endif %}>
+                      <span>Chiudi tutto a fine giornata (solo intraday)</span>
+                    </label>
+                    <p class="field-hint">
+                      Nessuna posizione tenuta durante la notte: si evita il salto di prezzo fra
+                      una seduta e l'altra. Sui dati giornalieri non ha effetto.
                     </p>
                   </div>
                 </div>

@@ -43,6 +43,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Permette anche posizioni al ribasso (vendita allo scoperto). "
              "Attenzione: al ribasso la perdita non ha un tetto.",
     )
+    parser.add_argument(
+        "--flat-at-close",
+        action="store_true",
+        help="Chiude le posizioni prima della chiusura di giornata (solo intraday): "
+             "evita di restare esposti al salto di prezzo fra una seduta e l'altra.",
+    )
     parser.add_argument("--output-dir", default="reports", help="Directory for generated reports.")
     return parser
 
@@ -71,6 +77,7 @@ def main() -> None:
             "smooth": parsed.smooth,
             "threshold": parsed.threshold,
             "consenti_short": parsed.consenti_short,
+            "flat_at_close": parsed.flat_at_close,
         }
     )
     completed = run_backtest_request(

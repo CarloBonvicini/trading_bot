@@ -42,6 +42,7 @@ def start_multi_search_job(
     reports_dir: str | Path,
     consenti_short: bool = False,
     slippage_bps: float = 0.0,
+    flat_at_close: bool = False,
 ) -> str:
     """Avvia una ricerca multi-mercato in background e restituisce l'id del job."""
     job_id = uuid.uuid4().hex[:12]
@@ -55,6 +56,7 @@ def start_multi_search_job(
         "end": end,
         "consenti_short": bool(consenti_short),
         "slippage_bps": float(slippage_bps),
+        "flat_at_close": bool(flat_at_close),
     }
     stato = {"id": job_id, "params": parametri, "markets": {}}
     _write_checkpoint(job_id, reports_dir, stato)
@@ -129,6 +131,7 @@ def _launch(*, job_id: str, parametri: dict, reports_dir: str | Path, stato: dic
                 scan_mode=parametri["scan_mode"], start=parametri["start"], end=parametri["end"],
                 consenti_short=parametri.get("consenti_short", False),
                 slippage_bps=parametri.get("slippage_bps", 0.0),
+                flat_at_close=parametri.get("flat_at_close", False),
                 progress_callback=_progress, checkpoint=stato, on_row=_on_row,
             )
             payload = to_serializable(result)

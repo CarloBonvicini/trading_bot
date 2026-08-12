@@ -681,3 +681,92 @@ def test_slippage_penalizza_chi_opera_di_piu(ohlc_da_chiusure) -> None:
     b = run_backtest(data=data, signal=tranquilla, fee_bps=0.0, slippage_bps=10.0)
 
     assert a.summary["slippage_paid"] > 10 * b.summary["slippage_paid"]
+
+
+# ── Chiusura a fine giornata (solo intraday) ─────────────────────────────────
+
+def _serie_intraday(giorni: int = 4, barre_al_giorno: int = 6, passo: float = 1.0,
+                    gap: float = 0.0) -> pd.DataFrame:
+    """Serie a barre orarie con un salto di prezzo fra una giornata e l'altra.
+
+    ``gap`` è quanto il prezzo si muove nella notte: serve a distinguere chi
+    resta esposto da chi chiude prima della chiusura.
+    """
+    prezzi: list[float] = []
+    orari: list[pd.Timestamp] = []
+    prezzo = 100.0
+    for giorno in range(giorni):
+        base = pd.Timestamp("2024-01-01") + pd.Timedelta(days=giorno)
+        if giorno > 0:
+            prezzo += gap
+        for barra in range(barre_al_giorno):
+            prezzo += passo
+            prezzi.append(prezzo)
+            orari.append(base + pd.Timedelta(hours=9 + barra))
+    idx = pd.DatetimeIndex(orari)
+    serie = pd.Series(prezzi, index=idx)
+    return pd.DataFrame({"open": serie, "high": serie, "low": serie, "close": serie}, index=idx)
+
+
+def test_flat_at_close_non_tiene_posizioni_da_un_giorno_all_altro() -> None:
+    data = _serie_intraday()
+    signal = pd.Series(1.0, index=data.index)
+
+    result = run_backtest(data=data, signal=signal, fee_bps=0.0, flat_at_close=True)
+    posizioni = result.equity_curve["position"]
+
+    # La prima barra di ogni giornata deve essere fuori mercato.
+    primi = posizioni.groupby(posizioni.index.normalize()).head(1)
+    assert (primi == 0.0).all()
+    # Nel resto della giornata la strategia opera normalmente.
+    assert (posizioni > 0).sum() > 0
+    assert result.summary["end_of_day_exit_count"] == 3  # tre notti su quattro giorni
+
+
+def test_flat_at_close_evita_il_salto_notturno() -> None:
+    """È il punto della regola: chi chiude a fine giornata non subisce il gap."""
+    data = _serie_intraday(gap=-8.0)
+    signal = pd.Series(1.0, index=data.index)
+
+    esposto = run_backtest(data=data, signal=signal, fee_bps=0.0, flat_at_close=False)
+    protetto = run_backtest(data=data, signal=signal, fee_bps=0.0, flat_at_close=True)
+
+    assert protetto.summary["final_equity"] > esposto.summary["final_equity"]
+
+
+def test_flat_at_close_ignorato_sui_dati_giornalieri(ohlc_da_chiusure) -> None:
+    """Regressione: su una serie giornaliera ogni barra è già l'ultima del suo
+    giorno, quindi applicare la regola azzererebbe qualsiasi posizione."""
+    data = ohlc_da_chiusure([100.0, 105.0, 110.0, 108.0, 115.0])
+    signal = pd.Series(1.0, index=data.index)
+
+    normale = run_backtest(data=data, signal=signal, fee_bps=0.0)
+    con_regola = run_backtest(data=data, signal=signal, fee_bps=0.0, flat_at_close=True)
+
+    assert con_regola.summary == normale.summary
+    assert con_regola.summary["end_of_day_exit_count"] == 0
+    assert con_regola.summary["exposure_pct"] > 0
+
+
+def test_flat_at_close_segna_il_motivo_di_uscita() -> None:
+    data = _serie_intraday()
+    result = run_backtest(
+        data=data, signal=pd.Series(1.0, index=data.index), fee_bps=0.0, flat_at_close=True
+    )
+
+    motivi = set(result.trades["exit_reason"]) - {""}
+    assert motivi == {"fine_giornata"}
+    # Una operazione al giorno, riaperta ogni mattina.
+    assert len(result.trades) == 4
+
+
+def test_flat_at_close_funziona_anche_al_ribasso() -> None:
+    data = _serie_intraday(gap=6.0)
+    signal = pd.Series(-1.0, index=data.index)
+
+    esposto = run_backtest(data=data, signal=signal, fee_bps=0.0, flat_at_close=False)
+    protetto = run_backtest(data=data, signal=signal, fee_bps=0.0, flat_at_close=True)
+
+    # Al ribasso il salto verso l'alto è la perdita: chiudere prima protegge.
+    assert protetto.summary["final_equity"] > esposto.summary["final_equity"]
+    assert protetto.summary["short_trade_count"] == 4

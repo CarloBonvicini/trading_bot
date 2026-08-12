@@ -36,6 +36,7 @@ SUMMARY_LABELS = {
     "avg_loss_pct": "Perdita media",
     "expectancy_pct": "Attesa per trade",
     "sl_tp_exit_count": "Uscite SL/TP",
+    "end_of_day_exit_count": "Chiusure di fine giornata",
     "exposure_pct": "Esposizione",
     "long_exposure_pct": "Esposizione al rialzo",
     "short_exposure_pct": "Esposizione al ribasso",
