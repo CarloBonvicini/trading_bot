@@ -99,6 +99,12 @@ I nomi delle colonne e le chiavi JSON dei file salvati sono un'interfaccia pubbl
 
 ### Sempre
 - **Lingua italiana** — variabili, commenti, messaggi UI, errori: tutto in italiano.
+- **Niente gergo nelle etichette** — l'app è per chi non conosce la finanza: `SUMMARY_LABELS`
+  usa italiano corrente ("Il calo peggiore", non "Max drawdown") e il termine tecnico vive
+  nella spiegazione a comparsa (`METRIC_TOOLTIPS`, formula "… In gergo: max drawdown."). Ogni
+  metrica mostrata **deve** avere la sua spiegazione: c'è un test che lo verifica. Ogni report
+  si apre con `build_plain_verdict()`, che dice in euro com'è andata e avvisa quando il
+  risultato è troppo fragile per fidarsi.
 - **Nessun lookahead bias** — il position shift in `backtest.py` (`.shift(1)`) non si tocca.
 - **Il ribasso è sempre una scelta esplicita** — `consenti_short` di default è `False` ovunque: nessun percorso deve aprire posizioni al ribasso senza che l'utente l'abbia chiesto.
 - **Report retrocompatibili** — nessuna modifica ai nomi di chiavi in `summary.json`, `metadata.json`, `equity_curve.csv`, `trades.csv` senza gestire i report vecchi.

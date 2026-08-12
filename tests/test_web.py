@@ -586,9 +586,9 @@ def test_chart_window_uses_clear_labels_and_simplified_default_view(tmp_path: Pa
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Confronto con il buy &amp; hold" in body
+    assert "Confronto con il comprare e basta" in body
     assert "Prime 10 operazioni della preview" not in body
-    assert "Operazioni del report" in body
+    assert "Le operazioni fatte" in body
     assert "massimo 50 righe per pagina" in body
     assert ">Pan<" in body
     assert ">Zoom<" in body
@@ -602,8 +602,8 @@ def test_chart_window_uses_clear_labels_and_simplified_default_view(tmp_path: Pa
     assert "Indicatori e linee del grafico" in body
     assert "Linee disponibili" in body
     assert "Prezzo del mercato mostrato come candele." in body
-    assert "Curva equity della strategia." in body
-    assert "Confronto buy and hold sullo stesso periodo." in body
+    assert "Come sarebbero cresciuti (o scesi) i tuoi soldi seguendo la strategia." in body
+    assert "Come sarebbero andati comprando il primo giorno e basta." in body
 
 
 def test_live_comparison_cards_use_clearer_copy(tmp_path: Path) -> None:
@@ -616,10 +616,11 @@ def test_live_comparison_cards_use_clearer_copy(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     body = response.get_data(as_text=True)
-    assert "Guadagno vs buy &amp; hold" in body
-    assert "Sharpe ratio" in body
-    assert "Max drawdown" in body
-    assert "Fee pagate" in body
+    # Le schede parlano italiano corrente: il gergo sta nella spiegazione.
+    assert "Differenza con comprare e basta" in body
+    assert "Guadagno rispetto al rischio" in body
+    assert "Il calo peggiore" in body
+    assert "Commissioni pagate" in body
 
 
 def test_internal_navigation_targets_resolve(tmp_path: Path) -> None:
@@ -1013,16 +1014,15 @@ def test_report_chart_window_renders_interactive_chart(tmp_path: Path) -> None:
     assert "chart-flat-strip-snapshot" in body
     assert 'data-preview-indicator-panels' not in body
     assert "Gli indicatori live vengono disegnati direttamente dentro il grafico come pannelli dedicati." in body
-    assert "Ingresso preview" in body
+    assert "Dove entrerebbe adesso" in body
     assert "Ingresso simulato della configurazione attuale." in body
-    assert "Lettura e coerenza del risultato" in body
-    assert "Metriche operative" in body
-    assert "Controlli di coerenza" in body
-    assert "Operazioni chiuse" in body
-    assert "Win rate" in body
-    assert "Trade chiusi" in body
-    assert "Equity finale" in body
-    assert "Buy &amp; hold finale" in body
+    assert "Quanto ci si può fidare di questo risultato" in body
+    assert "Come ha operato" in body
+    assert "Controlli automatici" in body
+    assert "Operazioni concluse" in body
+    assert "Operazioni chiuse in guadagno" in body
+    assert "Quanto ti resta alla fine" in body
+    assert "Comprando e basta" in body
     assert 'data-playback-mode="replay"' not in body
     assert 'data-series-start' not in body
     assert 'data-visible-window' not in body
@@ -1040,7 +1040,7 @@ def test_report_chart_window_renders_interactive_chart(tmp_path: Path) -> None:
     assert 'data-chart-trade-detail-title' in body
     assert 'data-chart-trade-detail-entry' in body
     assert 'data-chart-trade-detail-exit' in body
-    assert "Operazioni del report" in body
+    assert "Le operazioni fatte" in body
     assert "massimo 50 righe per pagina" in body
     assert re.search(r'"interval"\s*:\s*"1d"', body)
     assert f"/reports/{report_name}/chart-preview" in body

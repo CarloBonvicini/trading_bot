@@ -25,7 +25,8 @@ from trading_bot.application.chart_lab import (
 from trading_bot.application.dashboard import build_dashboard_context, build_session_catalog
 from trading_bot.application.execution import build_backtest_result
 from trading_bot.application.forms import as_form_values_from_saved_metadata
-from trading_bot.application.requests import flag_value
+from trading_bot.application.constants import COSTI_OPERAZIONE
+from trading_bot.application.requests import costi_operazione, flag_value
 from trading_bot.data import INTRADAY_LOOKBACK_DAYS, coerce_interval_date_window
 from trading_bot.errors import FormValidationError
 from trading_bot.reporting import (
@@ -186,8 +187,12 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
         if depth not in {"rapida", "media", "lunga", "xl"}:
             depth = "rapida"
         initial_capital = float(str(form.get("initial_capital", "10000")).strip() or "10000")
-        fee_bps = float(str(form.get("fee_bps", "5")).strip() or "5")
-        slippage_bps = float(str(form.get("slippage_bps", "0")).strip() or "0")
+        preset_costi = costi_operazione(form)
+        if preset_costi is not None:
+            fee_bps, slippage_bps = preset_costi
+        else:
+            fee_bps = float(str(form.get("fee_bps", "5")).strip() or "5")
+            slippage_bps = float(str(form.get("slippage_bps", "0")).strip() or "0")
         consenti_short = flag_value(form, "consenti_short")
         flat_at_close = flag_value(form, "flat_at_close")
 
@@ -528,6 +533,7 @@ def _render_home(
         strategies=STRATEGY_OPTIONS,
         rule_logic_options=RULE_LOGIC_OPTIONS,
         intervals=INTERVAL_OPTIONS,
+        costi_operazione=COSTI_OPERAZIONE,
         interval_hints=interval_helper_texts(),
         interval_lookback_days=INTRADAY_LOOKBACK_DAYS,
         run_modes=RUN_MODE_OPTIONS,
