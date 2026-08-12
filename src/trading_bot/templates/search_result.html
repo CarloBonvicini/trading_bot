@@ -30,6 +30,37 @@
   <p style="font-size:15px;line-height:1.7;margin:0;">{{ result.verdict_note }}</p>
 </section>
 
+{# ── La prova del caso: la parte che dice se fidarsi ──────────────────── #}
+{% set con_prova = result.markets | selectattr('prova_del_caso') | list %}
+{% if con_prova %}
+  {% set superata = con_prova | selectattr('prova_del_caso.superato') | list %}
+  <section class="panel report-tone-{{ 'positive' if superata else 'negative' }}" style="border-left:4px solid;">
+    <p class="eyebrow">non è fortuna?</p>
+    <h2 style="margin-top:0;">
+      {% if superata %}
+        Ha superato la prova del caso su {{ superata | length }} mercato{{ 'i' if superata | length > 1 else '' }}
+      {% else %}
+        Non ha superato la prova del caso
+      {% endif %}
+    </h2>
+    {% for m in con_prova %}
+      <p style="font-size:15px;line-height:1.7;margin:0 0 0.5rem;">
+        <strong>{{ m.symbol }}</strong> — {{ m.prova_del_caso.verdetto }}
+      </p>
+    {% endfor %}
+    <details style="margin-top:0.5rem;">
+      <summary class="inline-note" style="cursor:pointer;">Come funziona questa prova</summary>
+      <p class="inline-note" style="margin-top:8px;">
+        La stessa ricerca viene rifatta su una storia con gli stessi identici movimenti giornalieri
+        rimescolati in ordine casuale: la volatilità e i salti restano quelli veri, ma ogni tendenza
+        e ogni ritorno alla media spariscono. Su quei dati non c'è niente da trovare per costruzione,
+        quindi tutto quello che una strategia ci guadagna è fortuna. Se la fortuna arriva dove è
+        arrivata la strategia sui dati veri, non abbiamo trovato niente.
+      </p>
+    </details>
+  </section>
+{% endif %}
+
 {# ── Un riquadro per ogni mercato ─────────────────────────────────────── #}
 <section class="panel">
   <div class="panel-header">

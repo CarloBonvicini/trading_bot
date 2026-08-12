@@ -48,6 +48,9 @@ class MarketOutcome:
     benchmark_return_pct: float
     bars: int
     error: str | None = None
+    # Esito della prova del caso su questo mercato e che tipo di vittoria è.
+    prova_del_caso: dict | None = None
+    tipo_vittoria: str = ""
 
 
 @dataclass
@@ -95,6 +98,7 @@ def run_multi_market_search(
     strategy_ids: list[str] | None = None,
     consenti_short: bool = False,
     flat_at_close: bool = False,
+    prove_del_caso: int = 0,
     download_data: Callable[..., pd.DataFrame] = download_price_data,
     progress_callback: ProgressCallback | None = None,
     max_workers: int | None = None,
@@ -171,7 +175,7 @@ def run_multi_market_search(
                 initial_capital=initial_capital, fee_bps=fee_bps,
                 slippage_bps=slippage_bps, scan_mode=scan_mode, strategy_ids=strategy_ids, progress_callback=inner_progress,
                 consenti_short=consenti_short, flat_at_close=flat_at_close,
-                max_workers=max_workers,
+                prove_del_caso=prove_del_caso, max_workers=max_workers,
                 precomputed_rows=righe_salvate or None,
                 benchmark_return_pct=float(salvate.get("benchmark_return_pct", 0.0)),
                 on_row=_riga_completata,
@@ -195,6 +199,8 @@ def run_multi_market_search(
         }
         market_info[symbol] = {
             "error": None,
+            "prova_del_caso": result.prova_del_caso,
+            "tipo_vittoria": result.tipo_vittoria,
             "bars": int(result.data_span.get("bars", 0)),
             "benchmark": result.holdout_benchmark_return_pct,
             "local_return": float(result.holdout.get("total_return_pct", 0.0)) if result.holdout else 0.0,
@@ -235,6 +241,7 @@ def run_multi_market_search(
             "fee_bps": float(fee_bps),
             "slippage_bps": float(slippage_bps),
             "flat_at_close": bool(flat_at_close),
+            "prove_del_caso": int(prove_del_caso),
         },
     )
 
@@ -263,6 +270,8 @@ def _info_da_righe(ranking: list, salvate: dict) -> dict:
     campione = next((r for r in ranking if r.error is None and r.windows > 0), None)
     return {
         "error": None,
+        "prova_del_caso": salvate.get("prova_del_caso"),
+        "tipo_vittoria": salvate.get("tipo_vittoria", ""),
         "bars": int(salvate.get("bars", 0)),
         "benchmark": float(salvate.get("benchmark_return_pct", 0.0)),
         "local_return": float(campione.holdout_return_pct) if campione else 0.0,
@@ -290,12 +299,16 @@ def _market_outcome(symbol: str, info: dict, campione, overall_label: str | None
             symbol=symbol, champion_label=overall_label,
             reliability=entry["reliability"], holdout_return_pct=entry["return"],
             benchmark_return_pct=info["benchmark"], bars=info["bars"],
+            prova_del_caso=info.get("prova_del_caso"),
+            tipo_vittoria=info.get("tipo_vittoria", ""),
         )
     return MarketOutcome(
         symbol=symbol, champion_label=info.get("local_champion_label"),
         reliability=info.get("local_reliability", "insufficiente"),
         holdout_return_pct=info.get("local_return", 0.0),
         benchmark_return_pct=info.get("benchmark", 0.0), bars=info.get("bars", 0),
+        prova_del_caso=info.get("prova_del_caso"),
+        tipo_vittoria=info.get("tipo_vittoria", ""),
     )
 
 

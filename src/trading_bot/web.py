@@ -26,6 +26,7 @@ from trading_bot.application.dashboard import build_dashboard_context, build_ses
 from trading_bot.application.execution import build_backtest_result
 from trading_bot.application.forms import as_form_values_from_saved_metadata
 from trading_bot.application.constants import COSTI_OPERAZIONE
+from trading_bot.application.prova_del_caso import PROVE_PREDEFINITE
 from trading_bot.application.requests import costi_operazione, flag_value
 from trading_bot.data import INTRADAY_LOOKBACK_DAYS, coerce_interval_date_window
 from trading_bot.errors import FormValidationError
@@ -195,6 +196,9 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             slippage_bps = float(str(form.get("slippage_bps", "0")).strip() or "0")
         consenti_short = flag_value(form, "consenti_short")
         flat_at_close = flag_value(form, "flat_at_close")
+        # La prova del caso costa quanto la ricerca stessa moltiplicata per il
+        # numero di storie rimescolate: e' una scelta, non un default nascosto.
+        prove_del_caso = PROVE_PREDEFINITE if flag_value(form, "prova_del_caso") else 0
 
         job_id = start_multi_search_job(
             symbols=symbols,
@@ -208,6 +212,7 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             consenti_short=consenti_short,
             slippage_bps=slippage_bps,
             flat_at_close=flat_at_close,
+            prove_del_caso=prove_del_caso,
         )
         return redirect(url_for("search_detail", job_id=job_id))
 

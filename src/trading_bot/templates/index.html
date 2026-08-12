@@ -260,6 +260,19 @@
                 <legend class="eyebrow" style="padding:0 0.4rem;">come vuoi che operi</legend>
 
                 <label class="checkbox-row">
+                  <input type="checkbox" name="prova_del_caso" value="on" {% if form_values.prova_del_caso %}checked{% endif %}>
+                  <span>Controlla che la strategia trovata non sia solo fortuna</span>
+                </label>
+                <p class="field-hint">
+                  Il sistema prova migliaia di combinazioni: la migliore sembra sempre buona, anche
+                  su un mercato che si muove a caso. Con questa opzione la ricerca viene rifatta su
+                  una versione <strong>rimescolata</strong> della stessa storia, dove per costruzione
+                  non c'è niente da trovare: se la fortuna arriva dove è arrivata la strategia,
+                  quella strategia non vale niente. Fa durare la ricerca circa tre volte tanto ed è
+                  il controllo più importante che questo strumento sappia fare.
+                </p>
+
+                <label class="checkbox-row" style="margin-top:0.75rem;">
                   <input type="checkbox" name="consenti_short" value="on" {% if form_values.consenti_short %}checked{% endif %}>
                   <span>Prova anche a guadagnare quando il mercato scende</span>
                 </label>

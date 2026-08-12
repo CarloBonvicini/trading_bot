@@ -338,6 +338,9 @@ def run_backtest(
         equity.iloc[barra_rovina:] = 0.0
         gross_equity.iloc[barra_rovina:] = 0.0
 
+    # Il calo peggiore di chi ha solo comprato e tenuto: e' il metro per capire
+    # se la strategia ha risparmiato dolore, non solo se ha reso di piu'.
+    benchmark_drawdown = benchmark_equity / benchmark_equity.cummax() - 1
     equity_before = equity.shift(1).fillna(initial_capital)
     transaction_cost_amount = equity_before * transaction_cost
     fee_cost_amount = equity_before * fee_cost
@@ -373,6 +376,7 @@ def run_backtest(
             "gross_equity": gross_equity,
             "benchmark_equity": benchmark_equity,
             "drawdown": drawdown,
+            "benchmark_drawdown": benchmark_drawdown,
         }
     )
 
@@ -507,6 +511,11 @@ def _build_summary(
             else ""
         ),
         "benchmark_return_pct": round(benchmark_return * 100, 2),
+        "benchmark_max_drawdown_pct": (
+            round(float(equity_curve["benchmark_drawdown"].min()) * 100, 2)
+            if "benchmark_drawdown" in equity_curve.columns
+            else 0.0
+        ),
     }
 
 
