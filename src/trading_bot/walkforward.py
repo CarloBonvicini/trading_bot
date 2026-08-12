@@ -48,6 +48,10 @@ class WalkForwardWindow:
     oos_return_pct: float
     oos_max_drawdown_pct: float
     oos_trades: int
+    # Come e' andato il comprare-e-tenere nello stesso tratto: serve per dire
+    # se la strategia ha battuto il mercato o se saliva e basta.
+    oos_benchmark_return_pct: float = 0.0
+    oos_benchmark_max_drawdown_pct: float = 0.0
 
 
 @dataclass
@@ -60,6 +64,9 @@ class WalkForwardResult:
     avg_oos_return_pct: float
     strategy_id: str
     optimize_by: str
+    # In quanti tratti di collaudo ha fatto meglio del comprare-e-tenere: una
+    # vittoria su un tratto solo e' un aneddoto, quattro su cinque un curriculum.
+    finestre_vinte: int = 0
 
 
 def run_walk_forward(
@@ -198,6 +205,12 @@ def run_walk_forward(
                 is_sharpe=round(selezione.sharpe, 3),
                 oos_sharpe=round(float(oos_result.summary.get("sharpe_ratio", 0.0)), 3),
                 oos_return_pct=round(float(oos_result.summary.get("total_return_pct", 0.0)), 2),
+                oos_benchmark_return_pct=round(
+                    float(oos_result.summary.get("benchmark_return_pct", 0.0)), 2
+                ),
+                oos_benchmark_max_drawdown_pct=round(
+                    float(oos_result.summary.get("benchmark_max_drawdown_pct", 0.0)), 2
+                ),
                 oos_max_drawdown_pct=round(float(oos_result.summary.get("max_drawdown_pct", 0.0)), 2),
                 oos_trades=int(oos_result.summary.get("trade_count", 0)),
             )
@@ -220,6 +233,9 @@ def run_walk_forward(
         avg_oos_return_pct=round(avg_ret, 2),
         strategy_id=strategy_id,
         optimize_by=optimize_by,
+        finestre_vinte=sum(
+            1 for w in windows if w.oos_return_pct > w.oos_benchmark_return_pct
+        ),
     )
 
 

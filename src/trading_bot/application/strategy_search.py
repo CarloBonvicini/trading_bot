@@ -39,6 +39,11 @@ from typing import Callable
 import pandas as pd
 
 from trading_bot.application.autosetting import AUTOSETTING_GRIDS, AUTOSETTING_GRIDS_BY_MODE
+from trading_bot.application.prova_del_caso import (
+    EsitoProvaDelCaso,
+    mescola_serie,
+    valuta_contro_il_caso,
+)
 from trading_bot.backtest import run_backtest
 from trading_bot.strategies import (
     STRATEGY_SPECS,
@@ -203,6 +208,14 @@ class StrategyRanking:
     # le strategie dello stesso mercato, ma serve a chi valuta in un processo
     # separato per restituire un risultato completo).
     holdout_benchmark_return_pct: float | None = None
+    # Calo peggiore del comprare-e-tenere sullo stesso periodo: serve a
+    # riconoscere le vittorie "stessa resa, molto meno dolore".
+    holdout_benchmark_drawdown_pct: float | None = None
+    # In quanti tratti di collaudo dello sviluppo ha battuto il mercato.
+    finestre_vinte: int = 0
+    # Il campione regge se i costi raddoppiano? Chi vince per pochi punti
+    # di solito muore qui.
+    regge_costi_doppi: bool | None = None
     # Verso in cui ha corso questa riga: la stessa strategia puo' comparire due
     # volte, solo al rialzo e nei due versi.
     consenti_short: bool = False
@@ -223,6 +236,11 @@ class StrategySearchResult:
     holdout_benchmark_return_pct: float
     data_span: dict[str, object]
     settings: dict[str, object]
+    # Esito della prova del caso: la vittoria vale piu' di quella che trova la
+    # fortuna cercando fra le stesse migliaia di opzioni?
+    prova_del_caso: dict[str, object] | None = None
+    # Che tipo di vittoria e', se c'e' (vedi classifica_vittoria).
+    tipo_vittoria: str = ""
     # Verso in cui ha corso il campione: la stessa strategia puo' comparire in
     # classifica due volte, solo al rialzo e nei due versi.
     champion_consenti_short: bool = False
@@ -250,6 +268,7 @@ def run_strategy_search(
     strategy_ids: list[str] | None = None,
     consenti_short: bool = False,
     flat_at_close: bool = False,
+    prove_del_caso: int = 0,
     progress_callback: ProgressCallback | None = None,
     max_workers: int | None = None,
     precomputed_rows: dict[str, dict] | None = None,
@@ -425,6 +444,26 @@ def run_strategy_search(
         "max_drawdown_pct": champion.holdout_max_drawdown_pct,
         "trade_count": champion.holdout_trades,
     }
+    # Prova di resistenza: chi vince per pochi punti muore quasi sempre quando
+    # i costi raddoppiano, ed e' meglio scoprirlo qui che coi soldi veri.
+    champion.regge_costi_doppi = _regge_costi_doppi(
+        data=data, dev_len=dev_len, holdout_index=holdout_index, campione=champion,
+        fee_bps=fee_bps, slippage_bps=slippage_bps, initial_capital=initial_capital,
+        flat_at_close=flat_at_close,
+    )
+
+    esito_caso = _prova_del_caso(
+        data=data, campione=champion, prove=prove_del_caso,
+        argomenti=dict(
+            interval=interval, initial_capital=initial_capital, fee_bps=fee_bps,
+            slippage_bps=slippage_bps, holdout_ratio=holdout_ratio,
+            target_windows=target_windows, optimize_by=optimize_by, scan_mode=scan_mode,
+            strategy_ids=strategy_ids, consenti_short=consenti_short,
+            flat_at_close=flat_at_close, max_workers=max_workers,
+        ),
+    )
+    tipo = classifica_vittoria(champion, esito_caso)
+
     return StrategySearchResult(
         symbol=symbol, ranking=ranking,
         champion_id=champion.strategy_id, champion_label=champion.label,
@@ -434,7 +473,108 @@ def run_strategy_search(
         verdict_note=_verdict_note(champion, benchmark_return_pct),
         holdout_benchmark_return_pct=round(benchmark_return_pct, 2),
         data_span=data_span, settings=settings,
+        prova_del_caso=dataclasses.asdict(esito_caso) if esito_caso else None,
+        tipo_vittoria=tipo,
     )
+
+
+# ── Tipi di vittoria ─────────────────────────────────────────────────────────
+# Battere il mercato nel rendimento non e' l'unico esito utile: per una persona
+# vera vale anche "stessa resa con meta' del dolore", e la costanza nel tempo
+# dice piu' del picco.
+VITTORIA_NESSUNA = ""
+VITTORIA_MARGINE = "batte il mercato"
+VITTORIA_MENO_DOLORE = "stessa resa, molto meno dolore"
+VITTORIA_COSTANTE = "poco margine ma costante"
+
+# Quanto deve essere piu' basso il calo peggiore per parlare di "meno dolore".
+RIDUZIONE_CALO_MINIMA = 0.66
+# Sotto questa quota di tratti vinti non si parla di costanza.
+QUOTA_TRATTI_VINTI = 0.75
+
+
+def classifica_vittoria(campione: "StrategyRanking", esito_caso=None) -> str:
+    """Che tipo di vittoria e' — se e' una vittoria.
+
+    Se la prova del caso e' stata eseguita e non e' stata superata, nessuna
+    vittoria viene riconosciuta: il risultato e' quello che si ottiene comunque
+    provando migliaia di combinazioni.
+    """
+    if esito_caso is not None and esito_caso.prove and not esito_caso.superato:
+        return VITTORIA_NESSUNA
+
+    margine = campione.holdout_excess_return_pct
+    calo = campione.holdout_max_drawdown_pct
+    calo_mercato = campione.holdout_benchmark_drawdown_pct
+
+    if margine >= MARGINE_MINIMO_PCT and campione.holdout_return_pct > 0:
+        return VITTORIA_MARGINE
+
+    # Stessa resa (o quasi) ma con cali molto piu' contenuti: per chi ci mette
+    # i propri soldi e' una vittoria, anche se il rendimento non cambia.
+    if (
+        calo_mercato is not None
+        and calo_mercato < 0
+        and margine > -MARGINE_MINIMO_PCT
+        and abs(calo) <= abs(calo_mercato) * RIDUZIONE_CALO_MINIMA
+    ):
+        return VITTORIA_MENO_DOLORE
+
+    if (
+        campione.windows
+        and campione.finestre_vinte >= max(1, round(campione.windows * QUOTA_TRATTI_VINTI))
+        and margine > 0
+    ):
+        return VITTORIA_COSTANTE
+
+    return VITTORIA_NESSUNA
+
+
+def _regge_costi_doppi(
+    *, data: pd.DataFrame, dev_len: int, holdout_index, campione: "StrategyRanking",
+    fee_bps: float, slippage_bps: float, initial_capital: float, flat_at_close: bool,
+) -> bool | None:
+    """Il campione batte ancora il comprare-e-tenere se operare costa il doppio?"""
+    if not campione.params:
+        return None
+    try:
+        risultato = _evaluate_on_holdout(
+            full_data=data, dev_len=dev_len, holdout_index=holdout_index,
+            strategy_id=campione.strategy_id, params=campione.params,
+            fee_bps=fee_bps * 2, slippage_bps=max(slippage_bps, 1.0) * 2,
+            initial_capital=initial_capital,
+            consenti_short=campione.consenti_short, flat_at_close=flat_at_close,
+        )
+    except Exception:
+        return None
+    return float(risultato.summary.get("excess_return_pct", 0.0)) >= MARGINE_MINIMO_PCT
+
+
+def _prova_del_caso(
+    *, data: pd.DataFrame, campione: "StrategyRanking", prove: int, argomenti: dict
+) -> "EsitoProvaDelCaso | None":
+    """Rifa' la stessa ricerca su storie rimescolate e misura cosa ottiene la fortuna."""
+    if prove <= 0:
+        return None
+
+    margini: list[float] = []
+    for tentativo in range(prove):
+        try:
+            finta = run_strategy_search(
+                data=mescola_serie(data, seed=tentativo),
+                symbol="(storia rimescolata)",
+                prove_del_caso=0,   # nessuna ricorsione
+                **argomenti,
+            )
+        except Exception:
+            continue
+        migliore = max(
+            (r.holdout_excess_return_pct for r in finta.ranking if r.error is None),
+            default=0.0,
+        )
+        margini.append(migliore)
+
+    return valuta_contro_il_caso(campione.holdout_excess_return_pct, margini)
 
 
 @dataclass
@@ -536,6 +676,10 @@ def _valuta_strategia(
         holdout_excess_return_pct=round(float(hs.get("excess_return_pct", 0.0)), 2),
         dev_oos_trades=sum(int(w.oos_trades) for w in wf.windows),
         holdout_benchmark_return_pct=round(float(hs.get("benchmark_return_pct", 0.0)), 2),
+        holdout_benchmark_drawdown_pct=round(
+            float(hs.get("benchmark_max_drawdown_pct", 0.0)), 2
+        ),
+        finestre_vinte=int(wf.finestre_vinte),
         consenti_short=candidato.consenti_short,
     )
 

@@ -64,6 +64,7 @@ def default_form_values() -> dict[str, object]:
         "sizing_param": 100.0,
         "consenti_short": False,
         "flat_at_close": False,
+        "prova_del_caso": True,
         "wf_is_days": 252,
         "wf_oos_days": 63,
         "wf_optimize_by": "sharpe_ratio",
