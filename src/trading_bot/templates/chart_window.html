@@ -10,24 +10,31 @@
   {% set layer_descriptions = {
     "price": "Prezzo del mercato mostrato come candele.",
     "volume": "Volumi scambiati nella stessa finestra del prezzo.",
-    "entry": "Punti di ingresso delle operazioni.",
-    "exit": "Punti di uscita delle operazioni.",
-    "strategy": "Curva equity della strategia.",
-    "benchmark": "Confronto buy and hold sullo stesso periodo.",
-    "gross": "Curva equity senza l'impatto delle fee.",
-    "drawdown": "Perdita percentuale dal massimo raggiunto."
+    "entry": "Dove la strategia ha comprato (o venduto allo scoperto).",
+    "exit": "Dove la strategia ha chiuso l'operazione.",
+    "strategy": "Come sarebbero cresciuti (o scesi) i tuoi soldi seguendo la strategia.",
+    "benchmark": "Come sarebbero andati comprando il primo giorno e basta.",
+    "gross": "Come sarebbero andati se operare non costasse niente.",
+    "drawdown": "Quanto sei sotto rispetto al punto piu' alto toccato finora."
   } %}
 
   <section class="chart-terminal-shell">
-    {% if chart.summary and chart.summary.wiped_out %}
-      <section class="panel report-tone-negative" style="border-left:4px solid;">
-        <h2 style="margin-top:0;">Capitale azzerato</h2>
-        <p style="font-size:15px;line-height:1.7;margin:0;">
-          Il {{ chart.summary.wiped_out_date }} una posizione al ribasso ha perso più
-          dell'intero capitale: il conto è finito a zero e da lì in poi il test si ferma.
-          È il rischio specifico della vendita allo scoperto — se il prezzo raddoppia,
-          chi ha puntato sulla discesa perde tutto.
-        </p>
+    {# ── Com'è andata, in una frase: è la prima cosa che deve leggersi ──── #}
+    {% if chart.verdetto %}
+      <section class="panel report-tone-{{ chart.verdetto.tono }}" style="border-left:4px solid;">
+        <p class="eyebrow">in parole semplici</p>
+        <h2 style="margin-top:0;">{{ chart.verdetto.titolo }}</h2>
+        <p style="font-size:15px;line-height:1.7;margin:0;">{{ chart.verdetto.frase }}</p>
+        {% if chart.verdetto.confronto %}
+          <p style="font-size:15px;line-height:1.7;margin:0.5rem 0 0;">{{ chart.verdetto.confronto }}</p>
+        {% endif %}
+        {% if chart.verdetto.avvisi %}
+          <ul style="margin:0.75rem 0 0;padding-left:1.1rem;">
+            {% for avviso in chart.verdetto.avvisi %}
+              <li class="inline-note" style="margin:0.25rem 0;">{{ avviso }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
       </section>
     {% endif %}
     <section class="panel chart-terminal-topbar">
@@ -82,17 +89,17 @@
             <div class="terminal-chip-row">
               <button type="button" class="terminal-chip" data-focus-view="all">Multi panel</button>
               <button type="button" class="terminal-chip" data-focus-view="price">Prezzo</button>
-              <button type="button" class="terminal-chip" data-focus-view="equity">Equity</button>
-              <button type="button" class="terminal-chip" data-focus-view="drawdown">Drawdown</button>
+              <button type="button" class="terminal-chip" data-focus-view="equity">I tuoi soldi</button>
+              <button type="button" class="terminal-chip" data-focus-view="drawdown">Le discese</button>
             </div>
           </div>
 
           <div class="terminal-toolbar-group">
             <span class="terminal-toolbar-label">Confronti</span>
             <div class="terminal-chip-row">
-              <button type="button" class="terminal-chip" data-trace-toggle="benchmark">Buy &amp; hold</button>
-              <button type="button" class="terminal-chip" data-trace-toggle="gross">Senza fee</button>
-              <button type="button" class="terminal-chip" data-trace-toggle="drawdown">Drawdown</button>
+              <button type="button" class="terminal-chip" data-trace-toggle="benchmark">Comprare e basta</button>
+              <button type="button" class="terminal-chip" data-trace-toggle="gross">Senza costi</button>
+              <button type="button" class="terminal-chip" data-trace-toggle="drawdown">Le discese</button>
             </div>
           </div>
 
@@ -289,7 +296,7 @@
               >
                 <span class="terminal-layer-swatch terminal-layer-swatch-preview-entry"></span>
                 <span class="terminal-layer-copy">
-                  <strong>Ingresso preview</strong>
+                  <strong>Dove entrerebbe adesso</strong>
                   <small>Ingresso simulato della configurazione attuale.</small>
                 </span>
                 <small class="terminal-layer-state">preview</small>
@@ -555,7 +562,7 @@
         <div class="panel-header chart-terminal-panel-header">
           <div>
             <p class="eyebrow">confronto live</p>
-            <h3>Confronto con il buy &amp; hold</h3>
+            <h3>Confronto con il comprare e basta</h3>
           </div>
           <span class="preview-status-badge" data-live-preview-badge></span>
         </div>
@@ -586,7 +593,7 @@
       <div class="panel-header chart-terminal-panel-header">
         <div>
           <p class="eyebrow">verifica risultati</p>
-          <h3>Lettura e coerenza del risultato</h3>
+          <h3>Quanto ci si può fidare di questo risultato</h3>
         </div>
         <p class="inline-note">
           Qui capisci se il risultato e' leggibile e se summary, equity curve e trade file sono coerenti tra loro.
@@ -598,7 +605,7 @@
           <div class="panel-header chart-terminal-panel-header chart-live-preview-subheader">
             <div>
               <p class="eyebrow">lettura rapida</p>
-              <h3>Metriche operative</h3>
+              <h3>Come ha operato</h3>
             </div>
             <p class="inline-note">Per leggere al volo attivita', win rate, pnl medio e durata media.</p>
           </div>
@@ -617,7 +624,7 @@
           <div class="panel-header chart-terminal-panel-header chart-live-preview-subheader">
             <div>
               <p class="eyebrow">check interni</p>
-              <h3>Controlli di coerenza</h3>
+              <h3>Controlli automatici</h3>
             </div>
             <p class="inline-note">Se trade count, equity finale e benchmark finale tornano, il report e' internamente coerente.</p>
           </div>
@@ -641,7 +648,7 @@
       <div class="panel-header chart-terminal-panel-header">
         <div>
           <p class="eyebrow">trade tape</p>
-          <h3>Operazioni del report</h3>
+          <h3>Le operazioni fatte</h3>
         </div>
         <p class="inline-note">Ordine cronologico, massimo 50 righe per pagina, con navigazione tra le finestre.</p>
       </div>

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from trading_bot.application.constants import INTERVAL_OPTIONS, STRATEGY_OPTIONS
+from trading_bot.application.constants import COSTI_DEFAULT, INTERVAL_OPTIONS, STRATEGY_OPTIONS
 from trading_bot.application.requests import BacktestRequest, sweep_parameter_names
 from trading_bot.data import INTRADAY_LOOKBACK_DAYS
 from trading_bot.strategies import STRATEGY_SPECS, default_parameter_values, strategy_field_name
@@ -56,6 +56,7 @@ def default_form_values() -> dict[str, object]:
         "initial_capital": 10_000.0,
         "fee_bps": 5.0,
         "slippage_bps": 0.0,
+        "costi_operazione": COSTI_DEFAULT,
         "sort_by": "total_return_pct",
         "sl_pct": "",
         "tp_pct": "",

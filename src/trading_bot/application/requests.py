@@ -3,7 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Mapping
 
-from trading_bot.application.constants import INTERVAL_OPTIONS, RULE_LOGIC_OPTIONS, STRATEGY_OPTIONS
+from trading_bot.application.constants import (
+    COSTI_OPERAZIONE,
+    INTERVAL_OPTIONS,
+    RULE_LOGIC_OPTIONS,
+    STRATEGY_OPTIONS,
+)
 from trading_bot.data import resolve_market_data_symbol
 from trading_bot.errors import FormValidationError
 from trading_bot.strategies import STRATEGY_SPECS, parse_strategy_parameters
@@ -12,6 +17,19 @@ from trading_bot.strategies import STRATEGY_SPECS, parse_strategy_parameters
 def _text_value(raw: Mapping[str, object], name: str, default: str = "") -> str:
     value = raw.get(name, default)
     return str(value).strip() if value is not None else default
+
+
+def costi_operazione(raw: Mapping[str, object]) -> tuple[float, float] | None:
+    """Traduce la scelta "quanto ti costa operare" in (commissioni, slippage).
+
+    Restituisce None se il form non usa la scelta semplificata: in quel caso
+    valgono i valori in basis point indicati a mano.
+    """
+    scelta = _text_value(raw, "costi_operazione", "").lower()
+    preset = COSTI_OPERAZIONE.get(scelta)
+    if preset is None:
+        return None
+    return float(preset["fee_bps"]), float(preset["slippage_bps"])
 
 
 def flag_value(raw: Mapping[str, object], name: str) -> bool:
@@ -181,6 +199,13 @@ class BacktestRequest:
         if sizing_method not in {"full", "fixed", "vol_target"}:
             sizing_method = "full"
         sizing_param = float(_text_value(raw, "sizing_param", "100") or "100")
+        # La scelta in lingua semplice, se presente, ha la precedenza sui bps.
+        preset_costi = costi_operazione(raw)
+        if preset_costi is not None:
+            fee_bps, slippage_bps = preset_costi
+        else:
+            fee_bps = float(_text_value(raw, "fee_bps", "5"))
+            slippage_bps = float(_text_value(raw, "slippage_bps", "0") or "0")
         consenti_short = flag_value(raw, "consenti_short")
         flat_at_close = flag_value(raw, "flat_at_close")
 
@@ -194,8 +219,8 @@ class BacktestRequest:
             active_strategy_ids=tuple(active_strategy_ids),
             rule_logic=rule_logic,
             initial_capital=float(_text_value(raw, "initial_capital", "10000")),
-            fee_bps=float(_text_value(raw, "fee_bps", "5")),
-            slippage_bps=float(_text_value(raw, "slippage_bps", "0") or "0"),
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
             parameters=rules[0].parameters,
             rules=tuple(rules),
             groups=groups,

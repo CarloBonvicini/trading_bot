@@ -18,72 +18,85 @@ from trading_bot.strategies import (
 )
 
 SUMMARY_LABELS = {
-    "initial_capital": "Capitale iniziale",
-    "final_equity": "Equity finale",
-    "gross_final_equity": "Equity senza fee",
-    "benchmark_final_equity": "Equity buy & hold",
-    "total_return_pct": "Rendimento totale",
-    "annual_return_pct": "Rendimento annuo",
-    "annual_volatility_pct": "Volatilita' annua",
-    "sharpe_ratio": "Sharpe",
-    "sortino_ratio": "Sortino",
-    "calmar_ratio": "Calmar",
-    "max_drawdown_pct": "Max drawdown",
-    "trade_count": "Numero trade",
-    "win_rate_pct": "Win rate",
-    "profit_factor": "Profit factor",
-    "avg_win_pct": "Vincita media",
-    "avg_loss_pct": "Perdita media",
-    "expectancy_pct": "Attesa per trade",
-    "sl_tp_exit_count": "Uscite SL/TP",
-    "end_of_day_exit_count": "Chiusure di fine giornata",
-    "exposure_pct": "Esposizione",
-    "long_exposure_pct": "Esposizione al rialzo",
-    "short_exposure_pct": "Esposizione al ribasso",
+    # Nomi in italiano corrente: il termine tecnico sta nella spiegazione a
+    # comparsa (METRIC_TOOLTIPS), non nell'etichetta. Chi apre il report vuole
+    # sapere cosa significa il numero, non come si chiama in gergo.
+    "initial_capital": "Soldi messi all'inizio",
+    "final_equity": "Quanto ti resta alla fine",
+    "gross_final_equity": "Quanto ti resterebbe senza costi",
+    "benchmark_final_equity": "Se avessi solo comprato e aspettato",
+    "total_return_pct": "Guadagno totale",
+    "annual_return_pct": "Guadagno medio all'anno",
+    "annual_volatility_pct": "Quanto oscilla",
+    "sharpe_ratio": "Guadagno rispetto al rischio",
+    "sortino_ratio": "Guadagno rispetto alle discese",
+    "calmar_ratio": "Guadagno rispetto al calo peggiore",
+    "max_drawdown_pct": "Il calo peggiore",
+    "trade_count": "Operazioni fatte",
+    "win_rate_pct": "Operazioni chiuse in guadagno",
+    "profit_factor": "Guadagni contro perdite",
+    "avg_win_pct": "Guadagno medio quando va bene",
+    "avg_loss_pct": "Perdita media quando va male",
+    "expectancy_pct": "Risultato medio per operazione",
+    "sl_tp_exit_count": "Chiusure automatiche (stop e obiettivo)",
+    "end_of_day_exit_count": "Chiusure serali",
+    "exposure_pct": "Tempo passato a mercato",
+    "long_exposure_pct": "Tempo puntando sul rialzo",
+    "short_exposure_pct": "Tempo puntando sul ribasso",
     "short_trade_count": "Operazioni al ribasso",
     "wiped_out": "Capitale azzerato",
-    "wiped_out_date": "Data azzeramento",
-    "benchmark_return_pct": "Buy & hold",
-    "benchmark_max_drawdown_pct": "Max drawdown buy & hold",
-    "excess_return_pct": "Delta vs hold",
-    "fees_paid": "Commissioni",
-    "slippage_paid": "Slippage",
+    "wiped_out_date": "Giorno dell'azzeramento",
+    "benchmark_return_pct": "Comprando e basta",
+    "benchmark_max_drawdown_pct": "Calo peggiore comprando e basta",
+    "excess_return_pct": "Differenza con comprare e basta",
+    "fees_paid": "Commissioni pagate",
+    "slippage_paid": "Costo dello scarto di prezzo",
     "trading_costs_paid": "Costi totali",
-    "fees_paid_pct_initial_capital": "Spese su capitale",
-    "fee_drag_equity": "Impatto costi",
+    "fees_paid_pct_initial_capital": "Costi sul capitale iniziale",
+    "fee_drag_equity": "Quanto ti sono costati i costi",
 }
 
 # Glossario tooltip per le metriche e gli strumenti: testo conciso (1-2 frasi)
 # mostrato in hover/info-icon nei template. Le chiavi corrispondono a chiavi
 # di SUMMARY_LABELS o a id di strumenti UI (es. "autosetting", "walkforward").
 METRIC_TOOLTIPS: dict[str, str] = {
+    "trading_costs_paid": "Commissioni piu' scarto di prezzo: tutto quello che l'operare ti e' costato.",
+    "slippage_paid": "Quanto e' costato lo scarto fra il prezzo visto a schermo e quello davvero ottenuto. In gergo: slippage.",
+    "wiped_out_date": "Il giorno in cui il capitale si e' azzerato e il test si e' fermato.",
+    "wiped_out": "Vero se il capitale si e' azzerato: succede solo con la vendita allo scoperto, dove la perdita non ha un tetto.",
+    "end_of_day_exit_count": "Quante volte la posizione e' stata chiusa prima della chiusura di giornata, per non restare esposti durante la notte.",
+    "short_trade_count": "Quante delle operazioni puntavano sulla discesa invece che sulla salita.",
+    "short_exposure_pct": "La fetta di tempo passata puntando sul ribasso (vendita allo scoperto).",
+    "long_exposure_pct": "La fetta di tempo passata puntando sul rialzo, cioe' avendo comprato.",
+    "benchmark_max_drawdown_pct": "Il calo peggiore che avrebbe sopportato chi ha solo comprato e tenuto: utile per capire se la strategia ti ha risparmiato qualcosa.",
+    "initial_capital": "I soldi con cui parte il test. Non e' denaro vero: serve a calcolare le percentuali.",
     # ── Rendimento ────────────────────────────────────────────────────
     "total_return_pct":      "Variazione percentuale dell'equity dall'inizio alla fine. Non considera la durata del periodo.",
-    "annual_return_pct":     "Rendimento annualizzato composto (CAGR): tasso medio annuo che porta dal capitale iniziale a quello finale.",
-    "benchmark_return_pct":  "Rendimento del semplice buy & hold dello strumento sullo stesso periodo: il riferimento da battere.",
-    "excess_return_pct":     "Differenza tra rendimento strategia e buy & hold. Positivo = la strategia aggiunge valore.",
-    "final_equity":          "Capitale finale al netto delle commissioni.",
-    "gross_final_equity":    "Capitale finale che avresti ottenuto senza pagare alcuna commissione.",
-    "benchmark_final_equity": "Capitale finale di chi avesse semplicemente tenuto lo strumento per tutto il periodo.",
+    "annual_return_pct": "Il guadagno medio per ogni anno, tenendo conto dell'interesse composto. In gergo: CAGR.",
+    "benchmark_return_pct": "Quanto avresti ottenuto comprando e basta, senza fare nulla per tutto il periodo: e' il risultato da battere.",
+    "excess_return_pct": "Quanto hai guadagnato in piu' (o in meno) rispetto a comprare il primo giorno e non fare piu' niente. E' il confronto che conta.",
+    "final_equity": "I soldi che ti ritrovi alla fine, commissioni e scarti di prezzo gia' pagati.",
+    "gross_final_equity": "Quanto ti ritroveresti se operare non costasse niente: il confronto mostra il peso dei costi.",
+    "benchmark_final_equity": "Quanto ti ritroveresti avendo comprato il primo giorno e aspettato senza fare altro.",
     # ── Rischio ───────────────────────────────────────────────────────
-    "annual_volatility_pct": "Deviazione standard annualizzata dei rendimenti giornalieri. Quanto oscilla il portafoglio.",
-    "max_drawdown_pct":      "Peggior perdita dal massimo storico precedente. Indica quanto è stato profondo il momento peggiore.",
-    "sharpe_ratio":          "Rendimento per unità di rischio (risk-free = 0). >1 buono, >1.5 ottimo, >2 eccellente.",
-    "sortino_ratio":         "Come Sharpe ma penalizza solo la volatilità al ribasso. Più realistico per strategie long-only.",
-    "calmar_ratio":          "CAGR diviso il |max drawdown|. Misura quante volte il rendimento annuo copre la peggior discesa storica.",
+    "annual_volatility_pct": "Di quanto oscilla il capitale in un anno: piu' e' alto, piu' il percorso e' movimentato. In gergo: volatilita' annualizzata.",
+    "max_drawdown_pct": "Quanto e' sceso il capitale dal suo punto piu' alto prima di risalire: e' il momento in cui avresti avuto piu' voglia di mollare. In gergo: max drawdown.",
+    "sharpe_ratio": "Quanto guadagni in rapporto a quanto oscilla il capitale: sopra 1 e' buono, sopra 2 e' raro. In gergo: Sharpe ratio.",
+    "sortino_ratio": "Come il precedente, ma conta solo le oscillazioni verso il basso: premia chi scende poco anche se sale a scatti. In gergo: Sortino ratio.",
+    "calmar_ratio": "Quante volte il guadagno di un anno copre il calo peggiore che avresti sopportato. In gergo: Calmar ratio.",
     # ── Trade ─────────────────────────────────────────────────────────
     "trade_count":           "Numero totale di operazioni chiuse nel periodo.",
-    "win_rate_pct":          "Percentuale di trade chiusi in profitto. Da solo non basta: contano anche dimensioni di win e loss.",
-    "profit_factor":         "Somma delle vincite / somma delle perdite. >1 il sistema guadagna, >1.5 è solido.",
+    "win_rate_pct": "Su cento operazioni chiuse, quante sono finite in guadagno. Attenzione: si puo' guadagnare vincendo poche volte e perdere vincendo spesso. In gergo: win rate.",
+    "profit_factor": "Quanti euro hai guadagnato per ogni euro perso. Sotto 1 la strategia perde. In gergo: profit factor.",
     "avg_win_pct":           "Guadagno medio per ogni trade vincente.",
     "avg_loss_pct":          "Perdita media per ogni trade in loss (valore negativo).",
-    "expectancy_pct":        "Guadagno medio atteso per trade. È il vero indicatore di edge: positivo = strategia profittevole nel lungo periodo.",
+    "expectancy_pct": "Quanto rende in media una singola operazione, buone e cattive messe insieme. In gergo: expectancy.",
     # ── Costi ─────────────────────────────────────────────────────────
     "fees_paid":             "Totale commissioni pagate (basate sulla fee in basis points).",
     "fees_paid_pct_initial_capital": "Peso delle fee sul capitale iniziale: utile per capire se i costi erodono la strategia.",
     "fee_drag_equity":       "Differenza in euro tra equity lorda (senza fee) e netta. Quanto ti sono costate operativamente le commissioni.",
     # ── Posizione ─────────────────────────────────────────────────────
-    "exposure_pct":          "Percentuale di tempo in cui la strategia era in posizione (long). Più bassa = strategia selettiva.",
+    "exposure_pct": "La fetta di tempo in cui i tuoi soldi erano davvero investiti invece che fermi. In gergo: esposizione.",
     "sl_tp_exit_count":      "Numero di uscite forzate da stop loss o take profit. Indica quanto i protettori intervengono.",
     # ── Strumenti UI ──────────────────────────────────────────────────
     "autosetting":           "Scansiona una griglia di parametri sul training set (70%) e valida i migliori sull'out-of-sample. Evidenzia overfitting.",
@@ -169,6 +182,7 @@ def load_report(output_dir: str | Path, report_name: str) -> dict[str, object]:
         "path": report_dir,
         "summary": summary,
         "metadata": metadata,
+        "verdetto": build_plain_verdict(summary, barre=len(equity_curve)),
         "summary_cards": build_summary_cards(summary),
         "comparison": comparison,
         "overview_cards": build_report_overview_cards(summary, comparison),
@@ -422,10 +436,15 @@ def build_report_meta_chips(summary_metadata: dict[str, object], summary: dict[s
 
     chips = [
         {"label": "Periodo", "value": period_value},
-        {"label": "Intervallo", "value": str(summary_metadata.get("interval", "n/d"))},
-        {"label": "Fee", "value": f"{fee_bps_value:.2f} bps" if fee_bps_value is not None else "n/d"},
+        {"label": "Ogni barra", "value": str(summary_metadata.get("interval", "n/d"))},
         {
-            "label": "Trade",
+            "label": "Costo per operazione",
+            "value": (
+                f"{fee_bps_value / 100:.2f}%" if fee_bps_value is not None else "n/d"
+            ),
+        },
+        {
+            "label": "Operazioni",
             "value": str(int(trade_count_value)) if trade_count_value is not None else "n/d",
         },
     ]
@@ -460,13 +479,13 @@ def build_report_overview_cards(
             "tone": _delta_tone(delta_value),
         },
         {
-            "label": "Max drawdown",
+            "label": "Il calo peggiore",
             "value": _format_percent_metric(drawdown_value),
-            "hint": "Peggiore discesa dal massimo raggiunto.",
+            "hint": "Quanto è sceso il capitale dal punto più alto.",
             "tone": _drawdown_tone(drawdown_value),
         },
         {
-            "label": "Sharpe",
+            "label": "Guadagno rispetto al rischio",
             "value": _format_ratio_metric(sharpe_value),
             "hint": _interpret_sharpe(sharpe_value),
             "tone": _sharpe_tone(sharpe_value),
@@ -521,13 +540,13 @@ def build_report_metric_sections(
             "title": "Rischio e tenuta",
             "cards": [
                 {
-                    "label": "Max drawdown",
+                    "label": "Il calo peggiore",
                     "value": _format_percent_metric(drawdown_value),
                     "hint": "Peggior calo dal massimo precedente",
                     "tone": _drawdown_tone(drawdown_value),
                 },
                 {
-                    "label": "Sharpe",
+                    "label": "Guadagno rispetto al rischio",
                     "value": _format_ratio_metric(sharpe_value),
                     "hint": _interpret_sharpe(sharpe_value),
                     "tone": _sharpe_tone(sharpe_value),
@@ -559,19 +578,19 @@ def build_report_metric_sections(
                 {
                     "label": "Spese sul capitale",
                     "value": _format_percent_metric(summary.get("fees_paid_pct_initial_capital")),
-                    "hint": "Incidenza sul capitale iniziale",
+                    "hint": "Quanto pesano sui soldi messi all'inizio",
                     "tone": "neutral",
                 },
                 {
-                    "label": "Equity senza fee",
+                    "label": "Quanto ti resterebbe senza costi",
                     "value": _format_number_metric(summary.get("gross_final_equity")),
-                    "hint": "Risultato lordo prima dei costi",
+                    "hint": "Il risultato se operare fosse gratis",
                     "tone": "neutral",
                 },
                 {
-                    "label": "Impatto fee",
+                    "label": "Quanto ti sono costati i costi",
                     "value": _format_number_metric(fee_drag_value),
-                    "hint": "Differenza finale causata dai costi",
+                    "hint": "Differenza fra il risultato con e senza costi",
                     "tone": "warning" if fee_drag_value not in (None, 0) else "neutral",
                 },
             ],
@@ -622,6 +641,138 @@ def build_report_insights(summary: dict[str, object], comparison: dict[str, obje
             "tone": "neutral",
         },
     ]
+
+
+# ── Verdetto in lingua semplice ──────────────────────────────────────────────
+# Il report è nato come strumento da terminale: grafico, metriche, controlli.
+# Chi lo apre senza saperne di finanza però ha una sola domanda — "com'è
+# andata?" — e prima di questo riquadro la pagina non gliela rispondeva da
+# nessuna parte.
+
+# Sotto questo numero di operazioni il risultato dipende più dal caso che dalla
+# strategia: dieci lanci di moneta possono uscire tutti testa.
+POCHE_OPERAZIONI = 10
+# Sotto un anno di storia una strategia non ha visto abbastanza mercato.
+POCHE_BARRE = 180
+
+
+def build_plain_verdict(
+    summary: dict[str, object], barre: int | None = None
+) -> dict[str, object]:
+    """Traduce il riepilogo in una frase che si capisce senza saper leggere i numeri.
+
+    Restituisce ``{tono, titolo, frase, confronto, avvisi}``: il tono guida il
+    colore del riquadro, gli avvisi dicono quando il risultato non è
+    abbastanza solido per farci affidamento.
+    """
+    capitale = _to_float(summary.get("initial_capital")) or 0.0
+    finale = _to_float(summary.get("final_equity")) or 0.0
+    mercato = _to_float(summary.get("benchmark_final_equity")) or 0.0
+    guadagno = finale - capitale
+    margine = finale - mercato
+    operazioni = int(_to_float(summary.get("trade_count")) or 0)
+
+    if summary.get("wiped_out"):
+        return {
+            "tono": "negative",
+            "titolo": "Capitale azzerato",
+            "frase": (
+                f"Il {summary.get('wiped_out_date', '')} una posizione al ribasso ha perso più "
+                f"dell'intero capitale: dei {_euro(capitale)} di partenza non è rimasto niente, "
+                "e da quel punto il test si ferma."
+            ),
+            "confronto": (
+                "È il rischio specifico della vendita allo scoperto: se il prezzo raddoppia, "
+                "chi ha puntato sulla discesa perde tutto."
+            ),
+            "avvisi": _avvisi(summary, barre, operazioni),
+        }
+
+    if guadagno >= 0:
+        titolo = f"Avresti guadagnato {_euro(guadagno)}"
+        tono = "positive"
+    else:
+        titolo = f"Avresti perso {_euro(abs(guadagno))}"
+        tono = "negative"
+
+    frase = (
+        f"Partendo da {_euro(capitale)}, alla fine del periodo ti saresti trovato "
+        f"{_euro(finale)}."
+    )
+
+    if mercato > 0:
+        if margine >= 0:
+            confronto = (
+                f"Comprando e basta il primo giorno, senza fare più niente, ne avresti avuti "
+                f"{_euro(mercato)}: questa strategia ti ha fatto guadagnare {_euro(margine)} "
+                "in più di quanto avresti ottenuto stando fermo."
+            )
+        else:
+            confronto = (
+                f"Comprando e basta il primo giorno, senza fare più niente, ne avresti avuti "
+                f"{_euro(mercato)}: questa strategia ti è costata {_euro(abs(margine))} "
+                "rispetto a non fare niente."
+            )
+            # Guadagnare meno che stando fermi non è un buon risultato, anche
+            # se il numero è positivo.
+            tono = "neutral" if guadagno >= 0 else "negative"
+    else:
+        confronto = ""
+
+    return {
+        "tono": tono,
+        "titolo": titolo,
+        "frase": frase,
+        "confronto": confronto,
+        "avvisi": _avvisi(summary, barre, operazioni),
+    }
+
+
+def _avvisi(summary: dict[str, object], barre: int | None, operazioni: int) -> list[str]:
+    """Quando il risultato non è abbastanza solido per farci affidamento."""
+    avvisi: list[str] = []
+
+    if operazioni == 0:
+        avvisi.append(
+            "La strategia non ha mai comprato né venduto in tutto il periodo: "
+            "non c'è nessun risultato da leggere."
+        )
+    elif operazioni < POCHE_OPERAZIONI:
+        avvisi.append(
+            f"Solo {operazioni} operazioni in tutto il periodo: troppo poche per distinguere "
+            "una strategia che funziona da una serie fortunata. Con dieci lanci di moneta "
+            "può uscire testa ogni volta."
+        )
+
+    if barre is not None and barre < POCHE_BARRE:
+        avvisi.append(
+            "Il periodo di prova è breve: la strategia non ha ancora visto abbastanza mercato "
+            "(né una discesa vera, probabilmente). Allarga le date prima di fidarti."
+        )
+
+    caduta = _to_float(summary.get("max_drawdown_pct"))
+    if caduta is not None and caduta <= -30:
+        avvisi.append(
+            f"Lungo la strada avresti visto il capitale scendere del {abs(caduta):.0f}% dal suo "
+            "massimo: chiediti se saresti riuscito a non vendere in quel momento."
+        )
+
+    costi = _to_float(summary.get("trading_costs_paid"))
+    guadagno_lordo = (_to_float(summary.get("gross_final_equity")) or 0.0) - (
+        _to_float(summary.get("initial_capital")) or 0.0
+    )
+    if costi and guadagno_lordo > 0 and costi > guadagno_lordo * 0.5:
+        avvisi.append(
+            f"Commissioni e slippage si sono mangiati {_euro(costi)}, cioè più di metà di quanto "
+            "la strategia aveva guadagnato prima dei costi: opera troppo spesso."
+        )
+
+    return avvisi
+
+
+def _euro(valore: float) -> str:
+    """Importo in euro, senza decimali: qui i centesimi sono solo rumore."""
+    return f"{valore:,.0f} €".replace(",", ".")
 
 
 def build_summary_cards(summary: dict[str, object]) -> list[dict[str, object]]:
@@ -787,25 +938,25 @@ def build_live_comparison_cards(
 
     return [
         {
-            "label": "Guadagno vs buy & hold",
+            "label": "Differenza con comprare e basta",
             "value": f"{delta:+.2f}%",
-            "hint": f"Strategia {preview_return:+.2f}% · B&H {benchmark_return:+.2f}%",
+            "hint": f"strategia {preview_return:+.2f}% · comprando e basta {benchmark_return:+.2f}%",
             "tone": _delta_tone(delta),
         },
         {
-            "label": "Sharpe ratio",
+            "label": "Guadagno rispetto al rischio",
             "value": sharpe_str,
-            "hint": "Rendimento / rischio (annualizzato)",
+            "hint": "sopra 1 è buono (in gergo: Sharpe)",
             "tone": "neutral",
         },
         {
-            "label": "Max drawdown",
+            "label": "Il calo peggiore",
             "value": f"{preview_drawdown:.2f}%",
-            "hint": "",
+            "hint": "quanto è sceso dal punto più alto",
             "tone": "neutral",
         },
         {
-            "label": "Fee pagate",
+            "label": "Commissioni pagate",
             "value": _format_number_metric(preview_fees),
             "hint": "",
             "tone": "neutral",
@@ -853,76 +1004,76 @@ def build_result_validation_snapshot(
     file_benchmark_equity = _last_series_value(equity_curve.get("benchmark_equity"))
 
     trade_count_check = _build_consistency_check(
-        label="Trade chiusi",
+        label="Operazioni concluse",
         summary_value=summary_trade_count,
         file_value=float(closed_count),
         summary_display=str(int(summary_trade_count)) if summary_trade_count is not None else "n/d",
         file_display=str(closed_count),
         tolerance=0.0,
-        ok_hint="Il conteggio operazioni del summary coincide con i trade chiusi nel file.",
-        mismatch_hint="Il numero trade del summary non coincide con i trade chiusi presenti nel file.",
+        ok_hint="Il numero di operazioni del riepilogo coincide con quelle elencate nel file.",
+        mismatch_hint="Il numero di operazioni del riepilogo non coincide con quelle elencate nel file.",
     )
     final_equity_check = _build_consistency_check(
-        label="Equity finale",
+        label="Quanto ti resta alla fine",
         summary_value=summary_final_equity,
         file_value=file_final_equity,
         summary_display=_format_number_metric(summary_final_equity),
         file_display=_format_number_metric(file_final_equity),
         tolerance=0.05,
-        ok_hint="L'equity finale del summary coincide con l'ultima equity della curva.",
-        mismatch_hint="L'equity finale del summary non coincide con l'ultima equity della curva.",
+        ok_hint="La cifra finale del riepilogo coincide con l'ultimo punto dell'andamento salvato.",
+        mismatch_hint="La cifra finale del riepilogo non coincide con l'ultimo punto dell'andamento salvato.",
     )
     benchmark_equity_check = _build_consistency_check(
-        label="Buy & hold finale",
+        label="Comprando e basta",
         summary_value=summary_benchmark_equity,
         file_value=file_benchmark_equity,
         summary_display=_format_number_metric(summary_benchmark_equity),
         file_display=_format_number_metric(file_benchmark_equity),
         tolerance=0.05,
-        ok_hint="Il buy & hold del summary coincide con l'ultima equity benchmark.",
-        mismatch_hint="Il buy & hold del summary non coincide con l'ultima equity benchmark.",
+        ok_hint="Il confronto col comprare-e-tenere coincide fra riepilogo e andamento salvato.",
+        mismatch_hint="Il confronto col comprare-e-tenere non coincide fra riepilogo e andamento salvato.",
     )
 
     checks = [trade_count_check, final_equity_check, benchmark_equity_check]
     mismatch_count = sum(1 for check in checks if check["status_class"] == "warning")
     overall_check = {
-        "label": "Verdetto interno",
+        "label": "Controllo dei conti",
         "status_label": "OK" if mismatch_count == 0 else "ATTENZIONE",
         "status_class": "positive" if mismatch_count == 0 else "warning",
-        "value": f"{len(checks) - mismatch_count}/{len(checks)} controlli coerenti",
+        "value": f"{len(checks) - mismatch_count} su {len(checks)} tornano",
         "hint": (
-            "Summary, curva equity e trade file raccontano la stessa storia."
+            "I tre file salvati (riepilogo, andamento e operazioni) raccontano la stessa storia."
             if mismatch_count == 0
-            else "Almeno un controllo non torna: confronta summary, equity curve e trade file prima di fidarti del risultato."
+            else "Almeno un conto non torna fra i file salvati: meglio non fidarsi di questo risultato."
         ),
     }
 
     cards = [
         {
-            "label": "Operazioni chiuse",
+            "label": "Operazioni concluse",
             "value": str(closed_count),
-            "hint": f"Aperte {open_count}.",
+            "hint": f"Ancora aperte a fine periodo: {open_count}.",
             "tone": "neutral",
         },
         {
-            "label": "Win rate",
+            "label": "Operazioni chiuse in guadagno",
             "value": _format_percent_metric(win_rate),
-            "hint": f"{win_count} win · {loss_count} loss · {flat_count} flat.",
+            "hint": f"{win_count} in guadagno · {loss_count} in perdita · {flat_count} in pari.",
             "tone": _delta_tone((win_rate or 0) - 50) if win_rate is not None else "neutral",
         },
         {
-            "label": "PnL medio / trade",
+            "label": "Risultato medio per operazione",
             "value": _format_percent_metric(avg_trade, signed=True),
             "hint": (
-                f"Best {_format_percent_metric(best_trade, signed=True)} · "
-                f"Worst {_format_percent_metric(worst_trade, signed=True)}."
+                f"La migliore {_format_percent_metric(best_trade, signed=True)} · "
+                f"la peggiore {_format_percent_metric(worst_trade, signed=True)}."
             ),
             "tone": _delta_tone(avg_trade),
         },
         {
-            "label": "Durata media",
+            "label": "Durata media di un'operazione",
             "value": _format_duration_from_minutes(avg_duration_minutes),
-            "hint": f"Mediana {_format_duration_from_minutes(median_duration_minutes)}.",
+            "hint": f"Metà sono durate meno di {_format_duration_from_minutes(median_duration_minutes)}.",
             "tone": "neutral",
         },
     ]
@@ -1389,6 +1540,9 @@ def _build_chart_window_context(
         "subtitle": subtitle,
         "metadata": metadata,
         "summary": summary,
+        # Il verdetto in lingua semplice: e' la prima cosa che si legge nella
+        # pagina, prima del grafico e delle metriche.
+        "verdetto": build_plain_verdict(summary, barre=len(equity_curve)),
         "market_snapshot": build_market_snapshot(equity_curve),
         "layers": build_chart_layers(payload),
         "summary_cards": build_summary_cards(summary),
