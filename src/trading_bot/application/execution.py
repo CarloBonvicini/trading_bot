@@ -57,6 +57,7 @@ def build_backtest_result(
         tp_pct=backtest_request.tp_pct,
         sizing_method=backtest_request.sizing_method,
         sizing_param=backtest_request.sizing_param,
+        flat_at_close=backtest_request.flat_at_close,
     )
 
 

@@ -94,6 +94,7 @@ def run_multi_market_search(
     end: str = "",
     strategy_ids: list[str] | None = None,
     consenti_short: bool = False,
+    flat_at_close: bool = False,
     download_data: Callable[..., pd.DataFrame] = download_price_data,
     progress_callback: ProgressCallback | None = None,
     max_workers: int | None = None,
@@ -169,7 +170,8 @@ def run_multi_market_search(
                 data=data, symbol=symbol, interval=interval,
                 initial_capital=initial_capital, fee_bps=fee_bps,
                 slippage_bps=slippage_bps, scan_mode=scan_mode, strategy_ids=strategy_ids, progress_callback=inner_progress,
-                consenti_short=consenti_short, max_workers=max_workers,
+                consenti_short=consenti_short, flat_at_close=flat_at_close,
+                max_workers=max_workers,
                 precomputed_rows=righe_salvate or None,
                 benchmark_return_pct=float(salvate.get("benchmark_return_pct", 0.0)),
                 on_row=_riga_completata,
@@ -232,6 +234,7 @@ def run_multi_market_search(
             "initial_capital": float(initial_capital),
             "fee_bps": float(fee_bps),
             "slippage_bps": float(slippage_bps),
+            "flat_at_close": bool(flat_at_close),
         },
     )
 

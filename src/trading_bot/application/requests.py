@@ -99,6 +99,10 @@ class BacktestRequest:
     # visto a schermo. Default 0 perche' dipende dal mercato e dalla size, e un
     # valore inventato renderebbe i risultati piu' credibili di quanto sono.
     slippage_bps: float = 0.0
+    # Chiude tutte le posizioni prima della chiusura di giornata: vale solo
+    # sull'intraday, dove tenere una posizione la notte espone al salto di
+    # prezzo fra una seduta e l'altra.
+    flat_at_close: bool = False
     parameters: dict[str, int | float] = field(default_factory=dict)
     rules: tuple[StrategyRuleSelection, ...] = field(default_factory=tuple)
     groups: tuple[dict[str, object], ...] = field(default_factory=tuple)
@@ -178,6 +182,7 @@ class BacktestRequest:
             sizing_method = "full"
         sizing_param = float(_text_value(raw, "sizing_param", "100") or "100")
         consenti_short = flag_value(raw, "consenti_short")
+        flat_at_close = flag_value(raw, "flat_at_close")
 
         return cls(
             symbol=symbol,
@@ -200,6 +205,7 @@ class BacktestRequest:
             sizing_method=sizing_method,
             sizing_param=sizing_param,
             consenti_short=consenti_short,
+            flat_at_close=flat_at_close,
         )
 
     @property
@@ -274,6 +280,7 @@ class BacktestRequest:
             "sizing_param": self.sizing_param,
             "consenti_short": self.consenti_short,
             "consenti_short": self.consenti_short,
+            "flat_at_close": self.flat_at_close,
             "parameters": self.strategy_parameters(),
         }
 

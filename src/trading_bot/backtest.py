@@ -71,6 +71,29 @@ def infer_periods_per_year(index: pd.Index) -> float:
     return float(TRADING_DAYS_PER_YEAR) / giorni_borsa_per_barra
 
 
+def serie_intraday(index: pd.Index) -> bool:
+    """Vero se nello stesso giorno ci sono più barre (5m, 1h...).
+
+    Serve a non applicare regole intraday a una serie giornaliera, dove ogni
+    barra è già l'ultima della sua giornata.
+    """
+    if not isinstance(index, pd.DatetimeIndex) or len(index) < 2:
+        return False
+    giorni = index.normalize().nunique()
+    if giorni <= 0:
+        return False
+    return (len(index) / giorni) >= _SOGLIA_INTRADAY
+
+
+def _prima_barra_del_giorno(index: pd.DatetimeIndex) -> np.ndarray:
+    """Maschera True sulla prima barra di ogni giornata di contrattazione."""
+    giorni = index.normalize().to_numpy()
+    prima = np.empty(len(giorni), dtype=bool)
+    prima[0] = True
+    prima[1:] = giorni[1:] != giorni[:-1]
+    return prima
+
+
 def apply_sl_tp(
     data: pd.DataFrame,
     position: pd.Series,
@@ -218,6 +241,7 @@ def run_backtest(
     tp_pct: float | None = None,
     sizing_method: str = SIZING_FULL,
     sizing_param: float = 100.0,
+    flat_at_close: bool = False,
 ) -> BacktestResult:
     if "close" not in data.columns:
         raise ValueError("The input data must contain a 'close' column.")
@@ -243,6 +267,16 @@ def run_backtest(
     # IMPORTANT: SL/TP lavora sulla posizione a verso pieno (-1/0/+1) PRIMA del
     # sizing, così possiamo distinguere chiaramente trade reali da variazioni
     # di sizing (vol_target ecc.) ai fini del tracking trade.
+    # Niente posizioni tenute da un giorno all'altro: la prima barra di ogni
+    # giornata parte piatta, cioè si è chiuso tutto alla chiusura precedente.
+    # Su una serie giornaliera la regola non ha senso (ogni barra è già l'ultima
+    # della sua giornata) e viene ignorata invece di azzerare ogni posizione.
+    eod_mask = pd.Series(False, index=data.index)
+    if flat_at_close and serie_intraday(data.index):
+        prima_del_giorno = pd.Series(_prima_barra_del_giorno(data.index), index=data.index)
+        eod_mask = prima_del_giorno & (executed_position != 0.0)
+        executed_position = executed_position.where(~prima_del_giorno, 0.0)
+
     executed_position, sl_tp_mask = apply_sl_tp(data, executed_position, sl_pct, tp_pct)
 
     daily_returns = close.pct_change().fillna(0.0)
@@ -285,6 +319,8 @@ def run_backtest(
         executed_position.iloc[barra_rovina + 1:] = 0.0
         sl_tp_mask = sl_tp_mask.copy()
         sl_tp_mask.iloc[barra_rovina + 1:] = False
+        eod_mask = eod_mask.copy()
+        eod_mask.iloc[barra_rovina + 1:] = False
         conti = _conti(executed_position)
 
     binary_position = executed_position
@@ -323,6 +359,7 @@ def run_backtest(
             "position": executed_position,
             "binary_position": binary_position,
             "sl_tp_exit": sl_tp_mask.astype(int),
+            "end_of_day_exit": eod_mask.astype(int),
             "market_return": daily_returns,
             "gross_strategy_return": gross_strategy_return,
             "strategy_return": strategy_returns,
@@ -341,7 +378,9 @@ def run_backtest(
 
     # Trade tracking basato sulla posizione binaria (0/1): le variazioni di
     # sizing intra-trade non vengono contate come ingressi/uscite separati.
-    trades = _build_trades(close=close, binary_position=binary_position, sl_tp_mask=sl_tp_mask)
+    trades = _build_trades(
+        close=close, binary_position=binary_position, sl_tp_mask=sl_tp_mask, eod_mask=eod_mask,
+    )
     summary = _build_summary(
         equity_curve=equity_curve,
         trades=trades,
@@ -449,6 +488,11 @@ def _build_summary(
         "avg_loss_pct": trade_stats["avg_loss_pct"],
         "expectancy_pct": trade_stats["expectancy_pct"],
         "sl_tp_exit_count": int(equity_curve["sl_tp_exit"].sum()) if "sl_tp_exit" in equity_curve.columns else 0,
+        "end_of_day_exit_count": (
+            int(equity_curve["end_of_day_exit"].sum())
+            if "end_of_day_exit" in equity_curve.columns
+            else 0
+        ),
         # Valore assoluto: senza, una strategia sempre a mercato che alterna
         # rialzo e ribasso risulterebbe ferma (i due versi si annullano).
         "exposure_pct": round(float(equity_curve["position"].abs().mean()) * 100, 2),
@@ -597,6 +641,7 @@ def _build_trades(
     close: pd.Series,
     binary_position: pd.Series,
     sl_tp_mask: pd.Series | None = None,
+    eod_mask: pd.Series | None = None,
 ) -> pd.DataFrame:
     """Estrae la lista trade dalla posizione a verso pieno (-1 / 0 / +1).
 
@@ -617,6 +662,9 @@ def _build_trades(
     sl_tp_set: set = set()
     if sl_tp_mask is not None:
         sl_tp_set = set(sl_tp_mask[sl_tp_mask].index)
+    eod_set: set = set()
+    if eod_mask is not None:
+        eod_set = set(eod_mask[eod_mask].index)
 
     trades: list[dict[str, object]] = []
     verso_aperto = 0.0
@@ -639,7 +687,7 @@ def _build_trades(
                 "exit_price": round(exit_price, 4) if chiuso else "",
                 "pnl_pct": round(pnl_pct, 2) if pnl_pct is not None else "",
                 "holding_days": int((exit_date - entry_date).days) if chiuso else "",
-                "exit_reason": ("sl_tp" if exit_date in sl_tp_set else "segnale") if chiuso else "",
+                "exit_reason": _motivo_uscita(exit_date, sl_tp_set, eod_set) if chiuso else "",
                 "direction": DIREZIONE_LONG if verso_aperto > 0 else DIREZIONE_SHORT,
             }
         )
@@ -658,6 +706,15 @@ def _build_trades(
         _chiudi(None)  # trade ancora aperto a fine serie
 
     return pd.DataFrame(trades)
+
+
+def _motivo_uscita(exit_date, sl_tp_set: set, eod_set: set) -> str:
+    """Perché l'operazione si è chiusa: soglia, fine giornata o segnale."""
+    if exit_date in sl_tp_set:
+        return "sl_tp"
+    if exit_date in eod_set:
+        return "fine_giornata"
+    return "segnale"
 
 
 def _format_trade_timestamp(timestamp: pd.Timestamp) -> str:
