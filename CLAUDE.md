@@ -44,6 +44,11 @@ python -m pytest tests/test_backtest.py::nome_funzione
 - **I dati sintetici vengono da `conftest.py`** (`mercato_sintetico`,
   `ohlc_da_chiusure`, `mercato_piatto`): non ridichiarare generatori nei singoli
   file di test.
+- **La rete di sicurezza sui segnali** (`tests/test_impronte_strategie.py`) congela il
+  comportamento di tutte le strategie su tutta la griglia: se rifattorizzi gli indicatori
+  e un solo segnale cambia, il test fallisce e dice dove. Le impronte si rigenerano solo
+  dopo una modifica **voluta**, con `python tests/test_impronte_strategie.py --rigenera`:
+  se ti trovi a rigenerarle per far passare il test, fermati.
 - **`@pytest.mark.lento`** per i test che eseguono ricerche vere, così la suite
   di default resta sotto i cinque secondi. La CI li esegue comunque.
 

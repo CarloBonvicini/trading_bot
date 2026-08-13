@@ -1,0 +1,124 @@
+{
+  "_nota": "Impronte dei segnali prodotti dalle strategie sul mercato di riferimento. Rigenerare solo dopo una modifica VOLUTA del comportamento.",
+  "_mercato": "d9ee7331aada3280",
+  "adx_trend|rialzo": {
+    "combinazioni": 12,
+    "impronta": "617a96bcdbf0e6ad"
+  },
+  "adx_trend|ribasso": {
+    "combinazioni": 12,
+    "impronta": "8bf4bf844c4f9802"
+  },
+  "bollinger_reversion|rialzo": {
+    "combinazioni": 20,
+    "impronta": "51e8d7d8944d26a1"
+  },
+  "bollinger_reversion|ribasso": {
+    "combinazioni": 20,
+    "impronta": "bf9ec76a09e7a6c4"
+  },
+  "cci_reversion|rialzo": {
+    "combinazioni": 27,
+    "impronta": "298caeac174b3b8e"
+  },
+  "cci_reversion|ribasso": {
+    "combinazioni": 27,
+    "impronta": "56b6181ceaf34dbf"
+  },
+  "donchian_breakout|rialzo": {
+    "combinazioni": 9,
+    "impronta": "3c4ee5eb02421dff"
+  },
+  "donchian_breakout|ribasso": {
+    "combinazioni": 9,
+    "impronta": "cd446284eadad395"
+  },
+  "ema_cross|rialzo": {
+    "combinazioni": 90,
+    "impronta": "0ad475d138e576df"
+  },
+  "ema_cross|ribasso": {
+    "combinazioni": 90,
+    "impronta": "e0e2fde4af24e747"
+  },
+  "keltner_reversion|rialzo": {
+    "combinazioni": 20,
+    "impronta": "d5ff883141646f54"
+  },
+  "keltner_reversion|ribasso": {
+    "combinazioni": 20,
+    "impronta": "a08349112137be73"
+  },
+  "macd_trend|rialzo": {
+    "combinazioni": 27,
+    "impronta": "ef6f83250b7ae9d4"
+  },
+  "macd_trend|ribasso": {
+    "combinazioni": 27,
+    "impronta": "613d3fbed03df7ee"
+  },
+  "mfi_reversion|rialzo": {
+    "combinazioni": 64,
+    "impronta": "a654c7aa0b577172"
+  },
+  "mfi_reversion|ribasso": {
+    "combinazioni": 64,
+    "impronta": "55887edd85d0f7a8"
+  },
+  "obv_trend|rialzo": {
+    "combinazioni": 15,
+    "impronta": "1e690ff926b9030a"
+  },
+  "obv_trend|ribasso": {
+    "combinazioni": 15,
+    "impronta": "4796e0d06bdf3775"
+  },
+  "parabolic_sar|rialzo": {
+    "combinazioni": 12,
+    "impronta": "4f919cc7849487dc"
+  },
+  "parabolic_sar|ribasso": {
+    "combinazioni": 12,
+    "impronta": "cd3ad9823c12a156"
+  },
+  "roc_momentum|rialzo": {
+    "combinazioni": 25,
+    "impronta": "c61131862f99ce81"
+  },
+  "roc_momentum|ribasso": {
+    "combinazioni": 25,
+    "impronta": "9a6e39c5c6da9865"
+  },
+  "rsi_mean_reversion|rialzo": {
+    "combinazioni": 128,
+    "impronta": "a292a92428e9a376"
+  },
+  "rsi_mean_reversion|ribasso": {
+    "combinazioni": 128,
+    "impronta": "53b4fd4354876887"
+  },
+  "sma_cross|rialzo": {
+    "combinazioni": 90,
+    "impronta": "a9ad1fa5de0a99cf"
+  },
+  "sma_cross|ribasso": {
+    "combinazioni": 90,
+    "impronta": "eab2dbe01627a582"
+  },
+  "stochastic_reversion|rialzo": {
+    "combinazioni": 27,
+    "impronta": "425b61faa2421ae0"
+  },
+  "stochastic_reversion|ribasso": {
+    "combinazioni": 27,
+    "impronta": "41d04517f6fbf5b8"
+  },
+  "williams_r_reversion|rialzo": {
+    "combinazioni": 27,
+    "impronta": "b6459bb2f175e283"
+  },
+  "williams_r_reversion|ribasso": {
+    "combinazioni": 27,
+    "impronta": "c6cd0bf90710851c"
+  }
+}
