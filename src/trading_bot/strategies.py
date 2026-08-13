@@ -792,6 +792,7 @@ STRATEGY_SPECS: dict[str, StrategySpec] = {
             StrategyParameter("periodo", "Finestra efficienza", "int", 10, minimum=2, step=1),
             StrategyParameter("veloce", "Costante veloce", "int", 2, minimum=1, step=1),
             StrategyParameter("lenta", "Costante lenta", "int", 30, minimum=3, step=1),
+            StrategyParameter("dosa", "Dosa secondo la convinzione", "int", 0, minimum=0, maximum=1, step=1),
         ),
     ),
     "fisher_reversion": StrategySpec(
@@ -808,16 +809,26 @@ STRATEGY_SPECS: dict[str, StrategySpec] = {
 
 def kama_trend(
     data: pd.DataFrame, periodo: int = 10, veloce: int = 2, lenta: int = 30,
-    consenti_short: bool = False,
+    dosa: int = 0, consenti_short: bool = False,
 ) -> pd.Series:
     """Segue la media adattiva: dentro quando il prezzo la supera, fuori quando la perde.
 
     A differenza di una media a periodo fisso, questa quasi si ferma quando il
     mercato zigzaga: il prezzo la attraversa molto meno spesso e si evitano gran
     parte dei falsi segnali che fanno pagare commissioni senza costrutto.
+
+    Con ``dosa`` attivo la strategia non entra sempre con tutto: impegna una
+    frazione di capitale pari all'efficienza del movimento. Quando il mercato va
+    dritto ci mette quasi tutto, quando è confuso resta quasi fuori — la stessa
+    misura che regola la velocità della media regola anche l'importo.
     """
     linea = indicatore("kama", data, periodo=periodo, veloce=veloce, lenta=lenta)
-    return _verso_da_confronto(data["close"].astype(float), linea, consenti_short)
+    convinzione = (
+        indicatore("efficienza", data, periodo=periodo) if dosa else None
+    )
+    return _verso_da_confronto(
+        data["close"].astype(float), linea, consenti_short, convinzione=convinzione
+    )
 
 
 def fisher_reversion(
@@ -1158,7 +1169,36 @@ def _segnale_speculare(
     )
 
 
-def _verso_da_confronto(sopra: pd.Series, sotto: pd.Series, consenti_short: bool) -> pd.Series:
+# Sotto questa convinzione non vale la pena entrare: si pagherebbero i costi di
+# un'operazione per tenere a mercato una frazione irrisoria di capitale.
+CONVINZIONE_MINIMA = 0.15
+
+
+def applica_convinzione(
+    verso: pd.Series, convinzione: pd.Series | None, minima: float = CONVINZIONE_MINIMA
+) -> pd.Series:
+    """Trasforma "da che parte sto" in "quanto ci metto".
+
+    Il verso vale -1, 0 o +1; la convinzione è un numero fra 0 e 1 che dice
+    quanto la strategia crede in quel momento. Il risultato è la frazione di
+    capitale da impegnare, col segno del verso.
+
+    Sotto la soglia minima si resta fuori invece di entrare con una frazione
+    irrisoria: l'operazione pagherebbe comunque commissioni e scarto di prezzo
+    per intero, e su quel capitale minuscolo il costo mangerebbe tutto.
+    """
+    if convinzione is None:
+        return verso
+
+    forza = convinzione.reindex(verso.index).fillna(0.0).clip(0.0, 1.0)
+    forza = forza.where(forza >= minima, 0.0)
+    return (verso * forza).rename("position")
+
+
+def _verso_da_confronto(
+    sopra: pd.Series, sotto: pd.Series, consenti_short: bool,
+    convinzione: pd.Series | None = None,
+) -> pd.Series:
     """Segnale per le strategie di tendenza costruite su un confronto.
 
     Rialzo quando la prima serie sta sopra la seconda; al ribasso il verso è
@@ -1166,6 +1206,8 @@ def _verso_da_confronto(sopra: pd.Series, sotto: pd.Series, consenti_short: bool
     esistono ancora, entrambi i confronti sono falsi e la posizione resta zero.
     """
     rialzo = (sopra > sotto).astype(float)
-    if not consenti_short:
-        return rialzo.rename("position")
-    return (rialzo - (sopra < sotto).astype(float)).rename("position")
+    if consenti_short:
+        verso = (rialzo - (sopra < sotto).astype(float)).rename("position")
+    else:
+        verso = rialzo.rename("position")
+    return applica_convinzione(verso, convinzione)
