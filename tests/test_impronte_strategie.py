@@ -53,8 +53,16 @@ def mercato_di_riferimento() -> pd.DataFrame:
     - due cicli sovrapposti, uno lungo e uno corto, per far scattare incroci e
       oscillatori a periodi diversi;
     - un crollo netto a metà, per i canali e le rotture;
-    - un tratto perfettamente piatto, dove massimo e minimo coincidono e i
-      denominatori vanno a zero.
+    - un tratto quasi fermo, con oscillazioni minime, per i regimi di calma.
+
+    Il tratto fermo è *quasi* fermo di proposito. Con un tratto perfettamente
+    piatto la deviazione standard su vent'anni di barre identiche vale zero, e
+    un confronto come "prezzo sotto la banda inferiore" diventa un pareggio
+    esatto che si ribalta con l'ultimo bit di arrotondamento: l'impronta
+    cambierebbe fra una versione di pandas e l'altra senza che nessuno abbia
+    toccato il codice. Il caso perfettamente piatto resta coperto dai test su
+    ``mercato_piatto``, che verificano che nulla si rompa — la verifica giusta
+    per un caso degenere, dove il segnale esatto non è definibile.
     """
     chiusure: list[float] = []
     for t in range(BARRE):
@@ -66,16 +74,20 @@ def mercato_di_riferimento() -> pd.DataFrame:
     # Crollo secco a due terzi della serie.
     for t in range(320, BARRE):
         chiusure[t] *= 0.88
-    # Tratto piatto: massimo uguale al minimo, denominatori a zero.
+    # Tratto quasi fermo: oscillazioni minime ma mai nulle, così nessun
+    # confronto finisce in pareggio esatto (vedi la nota qui sopra).
     for t in range(400, 420):
-        chiusure[t] = chiusure[399]
+        chiusure[t] = chiusure[399] * (1.0 + 0.0004 * math.sin(t / 3.0))
 
     indice = pd.date_range("2020-01-01", periods=BARRE, freq="D")
     close = pd.Series(chiusure, index=indice)
     # Ampiezza della barra variabile ma deterministica; sul tratto piatto anche
     # massimo e minimo collassano sulla chiusura.
     ampiezza = pd.Series(
-        [0.0 if 400 <= t < 420 else 0.004 + 0.003 * abs(math.sin(t / 9.0)) for t in range(BARRE)],
+        [
+            0.0004 if 400 <= t < 420 else 0.004 + 0.003 * abs(math.sin(t / 9.0))
+            for t in range(BARRE)
+        ],
         index=indice,
     )
     volume = pd.Series(
@@ -193,16 +205,34 @@ def test_il_mercato_di_riferimento_e_sempre_lo_stesso() -> None:
 
 
 def test_il_mercato_contiene_i_casi_difficili() -> None:
-    """La rete serve solo se il mercato tocca i punti in cui gli indicatori si
-    rompono: tratto piatto, crollo, cicli sovrapposti."""
+    """La rete serve solo se il mercato tocca i punti in cui gli indicatori
+    faticano: regime di calma, crollo secco, cicli sovrapposti."""
     data = mercato_di_riferimento()
 
-    piatto = data.iloc[400:420]
-    assert (piatto["high"] == piatto["low"]).all(), "manca il tratto a massimo uguale al minimo"
-    assert piatto["close"].nunique() == 1, "il tratto piatto non è piatto"
     variazioni = data["close"].pct_change()
+    calmo = variazioni.iloc[401:420].abs()
+    assert calmo.max() < 0.001, "manca il tratto di calma"
     assert variazioni.min() < -0.10, "manca il crollo secco"
     assert (variazioni.iloc[1:320] > 0).any() and (variazioni.iloc[1:320] < 0).any()
+
+
+def test_nessun_confronto_finisce_in_pareggio_esatto() -> None:
+    """La lezione della prima versione di questa rete.
+
+    Il mercato aveva un tratto perfettamente piatto: lì la deviazione standard
+    vale zero, il confronto con la banda di Bollinger diventa un pareggio esatto
+    e il risultato dipende dall'ultimo bit di arrotondamento. In locale passava,
+    su tre ambienti di CI falliva. Una rete che suona senza motivo è peggio di
+    nessuna rete, quindi la condizione va tenuta lontana per costruzione.
+    """
+    close = mercato_di_riferimento()["close"]
+    for periodo in (10, 15, 20, 25, 30):
+        deviazione = close.rolling(periodo, min_periods=periodo).std(ddof=0).dropna()
+        assert (deviazione > 1e-6).all(), (
+            f"con periodo {periodo} la deviazione standard tocca lo zero: "
+            "i confronti con le bande diventano pareggi esatti e l'impronta "
+            "cambia da sola fra una versione di pandas e l'altra."
+        )
 
 
 @pytest.mark.parametrize("strategy_id", sorted(STRATEGY_SPECS))
