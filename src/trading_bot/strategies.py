@@ -6,6 +6,8 @@ from typing import Mapping
 import numpy as np
 import pandas as pd
 
+from trading_bot.features import indicatore, registra
+
 # Divisioni protette: si sostituisce lo zero al denominatore con NaN, non con
 # pd.NA. Con pd.NA la serie diventa di tipo "object" e da lì in poi ogni
 # operazione si porta dietro il problema: fillna avvisa che il comportamento
@@ -104,7 +106,18 @@ def ema_crossover(
     return _verso_da_confronto(fast_ema, slow_ema, consenti_short)
 
 
+@registra("rsi")
+def _rsi_dai_dati(data: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Voce del registro: prende il DataFrame, come tutti gli indicatori."""
+    return relative_strength_index(data["close"].astype(float), period=period)
+
+
 def relative_strength_index(close: pd.Series, period: int = 14) -> pd.Series:
+    """Calcolo vero dell'RSI, su una serie di chiusure.
+
+    Resta esposto con questa firma perché lo usano il laboratorio grafico e i
+    test: il registro ci si appoggia sopra invece di duplicarlo.
+    """
     if period <= 0:
         raise ValueError("RSI period deve essere positivo.")
 
@@ -128,7 +141,7 @@ def rsi_mean_reversion(
     if lower >= upper:
         raise ValueError("RSI lower deve essere piu' piccolo di RSI upper.")
 
-    rsi = relative_strength_index(data["close"].astype(float), period=period)
+    rsi = indicatore("rsi", data, period=period)
     return _segnale_speculare(
         ipervenduto=rsi <= lower, ipercomprato=rsi >= upper,
         index=data.index, consenti_short=consenti_short,
