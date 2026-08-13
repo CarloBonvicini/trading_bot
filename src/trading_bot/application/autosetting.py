@@ -101,6 +101,15 @@ AUTOSETTING_GRIDS: dict[str, dict[str, list]] = {
         "step": [0.01, 0.02, 0.03, 0.05],
         "max_step": [0.10, 0.20, 0.30],
     },
+    "kama_trend": {
+        "periodo": [5, 10, 15, 20, 30],
+        "veloce": [2, 3, 5],
+        "lenta": [20, 30, 40],
+    },
+    "fisher_reversion": {
+        "periodo": [5, 9, 14, 20, 30],
+        "soglia": [1.0, 1.5, 2.0, 2.5],
+    },
 }
 
 AUTOSETTING_GRIDS_BY_MODE: dict[str, dict[str, dict[str, list]]] = {

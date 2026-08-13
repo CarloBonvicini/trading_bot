@@ -30,14 +30,16 @@ alla volta.
 from __future__ import annotations
 
 import contextvars
+import math
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
+import numpy as np
 import pandas as pd
 
 # nome dell'indicatore -> funzione che lo calcola
-INDICATORI: dict[str, Callable[..., pd.Series]] = {}
+INDICATORI: dict[str, Callable[..., pd.Series | pd.DataFrame]] = {}
 
 
 def registra(nome: str) -> Callable[[Callable[..., pd.Series]], Callable[..., pd.Series]]:
@@ -130,3 +132,113 @@ def indicatore(nome: str, dati: pd.DataFrame, **parametri: object) -> pd.Series:
     contesto._memoria[chiave] = valore
     contesto.calcoli += 1
     return valore
+
+
+# ── Indicatori adattivi ──────────────────────────────────────────────────────
+# La prima famiglia veramente diversa da quelle a catalogo. Una media mobile
+# classica ha un periodo fisso: scegli in anticipo se essere pronto o essere
+# calmo, e sbagli sempre a metà del tempo. Questi cambiano velocità da soli.
+
+
+@registra("efficienza")
+def efficienza_del_movimento(data: pd.DataFrame, periodo: int = 10) -> pd.Series:
+    """Quanto il prezzo si è mosso *verso una direzione* invece che avanti e indietro.
+
+    Si confrontano due misure sulle ultime ``periodo`` barre: quanto il prezzo
+    si è spostato da dove era partito (la distanza in linea d'aria) e quanta
+    strada ha fatto in tutto (la somma di ogni singolo movimento).
+
+    Se va dritto le due misure coincidono e il valore è vicino a 1; se
+    zigzaga tornando al punto di partenza la distanza è quasi zero mentre la
+    strada percorsa è tanta, e il valore scende verso 0. In gergo: efficiency
+    ratio di Kaufman.
+    """
+    close = data["close"].astype(float)
+    distanza = (close - close.shift(periodo)).abs()
+    strada = close.diff().abs().rolling(window=periodo, min_periods=periodo).sum()
+    return (distanza / strada.replace(0.0, np.nan)).fillna(0.0).clip(0.0, 1.0)
+
+
+@registra("kama")
+def kama(data: pd.DataFrame, periodo: int = 10, veloce: int = 2, lenta: int = 30) -> pd.Series:
+    """Media mobile che accelera nei tratti puliti e rallenta nel rumore.
+
+    Il problema di una media a periodo fisso è che il periodo giusto cambia col
+    mercato: corto per stare dietro a una tendenza, lungo per non farsi
+    scuotere dalle oscillazioni. Qui il periodo non si sceglie: si lascia
+    decidere all'efficienza del movimento, barra per barra.
+
+    Quando il prezzo va dritto la media insegue quasi subito; quando zigzaga
+    quasi si ferma, e le oscillazioni non la spostano. È come un'auto che
+    accelera in rettilineo e rallenta in curva, invece di andare sempre alla
+    stessa velocità. In gergo: KAMA, Kaufman Adaptive Moving Average (1995).
+    """
+    if periodo <= 1:
+        raise ValueError("Il periodo della KAMA deve essere maggiore di 1.")
+    if veloce >= lenta:
+        raise ValueError("La costante veloce deve essere più piccola di quella lenta.")
+
+    close = data["close"].astype(float)
+    efficienza = efficienza_del_movimento(data, periodo=periodo)
+    passo_veloce = 2.0 / (veloce + 1.0)
+    passo_lento = 2.0 / (lenta + 1.0)
+    # Quanto la media si sposta verso il prezzo a ogni barra: fra il passo lento
+    # e quello veloce, secondo l'efficienza. Al quadrato per rendere la frenata
+    # più decisa quando il movimento è confuso.
+    velocita = (efficienza * (passo_veloce - passo_lento) + passo_lento) ** 2
+
+    prezzi = close.to_numpy()
+    passi = velocita.to_numpy()
+    valori = np.full(len(prezzi), np.nan)
+    corrente = prezzi[0]
+    for i in range(len(prezzi)):
+        if i < periodo:
+            corrente = prezzi[i]
+            continue
+        corrente = corrente + passi[i] * (prezzi[i] - corrente)
+        valori[i] = corrente
+    return pd.Series(valori, index=close.index, name="kama")
+
+
+@registra("fisher")
+def fisher(data: pd.DataFrame, periodo: int = 10) -> pd.Series:
+    """Rende evidenti i punti di svolta, comprimendo il centro e allargando gli estremi.
+
+    I prezzi passano la maggior parte del tempo ammucchiati intorno alla media,
+    e un oscillatore normale li schiaccia tutti in mezzo: quando finalmente si
+    arriva a un estremo, il grafico lo mostra come una curva dolce e la svolta
+    si riconosce tardi.
+
+    Qui si prende la posizione del prezzo dentro il suo intervallo recente (da
+    -1 sul minimo a +1 sul massimo) e le si applica una trasformazione che vicino
+    allo zero lascia quasi tutto com'è, mentre vicino ai bordi allunga i valori
+    verso l'infinito. Il risultato è che gli estremi diventano picchi netti
+    invece di curve morbide. È una lente d'ingrandimento sui bordi. In gergo:
+    Fisher Transform di John Ehlers (2002).
+    """
+    if periodo <= 1:
+        raise ValueError("Il periodo del Fisher deve essere maggiore di 1.")
+
+    close = data["close"].astype(float)
+    massimo = data["high"].astype(float).rolling(window=periodo, min_periods=periodo).max()
+    minimo = data["low"].astype(float).rolling(window=periodo, min_periods=periodo).min()
+    ampiezza = (massimo - minimo).replace(0.0, np.nan)
+    # Posizione dentro l'intervallo, riportata fra -1 e +1.
+    posizione = (2.0 * ((close - minimo) / ampiezza - 0.5)).fillna(0.0)
+
+    valori_posizione = posizione.to_numpy()
+    risultato = np.full(len(valori_posizione), np.nan)
+    lisciata = 0.0
+    precedente = 0.0
+    for i in range(len(valori_posizione)):
+        if np.isnan(valori_posizione[i]):
+            continue
+        # Un filo di smorzamento: senza, il valore salta a ogni barra e la
+        # trasformazione amplifica anche il rumore.
+        lisciata = 0.33 * valori_posizione[i] + 0.67 * lisciata
+        # Lontano dai bordi per non finire a infinito.
+        limitata = min(max(lisciata, -0.999), 0.999)
+        trasformata = 0.5 * math.log((1.0 + limitata) / (1.0 - limitata))
+        precedente = trasformata + 0.5 * precedente
+        risultato[i] = precedente
+    return pd.Series(risultato, index=close.index, name="fisher")

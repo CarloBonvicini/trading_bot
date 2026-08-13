@@ -41,6 +41,22 @@
     "combinazioni": 90,
     "impronta": "3b8a1e9017333797"
   },
+  "fisher_reversion|rialzo": {
+    "combinazioni": 20,
+    "impronta": "518136a711911f29"
+  },
+  "fisher_reversion|ribasso": {
+    "combinazioni": 20,
+    "impronta": "f24fba410310e7f5"
+  },
+  "kama_trend|rialzo": {
+    "combinazioni": 45,
+    "impronta": "0a73b41229e9fe01"
+  },
+  "kama_trend|ribasso": {
+    "combinazioni": 45,
+    "impronta": "a7e85c2d344bdb2d"
+  },
   "keltner_reversion|rialzo": {
     "combinazioni": 20,
     "impronta": "d5ff883141646f54"
