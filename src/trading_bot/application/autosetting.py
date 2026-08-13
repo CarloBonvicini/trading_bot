@@ -105,6 +105,8 @@ AUTOSETTING_GRIDS: dict[str, dict[str, list]] = {
         "periodo": [5, 10, 15, 20, 30],
         "veloce": [2, 3, 5],
         "lenta": [20, 30, 40],
+        # 0 = dentro con tutto, 1 = importo proporzionale alla convinzione.
+        "dosa": [0, 1],
     },
     "fisher_reversion": {
         "periodo": [5, 9, 14, 20, 30],

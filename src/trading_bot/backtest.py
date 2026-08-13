@@ -662,8 +662,14 @@ def _build_trades(
 
     Il P&L segue il verso: al rialzo si guadagna se il prezzo sale, al ribasso
     se scende.
+
+    Conta il **verso**, non la dimensione: una strategia che entra convinta a
+    metà è comunque a mercato. Arrotondando, una posizione di 0,4 diventava zero
+    e l'operazione spariva dal registro pur avendo capitale a rischio — il
+    conteggio diceva "nessuna operazione" mentre l'equity si muoveva, e la
+    ricerca scartava la strategia credendola inerte.
     """
-    verso = binary_position.fillna(0.0).round().clip(lower=-1, upper=1)
+    verso = np.sign(binary_position.fillna(0.0))
     versi = verso.to_numpy(dtype=float)
     prezzi = close.to_numpy(dtype=float)
     indice = verso.index
