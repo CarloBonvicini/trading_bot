@@ -45,6 +45,7 @@ from trading_bot.application.prova_del_caso import (
     valuta_contro_il_caso,
 )
 from trading_bot.backtest import run_backtest
+from trading_bot.features import contesto_indicatori
 from trading_bot.strategies import (
     STRATEGY_SPECS,
     build_strategy_signal,
@@ -936,43 +937,45 @@ def _optimize_on_development(
     best_score = float("-inf")
     best_attiva = False
 
-    for combo in itertools.product(*values):
-        params = dict(zip(names, combo))
-        # I vincoli si controllano prima: le combinazioni impossibili non
-        # costano un backtest e quindi non entrano nel conteggio mostrato.
-        try:
-            validate_strategy_parameters(strategy_id, params)
-        except ValueError:
-            continue
-        try:
-            signal = build_strategy_signal(
-                strategy_id=strategy_id, data=data, parameters=params,
-                consenti_short=consenti_short,
-            )
-            result = run_backtest(
-                data=data, signal=signal, initial_capital=initial_capital,
-                fee_bps=fee_bps, slippage_bps=slippage_bps, flat_at_close=flat_at_close,
-            )
-        except Exception:
-            continue
-        finally:
-            if on_combination is not None:
-                on_combination()
-        raw = float(result.summary.get(optimize_by, 0.0))
-        score = -raw if ascending else raw
-        attiva = int(result.summary.get("trade_count", 0)) >= MIN_TRADE_PER_SCELTA
+    contesto = contesto_indicatori(data)
+    with contesto:
+      for combo in itertools.product(*values):
+          params = dict(zip(names, combo))
+          # I vincoli si controllano prima: le combinazioni impossibili non
+          # costano un backtest e quindi non entrano nel conteggio mostrato.
+          try:
+              validate_strategy_parameters(strategy_id, params)
+          except ValueError:
+              continue
+          try:
+              signal = build_strategy_signal(
+                  strategy_id=strategy_id, data=data, parameters=params,
+                  consenti_short=consenti_short,
+              )
+              result = run_backtest(
+                  data=data, signal=signal, initial_capital=initial_capital,
+                  fee_bps=fee_bps, slippage_bps=slippage_bps, flat_at_close=flat_at_close,
+              )
+          except Exception:
+              continue
+          finally:
+              if on_combination is not None:
+                  on_combination()
+          raw = float(result.summary.get(optimize_by, 0.0))
+          score = -raw if ascending else raw
+          attiva = int(result.summary.get("trade_count", 0)) >= MIN_TRADE_PER_SCELTA
 
-        if attiva and not best_attiva:
-            migliore = True
-        elif attiva == best_attiva:
-            migliore = score > best_score
-        else:
-            migliore = False
+          if attiva and not best_attiva:
+              migliore = True
+          elif attiva == best_attiva:
+              migliore = score > best_score
+          else:
+              migliore = False
 
-        if migliore:
-            best_score = score
-            best_params = params
-            best_attiva = attiva
+          if migliore:
+              best_score = score
+              best_params = params
+              best_attiva = attiva
     return best_params
 
 

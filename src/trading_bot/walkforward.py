@@ -25,6 +25,7 @@ import pandas as pd
 
 from trading_bot.application.autosetting import AUTOSETTING_GRIDS, AUTOSETTING_GRIDS_BY_MODE
 from trading_bot.backtest import SIZING_FULL, run_backtest
+from trading_bot.features import contesto_indicatori
 from trading_bot.strategies import STRATEGY_SPECS, build_strategy_signal, validate_strategy_parameters
 
 TRADING_DAYS_PER_YEAR = 252
@@ -124,48 +125,51 @@ def run_walk_forward(
 
     selezioni = [_SelezioneFinestra(param_grid[0]) for _ in limiti]
 
-    for params in param_grid:
-        try:
-            # Warm-up: il segnale nasce sull'intera serie e viene poi ritagliato.
-            signal_full = build_strategy_signal(
-                strategy_id=strategy_id, data=data, parameters=params,
-                consenti_short=consenti_short,
-            )
-        except Exception:
-            # La combinazione è inutilizzabile: conta comunque come provata su
-            # ogni finestra, altrimenti l'avanzamento mostrato non tornerebbe.
-            if on_combination is not None:
-                for _ in limiti:
-                    on_combination()
-            continue
+    # Tutte le combinazioni girano sulla stessa identica serie: gli indicatori
+    # che condividono i parametri si calcolano una volta sola.
+    with contesto_indicatori(data):
+      for params in param_grid:
+          try:
+              # Warm-up: il segnale nasce sull'intera serie e viene poi ritagliato.
+              signal_full = build_strategy_signal(
+                  strategy_id=strategy_id, data=data, parameters=params,
+                  consenti_short=consenti_short,
+              )
+          except Exception:
+              # La combinazione è inutilizzabile: conta comunque come provata su
+              # ogni finestra, altrimenti l'avanzamento mostrato non tornerebbe.
+              if on_combination is not None:
+                  for _ in limiti:
+                      on_combination()
+              continue
 
-        for selezione, (start_i, split_i, end_i) in zip(selezioni, limiti):
-            is_data = data.iloc[start_i:split_i]
-            try:
-                result = run_backtest(
-                    data=is_data,
-                    signal=signal_full.iloc[start_i:split_i],
-                    initial_capital=initial_capital,
-                    fee_bps=fee_bps,
-                    slippage_bps=slippage_bps,
-                    sl_pct=sl_pct,
-                    tp_pct=tp_pct,
-                    sizing_method=sizing_method,
-                    sizing_param=sizing_param,
-                    flat_at_close=flat_at_close,
-                )
-            except Exception:
-                continue
-            finally:
-                if on_combination is not None:
-                    on_combination()
+          for selezione, (start_i, split_i, end_i) in zip(selezioni, limiti):
+              is_data = data.iloc[start_i:split_i]
+              try:
+                  result = run_backtest(
+                      data=is_data,
+                      signal=signal_full.iloc[start_i:split_i],
+                      initial_capital=initial_capital,
+                      fee_bps=fee_bps,
+                      slippage_bps=slippage_bps,
+                      sl_pct=sl_pct,
+                      tp_pct=tp_pct,
+                      sizing_method=sizing_method,
+                      sizing_param=sizing_param,
+                      flat_at_close=flat_at_close,
+                  )
+              except Exception:
+                  continue
+              finally:
+                  if on_combination is not None:
+                      on_combination()
 
-            selezione.considera(
-                params=params,
-                summary=result.summary,
-                optimize_by=optimize_by,
-                oos_signal=signal_full.iloc[split_i:end_i],
-            )
+              selezione.considera(
+                  params=params,
+                  summary=result.summary,
+                  optimize_by=optimize_by,
+                  oos_signal=signal_full.iloc[split_i:end_i],
+              )
 
     windows: list[WalkForwardWindow] = []
     oos_curves: list[pd.DataFrame] = []
