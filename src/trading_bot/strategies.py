@@ -78,6 +78,67 @@ def strategy_field_name(strategy_id: str, parameter_name: str) -> str:
     return f"{strategy_id}__{parameter_name}"
 
 
+# ── Mattoni condivisi ────────────────────────────────────────────────────────
+# Erano ricalcolati dentro ogni strategia che li usava. Qui diventano voci del
+# registro, così due strategie che chiedono la stessa media sugli stessi dati la
+# calcolano una volta sola.
+
+
+@registra("sma")
+def media_semplice(data: pd.DataFrame, periodo: int) -> pd.Series:
+    """Media mobile semplice delle chiusure."""
+    return data["close"].astype(float).rolling(window=periodo, min_periods=periodo).mean()
+
+
+@registra("ema")
+def media_esponenziale(data: pd.DataFrame, periodo: int) -> pd.Series:
+    """Media mobile esponenziale delle chiusure, senza correzione iniziale."""
+    return (
+        data["close"].astype(float)
+        .ewm(span=periodo, adjust=False, min_periods=periodo)
+        .mean()
+    )
+
+
+@registra("deviazione")
+def deviazione_standard(data: pd.DataFrame, periodo: int) -> pd.Series:
+    """Quanto le chiusure si discostano dalla loro media, nella finestra."""
+    return data["close"].astype(float).rolling(window=periodo, min_periods=periodo).std(ddof=0)
+
+
+@registra("massimo_mobile")
+def massimo_mobile(data: pd.DataFrame, periodo: int) -> pd.Series:
+    """Il massimo toccato nelle ultime ``periodo`` barre."""
+    return data["high"].astype(float).rolling(window=periodo, min_periods=periodo).max()
+
+
+@registra("minimo_mobile")
+def minimo_mobile(data: pd.DataFrame, periodo: int) -> pd.Series:
+    """Il minimo toccato nelle ultime ``periodo`` barre."""
+    return data["low"].astype(float).rolling(window=periodo, min_periods=periodo).min()
+
+
+@registra("true_range")
+def true_range(data: pd.DataFrame) -> pd.Series:
+    """Quanto si è mosso davvero il prezzo in una barra.
+
+    L'escursione fra massimo e minimo non basta: se il prezzo apre lontano dalla
+    chiusura precedente, quel salto fa parte del movimento. Si prende il più
+    ampio dei tre modi di misurarlo.
+    """
+    high = data["high"].astype(float)
+    low = data["low"].astype(float)
+    chiusura_precedente = data["close"].astype(float).shift(1)
+    return pd.concat(
+        [
+            high - low,
+            (high - chiusura_precedente).abs(),
+            (low - chiusura_precedente).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
+
+
 def sma_crossover(
     data: pd.DataFrame, fast: int = 20, slow: int = 100, consenti_short: bool = False
 ) -> pd.Series:
@@ -86,9 +147,8 @@ def sma_crossover(
     if fast >= slow:
         raise ValueError("La media mobile veloce deve essere piu' piccola di quella lenta.")
 
-    close = data["close"].astype(float)
-    fast_ma = close.rolling(window=fast, min_periods=fast).mean()
-    slow_ma = close.rolling(window=slow, min_periods=slow).mean()
+    fast_ma = indicatore("sma", data, periodo=fast)
+    slow_ma = indicatore("sma", data, periodo=slow)
     return _verso_da_confronto(fast_ma, slow_ma, consenti_short)
 
 
@@ -100,9 +160,8 @@ def ema_crossover(
     if fast >= slow:
         raise ValueError("La EMA veloce deve essere piu' piccola di quella lenta.")
 
-    close = data["close"].astype(float)
-    fast_ema = close.ewm(span=fast, adjust=False, min_periods=fast).mean()
-    slow_ema = close.ewm(span=slow, adjust=False, min_periods=slow).mean()
+    fast_ema = indicatore("ema", data, periodo=fast)
+    slow_ema = indicatore("ema", data, periodo=slow)
     return _verso_da_confronto(fast_ema, slow_ema, consenti_short)
 
 
@@ -157,9 +216,8 @@ def macd_trend(
     if fast >= slow:
         raise ValueError("Nel MACD il periodo veloce deve essere minore di quello lento.")
 
-    close = data["close"].astype(float)
-    fast_ema = close.ewm(span=fast, adjust=False, min_periods=fast).mean()
-    slow_ema = close.ewm(span=slow, adjust=False, min_periods=slow).mean()
+    fast_ema = indicatore("ema", data, periodo=fast)
+    slow_ema = indicatore("ema", data, periodo=slow)
     macd_line = fast_ema - slow_ema
     signal_line = macd_line.ewm(span=signal, adjust=False, min_periods=signal).mean()
     return _verso_da_confronto(macd_line, signal_line, consenti_short)
@@ -175,8 +233,8 @@ def bollinger_reversion(
         raise ValueError("La deviazione standard Bollinger deve essere positiva.")
 
     close = data["close"].astype(float)
-    basis = close.rolling(window=period, min_periods=period).mean()
-    deviation = close.rolling(window=period, min_periods=period).std(ddof=0)
+    basis = indicatore("sma", data, periodo=period)
+    deviation = indicatore("deviazione", data, periodo=period)
     lower_band = basis - (deviation * std_dev)
     upper_band = basis + (deviation * std_dev)
     return _stateful_signal(
@@ -208,8 +266,8 @@ def stochastic_reversion(
     high = data["high"].astype(float)
     low = data["low"].astype(float)
     close = data["close"].astype(float)
-    lowest_low = low.rolling(window=k_period, min_periods=k_period).min()
-    highest_high = high.rolling(window=k_period, min_periods=k_period).max()
+    lowest_low = indicatore("minimo_mobile", data, periodo=k_period)
+    highest_high = indicatore("massimo_mobile", data, periodo=k_period)
     denominator = (highest_high - lowest_low).replace(0.0, np.nan)
     raw_k = ((close - lowest_low) / denominator) * 100
     slow_k = raw_k.rolling(window=smooth, min_periods=smooth).mean()
@@ -222,6 +280,7 @@ def stochastic_reversion(
     )
 
 
+@registra("cci")
 def commodity_channel_index(data: pd.DataFrame, period: int = 20) -> pd.Series:
     if period <= 1:
         raise ValueError("CCI period deve essere maggiore di 1.")
@@ -244,13 +303,14 @@ def cci_reversion(
     if lower >= upper:
         raise ValueError("CCI lower deve essere piu' piccolo di upper.")
 
-    cci = commodity_channel_index(data, period=period)
+    cci = indicatore("cci", data, period=period)
     return _segnale_speculare(
         ipervenduto=cci <= lower, ipercomprato=cci >= upper,
         index=data.index, consenti_short=consenti_short,
     )
 
 
+@registra("williams_r")
 def williams_r_indicator(data: pd.DataFrame, period: int = 14) -> pd.Series:
     if period <= 1:
         raise ValueError("Williams %R period deve essere maggiore di 1.")
@@ -259,8 +319,8 @@ def williams_r_indicator(data: pd.DataFrame, period: int = 14) -> pd.Series:
     high = data["high"].astype(float)
     low = data["low"].astype(float)
     close = data["close"].astype(float)
-    highest_high = high.rolling(window=period, min_periods=period).max()
-    lowest_low = low.rolling(window=period, min_periods=period).min()
+    highest_high = indicatore("massimo_mobile", data, periodo=period)
+    lowest_low = indicatore("minimo_mobile", data, periodo=period)
     denominator = (highest_high - lowest_low).replace(0.0, np.nan)
     williams_r = -100 * ((highest_high - close) / denominator)
     return williams_r.fillna(-50.0).rename("williams_r")
@@ -273,13 +333,14 @@ def williams_r_reversion(
     if lower >= upper:
         raise ValueError("Williams %R lower deve essere piu' piccolo di upper.")
 
-    williams_r = williams_r_indicator(data, period=period)
+    williams_r = indicatore("williams_r", data, period=period)
     return _segnale_speculare(
         ipervenduto=williams_r <= lower, ipercomprato=williams_r >= upper,
         index=data.index, consenti_short=consenti_short,
     )
 
 
+@registra("adx")
 def adx_components(data: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     if period <= 1:
         raise ValueError("ADX period deve essere maggiore di 1.")
@@ -294,16 +355,9 @@ def adx_components(data: pd.DataFrame, period: int = 14) -> pd.DataFrame:
     plus_dm = up_move.where((up_move > down_move) & (up_move > 0), 0.0)
     minus_dm = down_move.where((down_move > up_move) & (down_move > 0), 0.0)
 
-    true_range = pd.concat(
-        [
-            high - low,
-            (high - close.shift(1)).abs(),
-            (low - close.shift(1)).abs(),
-        ],
-        axis=1,
-    ).max(axis=1)
-
-    atr = true_range.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+    atr = indicatore("true_range", data).ewm(
+        alpha=1 / period, adjust=False, min_periods=period
+    ).mean()
     plus_di = 100 * plus_dm.ewm(alpha=1 / period, adjust=False, min_periods=period).mean() / atr.replace(0.0, np.nan)
     minus_di = 100 * minus_dm.ewm(alpha=1 / period, adjust=False, min_periods=period).mean() / atr.replace(0.0, np.nan)
     dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0.0, np.nan)
@@ -321,7 +375,7 @@ def adx_trend(
     +DI): la condizione di uscita dal rialzo comprende anche "il trend si e'
     spento", che non e' affatto un motivo per vendere allo scoperto.
     """
-    components = adx_components(data, period=period)
+    components = indicatore("adx", data, period=period)
     forte = components["adx"] >= threshold
     debole = components["adx"] < threshold
     rialzo = components["plus_di"] > components["minus_di"]
@@ -335,6 +389,7 @@ def adx_trend(
     )
 
 
+@registra("obv")
 def on_balance_volume(data: pd.DataFrame) -> pd.Series:
     _require_columns(data, ("volume",))
     close = data["close"].astype(float)
@@ -370,11 +425,11 @@ def donchian_breakout(
 
     # Canale calcolato sulle barre precedenti (shift 1) per evitare che il massimo/minimo
     # della barra corrente impedisca sempre alla condizione di scattare (high[t] >= close[t]).
-    upper_channel = high.rolling(window=entry_period, min_periods=entry_period).max().shift(1)
-    lower_channel = low.rolling(window=exit_period, min_periods=exit_period).min().shift(1)
+    upper_channel = indicatore("massimo_mobile", data, periodo=entry_period).shift(1)
+    lower_channel = indicatore("minimo_mobile", data, periodo=exit_period).shift(1)
     # Canali speculari per il verso al ribasso.
-    lower_breakout = low.rolling(window=entry_period, min_periods=entry_period).min().shift(1)
-    upper_cover = high.rolling(window=exit_period, min_periods=exit_period).max().shift(1)
+    lower_breakout = indicatore("minimo_mobile", data, periodo=entry_period).shift(1)
+    upper_cover = indicatore("massimo_mobile", data, periodo=exit_period).shift(1)
 
     return _stateful_signal(
         entry_condition=close >= upper_channel,
@@ -393,7 +448,7 @@ def obv_trend(
     if fast >= slow:
         raise ValueError("La finestra OBV veloce deve essere piu' piccola di quella lenta.")
 
-    obv = on_balance_volume(data)
+    obv = indicatore("obv", data)
     fast_ma = obv.ewm(span=fast, adjust=False, min_periods=fast).mean()
     slow_ma = obv.ewm(span=slow, adjust=False, min_periods=slow).mean()
     return _verso_da_confronto(fast_ma, slow_ma, consenti_short)
@@ -447,17 +502,10 @@ def keltner_reversion(
     high = data["high"].astype(float)
     low = data["low"].astype(float)
 
-    middle = close.ewm(span=period, adjust=False, min_periods=period).mean()
-    prev_close = close.shift(1)
-    true_range = pd.concat(
-        [
-            high - low,
-            (high - prev_close).abs(),
-            (low - prev_close).abs(),
-        ],
-        axis=1,
-    ).max(axis=1)
-    atr = true_range.ewm(span=period, adjust=False, min_periods=period).mean()
+    middle = indicatore("ema", data, periodo=period)
+    atr = indicatore("true_range", data).ewm(
+        span=period, adjust=False, min_periods=period
+    ).mean()
     lower_band = middle - multiplier * atr
     upper_band = middle + multiplier * atr
     return _stateful_signal(
@@ -469,6 +517,7 @@ def keltner_reversion(
     )
 
 
+@registra("mfi")
 def money_flow_index(data: pd.DataFrame, period: int = 14) -> pd.Series:
     """Money Flow Index: RSI pesato per il volume."""
     if period <= 1:
@@ -499,7 +548,7 @@ def mfi_reversion(
     if lower >= upper:
         raise ValueError("MFI lower deve essere piu' piccolo di upper.")
 
-    mfi = money_flow_index(data, period=period)
+    mfi = indicatore("mfi", data, period=period)
     return _segnale_speculare(
         ipervenduto=mfi <= lower, ipercomprato=mfi >= upper,
         index=data.index, consenti_short=consenti_short,

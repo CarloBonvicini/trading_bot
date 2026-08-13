@@ -81,7 +81,18 @@ _CONTESTO: contextvars.ContextVar[ContestoIndicatori | None] = contextvars.Conte
 
 @contextmanager
 def contesto_indicatori(dati: pd.DataFrame) -> Iterator[ContestoIndicatori]:
-    """Apre una memoria per gli indicatori calcolati su questi dati."""
+    """Apre una memoria per gli indicatori calcolati su questi dati.
+
+    Se ne è già aperta una **sugli stessi identici dati** si continua a usare
+    quella invece di crearne una nuova: la ricerca ne apre una per mercato e la
+    walk-forward ne aprirebbe un'altra sulla stessa serie, azzerando la memoria
+    a ogni strategia e buttando via proprio il riuso fra strategie diverse.
+    """
+    in_corso = _CONTESTO.get()
+    if in_corso is not None and in_corso.vale_per(dati):
+        yield in_corso
+        return
+
     contesto = ContestoIndicatori(dati=dati)
     segnalibro = _CONTESTO.set(contesto)
     try:

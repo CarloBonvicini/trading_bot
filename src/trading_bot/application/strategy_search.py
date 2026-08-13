@@ -33,6 +33,7 @@ import multiprocessing
 import os
 from concurrent.futures import ProcessPoolExecutor, wait
 from dataclasses import dataclass
+from functools import cached_property
 from functools import lru_cache
 from typing import Callable
 
@@ -376,15 +377,19 @@ def run_strategy_search(
             )
         )
     else:
-        for candidato in da_fare:
-            # Segnala la strategia PRIMA di testarla: a profondità alte una singola
-            # strategia può richiedere minuti, e senza questo l'utente resterebbe a
-            # guardare "avvio della ricerca" senza sapere cosa sta succedendo.
-            etichetta = candidato.label
-            _segnala(forza=True)
-            riga = _valuta_strategia(lavoro, candidato, _combinazione_provata)
-            ranking.append(riga)
-            _completata(riga)
+        # Una memoria sola per tutti i candidati: il true range serve ad ADX e a
+        # Keltner, la media a 20 barre a SMA Crossover e a Bollinger.
+        with contesto_indicatori(lavoro.dev_data):
+            for candidato in da_fare:
+                # Segnala la strategia PRIMA di testarla: a profondità alte una
+                # singola strategia può richiedere minuti, e senza questo l'utente
+                # resterebbe a guardare "avvio della ricerca" senza sapere cosa
+                # sta succedendo.
+                etichetta = candidato.label
+                _segnala(forza=True)
+                riga = _valuta_strategia(lavoro, candidato, _combinazione_provata)
+                ranking.append(riga)
+                _completata(riga)
 
     for riga in ranking:
         if riga.error is None and riga.holdout_benchmark_return_pct is not None:
@@ -700,6 +705,16 @@ class _LavoroStrategia:
     scan_mode: str
     flat_at_close: bool = False
 
+    @cached_property
+    def dev_data(self) -> pd.DataFrame:
+        """La fetta di sviluppo, calcolata una volta sola.
+
+        Ritagliarla a ogni candidato darebbe un oggetto nuovo ogni volta, e il
+        registro degli indicatori — che riconosce i dati per identità — non
+        potrebbe riusare niente fra una strategia e l'altra.
+        """
+        return self.data.iloc[: self.dev_len]
+
 
 def _valuta_strategia(
     lavoro: _LavoroStrategia,
@@ -713,7 +728,7 @@ def _valuta_strategia(
     """
     strategy_id = candidato.strategy_id
     data = lavoro.data
-    dev_data = data.iloc[: lavoro.dev_len]
+    dev_data = lavoro.dev_data
     holdout_index = data.index[lavoro.dev_len:]
 
     try:
@@ -846,7 +861,8 @@ _COMBINAZIONI_LOCALI = 0
 def _valuta_strategia_in_worker(argomenti: tuple[_LavoroStrategia, Candidato]) -> StrategyRanking:
     lavoro, candidato = argomenti
     try:
-        return _valuta_strategia(lavoro, candidato, _conta_nel_worker)
+        with contesto_indicatori(lavoro.dev_data):
+            return _valuta_strategia(lavoro, candidato, _conta_nel_worker)
     finally:
         _scarica_contatore()
 
