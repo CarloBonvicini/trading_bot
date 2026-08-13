@@ -784,7 +784,59 @@ STRATEGY_SPECS: dict[str, StrategySpec] = {
         ),
         supports_sweep=True,
     ),
+    "kama_trend": StrategySpec(
+        key="kama_trend",
+        label="KAMA Adattiva",
+        description="Media che accelera nei tratti puliti e rallenta nel rumore: meno falsi segnali.",
+        parameters=(
+            StrategyParameter("periodo", "Finestra efficienza", "int", 10, minimum=2, step=1),
+            StrategyParameter("veloce", "Costante veloce", "int", 2, minimum=1, step=1),
+            StrategyParameter("lenta", "Costante lenta", "int", 30, minimum=3, step=1),
+        ),
+    ),
+    "fisher_reversion": StrategySpec(
+        key="fisher_reversion",
+        label="Fisher Transform",
+        description="Allarga gli estremi per riconoscere prima i punti di svolta.",
+        parameters=(
+            StrategyParameter("periodo", "Finestra", "int", 10, minimum=2, step=1),
+            StrategyParameter("soglia", "Soglia estremo", "float", 1.5, minimum=0.1, step=0.1),
+        ),
+    ),
 }
+
+
+def kama_trend(
+    data: pd.DataFrame, periodo: int = 10, veloce: int = 2, lenta: int = 30,
+    consenti_short: bool = False,
+) -> pd.Series:
+    """Segue la media adattiva: dentro quando il prezzo la supera, fuori quando la perde.
+
+    A differenza di una media a periodo fisso, questa quasi si ferma quando il
+    mercato zigzaga: il prezzo la attraversa molto meno spesso e si evitano gran
+    parte dei falsi segnali che fanno pagare commissioni senza costrutto.
+    """
+    linea = indicatore("kama", data, periodo=periodo, veloce=veloce, lenta=lenta)
+    return _verso_da_confronto(data["close"].astype(float), linea, consenti_short)
+
+
+def fisher_reversion(
+    data: pd.DataFrame, periodo: int = 10, soglia: float = 1.5,
+    consenti_short: bool = False,
+) -> pd.Series:
+    """Compra quando la trasformazione segnala un estremo in basso, chiude in alto.
+
+    La trasformazione allarga i bordi, quindi un valore oltre la soglia indica
+    una posizione molto più estrema di quanto direbbe un oscillatore normale.
+    """
+    if soglia <= 0:
+        raise ValueError("La soglia del Fisher deve essere positiva.")
+
+    linea = indicatore("fisher", data, periodo=periodo)
+    return _segnale_speculare(
+        ipervenduto=linea <= -soglia, ipercomprato=linea >= soglia,
+        index=data.index, consenti_short=consenti_short,
+    )
 
 
 STRATEGY_FUNCTIONS = {
@@ -803,6 +855,8 @@ STRATEGY_FUNCTIONS = {
     "keltner_reversion": keltner_reversion,
     "mfi_reversion": mfi_reversion,
     "parabolic_sar": parabolic_sar,
+    "kama_trend": kama_trend,
+    "fisher_reversion": fisher_reversion,
 }
 
 
