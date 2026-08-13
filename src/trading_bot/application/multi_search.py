@@ -18,6 +18,7 @@ from typing import Callable
 import pandas as pd
 
 from trading_bot.application.autosetting import AUTOSETTING_GRIDS
+from trading_bot.application.portafoglio import costruisci_portafoglio
 from trading_bot.application.strategy_search import (
     MARGINE_MINIMO_PCT,
     RELIABILITY_HIGH,
@@ -81,6 +82,9 @@ class MultiMarketSearchResult:
     overall_champion_id: str | None = None
     overall_champion_label: str | None = None
     overall_champion_consenti_short: bool = False
+    # Come sarebbe andata dividendo i soldi fra gli stessi mercati e stando
+    # fermi: e' il metro di paragone vero, piu' del singolo titolo.
+    portafoglio: dict | None = None
     verdict_note: str = ""
     settings: dict = field(default_factory=dict)
 
@@ -124,6 +128,9 @@ def run_multi_market_search(
     combinazioni_concluse = 0
     # Info per mercato, tenute finché non conosciamo il campione complessivo.
     market_info: dict[str, dict] = {}
+    # Chiusure dei mercati scaricati: servono a costruire il portafoglio noioso
+    # con cui confrontare il risultato.
+    chiusure: dict[str, pd.Series] = {}
     # strategy_id -> liste di risultati per mercato (resa su dati nuovi, sharpe sviluppo, affidabile)
     per_strategy: dict[str, dict[str, list]] = {}
 
@@ -170,6 +177,8 @@ def run_multi_market_search(
         try:
             data = download_data(symbol=symbol, start=start, end=end, interval=interval)
             barre_correnti[0] = len(data)
+            if "close" in data.columns:
+                chiusure[symbol] = data["close"].astype(float)
             result = run_strategy_search(
                 data=data, symbol=symbol, interval=interval,
                 initial_capital=initial_capital, fee_bps=fee_bps,
@@ -211,7 +220,14 @@ def run_multi_market_search(
 
         _aggrega(per_strategy, result.ranking)
 
+    portafoglio = costruisci_portafoglio(chiusure)
     strategy_scores = _aggregate(per_strategy)
+    # Quante ricerche hanno riconosciuto una vittoria vera, cioe' una che ha
+    # superato la prova del caso e quella dei vicini. Se sono zero non si
+    # incorona nessuno: il semaforo di affidabilita' da solo non basta piu'.
+    vittorie_riconosciute = sum(
+        1 for info in market_info.values() if info.get("tipo_vittoria")
+    )
     overall = strategy_scores[0] if strategy_scores else None
     campione = None
     if overall and (overall.markets_reliable > 0 or overall.markets_beat_market > 0):
@@ -235,7 +251,10 @@ def run_multi_market_search(
         overall_champion_id=overall_id,
         overall_champion_label=overall_label,
         overall_champion_consenti_short=bool(campione.consenti_short) if campione else False,
-        verdict_note=_overall_note(overall, len(clean_symbols)),
+        portafoglio=dataclasses.asdict(portafoglio) if portafoglio else None,
+        verdict_note=_overall_note(
+            overall, len(clean_symbols), portafoglio, vittorie_riconosciute
+        ),
         settings={
             "initial_capital": float(initial_capital),
             "fee_bps": float(fee_bps),
@@ -345,7 +364,29 @@ def _mercati(n: int) -> str:
     return "1 mercato" if n == 1 else f"{n} mercati"
 
 
-def _overall_note(overall: "StrategyAcrossMarkets | None", n_markets: int) -> str:
+def _overall_note(
+    overall: "StrategyAcrossMarkets | None", n_markets: int, portafoglio=None,
+    vittorie_riconosciute: int = 0,
+) -> str:
+    confronto = ""
+    if portafoglio is not None:
+        confronto = (
+            f" Per confronto, dividendo gli stessi soldi fra tutti i mercati in parti uguali "
+            f"e stando fermi si sarebbe ottenuto il {portafoglio.rendimento_fermo_pct:+.1f}% "
+            f"(ribilanciando ogni mese: {portafoglio.rendimento_ribilanciato_pct:+.1f}%), "
+            f"con un calo peggiore del {abs(portafoglio.calo_peggiore_fermo_pct):.0f}%."
+        )
+    # Nessuna ricerca ha riconosciuto una vittoria: qualunque cosa sia arrivata
+    # prima in classifica, non e' un risultato di cui fidarsi. Dirlo chiaro vale
+    # piu' di incoronare il meno peggio.
+    if overall is not None and vittorie_riconosciute == 0:
+        return (
+            "Nessuna strategia ha superato i controlli su nessuno dei mercati provati: "
+            f"{overall.label} e' arrivata prima in classifica, ma il suo vantaggio non "
+            "sopravvive al confronto con la fortuna o si dissolve spostando di un passo i "
+            "parametri. Non c'e' niente da cui fidarsi." + confronto
+        )
+
     if overall is None:
         return "Nessun mercato ha prodotto risultati validi. Prova con altri simboli o più storia."
     if overall.markets_reliable > 0:
@@ -354,14 +395,15 @@ def _overall_note(overall: "StrategyAcrossMarkets | None", n_markets: int) -> st
             f"{_mercati(overall.markets_reliable)} su {n_markets} testati, "
             f"con una resa media su dati nuovi del {overall.avg_holdout_return_pct:+.1f}% "
             f"({overall.avg_holdout_excess_pct:+.1f} punti rispetto a comprare e tenere)."
+         + confronto
         )
     if overall.markets_beat_market > 0:
         return (
             f"Nessuna strategia è risultata pienamente affidabile su più mercati. "
             f"La meno debole è {overall.label}: ha fatto meglio del comprare e tenere in "
-            f"{_mercati(overall.markets_beat_market)} su {n_markets}."
+            f"{_mercati(overall.markets_beat_market)} su {n_markets}." + confronto
         )
     return (
         "Nessuna strategia ha battuto il semplice comprare e tenere su dati nuovi in questi "
-        "mercati: è il segno che batterli stabilmente è molto difficile."
+        "mercati: è il segno che batterli stabilmente è molto difficile." + confronto
     )

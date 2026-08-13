@@ -239,6 +239,9 @@ class StrategySearchResult:
     # Esito della prova del caso: la vittoria vale piu' di quella che trova la
     # fortuna cercando fra le stesse migliaia di opzioni?
     prova_del_caso: dict[str, object] | None = None
+    # Esito della prova dei vicini: il vantaggio sopravvive a uno spostamento
+    # dei parametri, o era una punta isolata nella griglia?
+    prova_dei_vicini: dict[str, object] | None = None
     # Che tipo di vittoria e', se c'e' (vedi classifica_vittoria).
     tipo_vittoria: str = ""
     # Verso in cui ha corso il campione: la stessa strategia puo' comparire in
@@ -452,6 +455,12 @@ def run_strategy_search(
         flat_at_close=flat_at_close,
     )
 
+    esito_vicini = prova_dei_vicini(
+        data=data, dev_len=dev_len, holdout_index=holdout_index, campione=champion,
+        fee_bps=fee_bps, slippage_bps=slippage_bps, initial_capital=initial_capital,
+        flat_at_close=flat_at_close, scan_mode=scan_mode,
+    )
+
     esito_caso = _prova_del_caso(
         data=data, campione=champion, prove=prove_del_caso,
         argomenti=dict(
@@ -462,7 +471,7 @@ def run_strategy_search(
             flat_at_close=flat_at_close, max_workers=max_workers,
         ),
     )
-    tipo = classifica_vittoria(champion, esito_caso)
+    tipo = classifica_vittoria(champion, esito_caso, esito_vicini)
 
     return StrategySearchResult(
         symbol=symbol, ranking=ranking,
@@ -474,6 +483,7 @@ def run_strategy_search(
         holdout_benchmark_return_pct=round(benchmark_return_pct, 2),
         data_span=data_span, settings=settings,
         prova_del_caso=dataclasses.asdict(esito_caso) if esito_caso else None,
+        prova_dei_vicini=esito_vicini,
         tipo_vittoria=tipo,
     )
 
@@ -493,7 +503,7 @@ RIDUZIONE_CALO_MINIMA = 0.66
 QUOTA_TRATTI_VINTI = 0.75
 
 
-def classifica_vittoria(campione: "StrategyRanking", esito_caso=None) -> str:
+def classifica_vittoria(campione: "StrategyRanking", esito_caso=None, esito_vicini=None) -> str:
     """Che tipo di vittoria e' — se e' una vittoria.
 
     Se la prova del caso e' stata eseguita e non e' stata superata, nessuna
@@ -501,6 +511,10 @@ def classifica_vittoria(campione: "StrategyRanking", esito_caso=None) -> str:
     provando migliaia di combinazioni.
     """
     if esito_caso is not None and esito_caso.prove and not esito_caso.superato:
+        return VITTORIA_NESSUNA
+    # Un vantaggio che sparisce spostando un parametro di un passo non e' un
+    # vantaggio: e' la punta piu' alta del rumore.
+    if esito_vicini is not None and not esito_vicini.get("regge", True):
         return VITTORIA_NESSUNA
 
     margine = campione.holdout_excess_return_pct
@@ -528,6 +542,94 @@ def classifica_vittoria(campione: "StrategyRanking", esito_caso=None) -> str:
         return VITTORIA_COSTANTE
 
     return VITTORIA_NESSUNA
+
+
+# ── La prova dei vicini ──────────────────────────────────────────────────────
+# L'intera macchina di ricerca serve a scegliere fast=20 invece di fast=25. Ma
+# se una strategia funziona con 20 e muore con 18 o 22, non funziona: quel 20
+# e' stato scelto dai dati, non dal mercato. La sensibilita' ai parametri non e'
+# un dettaglio dell'ottimizzazione, e' il segnale.
+
+# Sotto questa quota di vicini ancora in vantaggio, il risultato e' una punta
+# isolata nella griglia: si e' ottimizzato il rumore.
+QUOTA_VICINI_MINIMA = 0.5
+
+
+def _vicini_di_griglia(
+    strategy_id: str, params: dict, scan_mode: str
+) -> list[dict[str, int | float]]:
+    """Le combinazioni a un passo di distanza nella griglia, una per direzione."""
+    grids = AUTOSETTING_GRIDS_BY_MODE.get(scan_mode, AUTOSETTING_GRIDS)
+    grid = grids.get(strategy_id, {})
+    vicini: list[dict[str, int | float]] = []
+    for nome, valori in grid.items():
+        if nome not in params or params[nome] not in valori:
+            continue
+        posizione = valori.index(params[nome])
+        for passo in (-1, 1):
+            vicina = posizione + passo
+            if not 0 <= vicina < len(valori):
+                continue
+            candidato = dict(params)
+            candidato[nome] = valori[vicina]
+            try:
+                validate_strategy_parameters(strategy_id, candidato)
+            except ValueError:
+                continue
+            vicini.append(candidato)
+    return vicini
+
+
+def prova_dei_vicini(
+    *, data: pd.DataFrame, dev_len: int, holdout_index, campione: "StrategyRanking",
+    fee_bps: float, slippage_bps: float, initial_capital: float, flat_at_close: bool,
+    scan_mode: str,
+) -> dict[str, object] | None:
+    """Rivaluta il campione spostando ogni parametro di un passo, in su e in giu'.
+
+    Restituisce quanti vicini restano in vantaggio sul comprare-e-tenere: se la
+    strategia e' una punta isolata nella griglia, quel vantaggio non esisteva.
+    """
+    vicini = _vicini_di_griglia(campione.strategy_id, campione.params, scan_mode)
+    if not vicini:
+        return None
+
+    margini: list[float] = []
+    for params in vicini:
+        try:
+            risultato = _evaluate_on_holdout(
+                full_data=data, dev_len=dev_len, holdout_index=holdout_index,
+                strategy_id=campione.strategy_id, params=params,
+                fee_bps=fee_bps, slippage_bps=slippage_bps,
+                initial_capital=initial_capital,
+                consenti_short=campione.consenti_short, flat_at_close=flat_at_close,
+            )
+        except Exception:
+            continue
+        margini.append(float(risultato.summary.get("excess_return_pct", 0.0)))
+
+    if not margini:
+        return None
+
+    in_vantaggio = sum(1 for m in margini if m >= MARGINE_MINIMO_PCT)
+    quota = in_vantaggio / len(margini)
+    regge = quota >= QUOTA_VICINI_MINIMA
+    return {
+        "vicini_provati": len(margini),
+        "vicini_in_vantaggio": in_vantaggio,
+        "margine_medio_vicini_pct": round(sum(margini) / len(margini), 2),
+        "regge": regge,
+        "verdetto": (
+            f"Spostando i parametri di un passo, {in_vantaggio} vicini su {len(margini)} "
+            "restano in vantaggio sul mercato: il risultato non dipende dall'aver azzeccato "
+            "il numero esatto."
+            if regge
+            else
+            f"Spostando i parametri di un passo, solo {in_vantaggio} vicini su {len(margini)} "
+            "restano in vantaggio: la strategia funziona con quei numeri precisi e smette "
+            "subito accanto. E' il segno che quei numeri li hanno scelti i dati, non il mercato."
+        ),
+    }
 
 
 def _regge_costi_doppi(
