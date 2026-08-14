@@ -97,6 +97,14 @@
     "combinazioni": 12,
     "impronta": "bd2e25716b6dc36c"
   },
+  "ritorno_media_stimato|rialzo": {
+    "combinazioni": 81,
+    "impronta": "dbbc189f2f69e0cb"
+  },
+  "ritorno_media_stimato|ribasso": {
+    "combinazioni": 81,
+    "impronta": "80032196857427f9"
+  },
   "roc_momentum|rialzo": {
     "combinazioni": 25,
     "impronta": "56c1ebab58d64870"

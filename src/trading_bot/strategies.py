@@ -795,6 +795,17 @@ STRATEGY_SPECS: dict[str, StrategySpec] = {
             StrategyParameter("dosa", "Dosa secondo la convinzione", "int", 0, minimum=0, maximum=1, step=1),
         ),
     ),
+    "ritorno_media_stimato": StrategySpec(
+        key="ritorno_media_stimato",
+        label="Ritorno alla media misurato",
+        description="Opera solo dove il prezzo sta davvero rientrando, misurandolo invece di darlo per scontato.",
+        parameters=(
+            StrategyParameter("finestra", "Finestra scostamento", "int", 20, minimum=5, step=1),
+            StrategyParameter("finestra_stima", "Finestra di stima", "int", 60, minimum=20, step=5),
+            StrategyParameter("mezza_vita_massima", "Rientro massimo accettato", "int", 10, minimum=1, step=1),
+            StrategyParameter("soglia", "Scostamento minimo", "float", 2.0, minimum=0.5, step=0.1),
+        ),
+    ),
     "fisher_reversion": StrategySpec(
         key="fisher_reversion",
         label="Fisher Transform",
@@ -850,6 +861,48 @@ def fisher_reversion(
     )
 
 
+def ritorno_media_stimato(
+    data: pd.DataFrame, finestra: int = 20, finestra_stima: int = 60,
+    mezza_vita_massima: int = 10, soglia: float = 2.0,
+    consenti_short: bool = False,
+) -> pd.Series:
+    """Ritorno alla media, ma solo dove il mercato sta davvero rientrando.
+
+    Le strategie di ritorno alla media a catalogo danno per scontato che il
+    prezzo, allontanandosi, tornerà indietro: comprano ogni volta che l'RSI
+    scende sotto trenta. In un mercato che invece sta scendendo e basta, quella
+    convinzione fa comprare tutta la discesa.
+
+    Qui la stessa domanda viene prima **misurata sui dati**: quanto ci mette il
+    prezzo a ricoprire metà della distanza dalla sua media? Se il rientro è
+    rapido si opera; se il prezzo si comporta come un cammino casuale — nessun
+    rientro da aspettarsi — si resta fuori, per quanto estremo sia lo scostamento.
+
+    La convinzione segue la misura: più il rientro stimato è rapido, più capitale
+    si impegna. La stima è mobile e a ogni barra guarda solo le precedenti.
+    """
+    if soglia <= 0:
+        raise ValueError("La soglia in deviazioni deve essere positiva.")
+    if mezza_vita_massima < 1:
+        raise ValueError("La mezza vita massima deve essere di almeno una barra.")
+
+    scostamento = indicatore("zscore", data, finestra=finestra)
+    vita = indicatore("mezza_vita", data, finestra=finestra_stima)
+
+    # Il mercato sta rientrando abbastanza in fretta da poterci contare?
+    rientra = vita <= mezza_vita_massima
+    # Quanto in fretta, da 0 (al limite) a 1 (rientro immediato).
+    convinzione = (1.0 - vita / mezza_vita_massima).where(rientra, 0.0).clip(0.0, 1.0)
+
+    return _segnale_speculare(
+        ipervenduto=(scostamento <= -soglia) & rientra,
+        ipercomprato=(scostamento >= soglia) & rientra,
+        index=data.index,
+        consenti_short=consenti_short,
+        convinzione=convinzione,
+    )
+
+
 STRATEGY_FUNCTIONS = {
     "sma_cross": sma_crossover,
     "ema_cross": ema_crossover,
@@ -868,6 +921,7 @@ STRATEGY_FUNCTIONS = {
     "parabolic_sar": parabolic_sar,
     "kama_trend": kama_trend,
     "fisher_reversion": fisher_reversion,
+    "ritorno_media_stimato": ritorno_media_stimato,
 }
 
 
@@ -1152,6 +1206,7 @@ def _segnale_speculare(
     ipercomprato: pd.Series,
     index: pd.Index,
     consenti_short: bool,
+    convinzione: pd.Series | None = None,
 ) -> pd.Series:
     """Segnale per le strategie di ritorno alla media.
 
@@ -1160,13 +1215,14 @@ def _segnale_speculare(
     sull'ipercomprato e si richiude sull'ipervenduto, quindi le due condizioni
     si scambiano di ruolo senza bisogno di inventarne altre.
     """
-    return _stateful_signal(
+    verso = _stateful_signal(
         entry_condition=ipervenduto,
         exit_condition=ipercomprato,
         index=index,
         short_entry_condition=ipercomprato if consenti_short else None,
         short_exit_condition=ipervenduto,
     )
+    return applica_convinzione(verso, convinzione)
 
 
 # Sotto questa convinzione non vale la pena entrare: si pagherebbero i costi di

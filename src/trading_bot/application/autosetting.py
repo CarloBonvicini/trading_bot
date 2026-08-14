@@ -108,6 +108,12 @@ AUTOSETTING_GRIDS: dict[str, dict[str, list]] = {
         # 0 = dentro con tutto, 1 = importo proporzionale alla convinzione.
         "dosa": [0, 1],
     },
+    "ritorno_media_stimato": {
+        "finestra": [10, 20, 30],
+        "finestra_stima": [40, 60, 90],
+        "mezza_vita_massima": [5, 10, 20],
+        "soglia": [1.5, 2.0, 2.5],
+    },
     "fisher_reversion": {
         "periodo": [5, 9, 14, 20, 30],
         "soglia": [1.0, 1.5, 2.0, 2.5],

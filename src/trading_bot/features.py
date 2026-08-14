@@ -242,3 +242,75 @@ def fisher(data: pd.DataFrame, periodo: int = 10) -> pd.Series:
         precedente = trasformata + 0.5 * precedente
         risultato[i] = precedente
     return pd.Series(risultato, index=close.index, name="fisher")
+
+
+# ── Modelli stimati dai dati ─────────────────────────────────────────────────
+# Fin qui ogni indicatore riceveva i suoi numeri dall'esterno: "RSI a 14",
+# "banda a 2 deviazioni". Questi invece li ricavano dal mercato.
+#
+# Il pericolo è uno solo, e non si vede: stimare su dati che comprendono il
+# futuro. Un modello che calcola la sua soglia usando anche le barre di domani
+# produce un backtest splendido e inservibile.
+#
+# Qui è impedito per costruzione, non per attenzione: la stima è **mobile**, e
+# a ogni barra guarda solo le barre precedenti. Non esiste un momento in cui il
+# modello vede la serie intera, quindi non esiste il modo di sbagliare.
+
+
+@registra("mezza_vita")
+def mezza_vita(data: pd.DataFrame, finestra: int = 60) -> pd.Series:
+    """Quanto ci mette il prezzo a ricoprire metà della distanza dalla sua media.
+
+    È la domanda che sta sotto ogni strategia di ritorno alla media: quando il
+    prezzo si allontana, poi torna indietro — e in quanto tempo? Invece di
+    deciderlo a priori ("RSI sotto 30 rientra"), qui lo si misura.
+
+    Si guarda se le variazioni tendono a **contraddire** il livello precedente:
+    quando il prezzo è sopra la sua media tende a scendere, e viceversa. Più
+    questa tendenza è marcata, più il rientro è rapido. Se invece le variazioni
+    non hanno relazione col livello — un cammino casuale — non c'è nessun
+    rientro da aspettarsi, e il valore restituito è infinito.
+
+    In gergo: half-life di un processo di Ornstein-Uhlenbeck, stimata su finestra
+    mobile. Ogni valore usa solo le ``finestra`` barre che lo precedono.
+    """
+    if finestra < 20:
+        raise ValueError("La finestra per stimare la mezza vita deve essere almeno 20 barre.")
+
+    close = data["close"].astype(float)
+    livello = close.shift(1)
+    variazione = close.diff()
+
+    # Quanto la variazione segue il livello precedente: negativo = rientro.
+    media_livello = livello.rolling(finestra, min_periods=finestra).mean()
+    media_variazione = variazione.rolling(finestra, min_periods=finestra).mean()
+    covarianza = (
+        (livello * variazione).rolling(finestra, min_periods=finestra).mean()
+        - media_livello * media_variazione
+    )
+    varianza = (
+        (livello**2).rolling(finestra, min_periods=finestra).mean() - media_livello**2
+    )
+    pendenza = covarianza / varianza.replace(0.0, np.nan)
+
+    # Solo una pendenza negativa descrive un rientro; il resto è cammino casuale
+    # o addirittura tendenza che si autoalimenta, e non c'è mezza vita da dare.
+    rientra = pendenza < 0
+    fattore = (1.0 + pendenza).where(rientra)
+    valida = rientra & (fattore > 0)
+    vita = pd.Series(np.inf, index=close.index)
+    vita[valida] = -np.log(2.0) / np.log(fattore[valida])
+    return vita.rename("mezza_vita")
+
+
+@registra("zscore")
+def zscore(data: pd.DataFrame, finestra: int = 20) -> pd.Series:
+    """Di quante deviazioni standard il prezzo è lontano dalla sua media recente.
+
+    Serve a rendere confrontabili scostamenti su mercati diversi: "tre euro
+    sopra la media" non dice niente, "due deviazioni sopra" sì.
+    """
+    close = data["close"].astype(float)
+    media = close.rolling(finestra, min_periods=finestra).mean()
+    scarto = close.rolling(finestra, min_periods=finestra).std(ddof=0)
+    return ((close - media) / scarto.replace(0.0, np.nan)).fillna(0.0).rename("zscore")

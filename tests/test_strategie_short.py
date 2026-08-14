@@ -51,24 +51,32 @@ def _mercato_mosso(n: int = 400, seed: int = 9) -> pd.DataFrame:
 
 @pytest.mark.parametrize("strategy_id", TUTTE)
 def test_senza_consenso_nessuna_strategia_va_al_ribasso(strategy_id: str) -> None:
-    """Il comportamento di default non cambia: solo 0 e 1."""
+    """Il comportamento di default non cambia: mai posizioni al ribasso.
+
+    Si guarda il **verso**, non il valore esatto: da quando esiste la
+    convinzione una strategia può impegnare una frazione di capitale, e 0,4 è
+    una posizione al rialzo tanto quanto 1,0.
+    """
     segnale = build_strategy_signal(
         strategy_id=strategy_id,
         data=_mercato_mosso(),
         parameters=STRATEGY_SPECS[strategy_id].defaults(),
     )
-    assert set(np.unique(segnale.to_numpy())).issubset({0.0, 1.0})
+    assert (segnale >= 0).all(), "senza consenso non deve mai andare al ribasso"
+    assert (segnale <= 1).all(), "nessuna posizione può superare il capitale"
 
 
 @pytest.mark.parametrize("strategy_id", TUTTE)
-def test_col_consenso_il_segnale_resta_nei_tre_valori(strategy_id: str) -> None:
+def test_col_consenso_il_segnale_resta_nei_limiti(strategy_id: str) -> None:
+    """Il verso può essere in entrambe le direzioni, l'importo mai oltre il capitale."""
     segnale = build_strategy_signal(
         strategy_id=strategy_id,
         data=_mercato_mosso(),
         parameters=STRATEGY_SPECS[strategy_id].defaults(),
         consenti_short=True,
     )
-    assert set(np.unique(segnale.to_numpy())).issubset({-1.0, 0.0, 1.0})
+    assert segnale.abs().max() <= 1.0
+    assert set(np.unique(np.sign(segnale.to_numpy()))).issubset({-1.0, 0.0, 1.0})
 
 
 @pytest.mark.parametrize("strategy_id", TUTTE)
