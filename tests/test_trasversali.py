@@ -265,6 +265,35 @@ def test_la_classifica_puo_riusare_gli_indicatori_gia_calcolati() -> None:
     assert contesto.calcoli == 1
 
 
+def test_la_storia_rimescolata_non_eredita_la_forza_di_quella_vera() -> None:
+    """L'invariante che rende la prova del caso una prova.
+
+    La storia rimescolata ha lo **stesso identico indice** del mercato vero e le
+    stesse colonne: se il registro riconoscesse i dati per indice o per forma
+    invece che per identità, la classifica sui dati finti riceverebbe i valori
+    di quelli veri e la prova del caso passerebbe sempre, senza mai fallire e
+    senza mai segnalare niente.
+    """
+    from trading_bot.application.prova_del_caso import mescola_mercati
+    from trading_bot.features import contesto_indicatori
+
+    veri = _gruppo(quanti=3, n=400)
+    finti = mescola_mercati(veri, seed=0)
+    assert finti["M0"].index.equals(veri["M0"].index)   # l'inganno è possibile
+
+    with contesto_indicatori(veri["M0"]):
+        forza_vera = classifica_di_forza(veri, periodo=120)
+        forza_finta = classifica_di_forza(finti, periodo=120)
+
+    diverse = (
+        forza_vera["M0"].dropna().to_numpy() != forza_finta["M0"].dropna().to_numpy()
+    ).sum()
+    assert diverse > 0, (
+        "la classifica sulla storia rimescolata coincide con quella vera: da qualche "
+        "parte si stanno riusando valori di un altro mercato"
+    )
+
+
 def test_la_classifica_lascia_fuori_chi_non_ha_abbastanza_storia() -> None:
     mercati = _gruppo(quanti=3, n=200)
     forza = classifica_di_forza(mercati, periodo=120)
