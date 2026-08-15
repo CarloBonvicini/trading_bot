@@ -16,12 +16,22 @@ Qui si costruiscono due versioni di quella cosa noiosa:
 
 Nessuna delle due è un consiglio: sono il pavimento sotto cui una strategia non
 ha motivo di esistere.
+
+**Non è più un conto a parte.** Le due versioni sono due portafogli come tutti
+gli altri — segnale sempre a uno su ogni mercato — e le calcola lo stesso
+motore che misura le strategie. Se il metro di paragone avesse una matematica
+sua, un giorno le due matematiche direbbero cose diverse e il confronto non
+varrebbe niente. Come effetto, il ribilanciato mensile ora **paga le
+commissioni** su ogni spostamento: prima era un avversario che ribilanciava
+gratis, cioè più facile del vero.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 import pandas as pd
+
+from trading_bot.portafoglio import MAI, esegui_portafoglio
 
 
 @dataclass
@@ -34,6 +44,12 @@ class RisultatoPortafoglio:
     calo_peggiore_fermo_pct: float
     rendimento_ribilanciato_pct: float
     calo_peggiore_ribilanciato_pct: float
+    # Quanto i mercati si muovono insieme: dice se dividere è servito davvero o
+    # se erano lo stesso mercato comprato più volte.
+    quanto_si_muovono_insieme: float = 0.0
+    # Quanto è costato ribilanciare ogni mese. Zero quando non si indicano
+    # commissioni, ma non è più zero per costruzione.
+    costi_ribilanciamento: float = 0.0
 
     @property
     def rendimento_migliore_pct(self) -> float:
@@ -46,12 +62,18 @@ def costruisci_portafoglio(
     *,
     ultima_frazione: float = 0.20,
     ribilancia_ogni: str = "M",
+    fee_bps: float = 0.0,
+    slippage_bps: float = 0.0,
 ) -> RisultatoPortafoglio | None:
     """Divide il capitale in parti uguali fra i mercati e misura come va.
 
     ``ultima_frazione`` ritaglia lo stesso tratto finale usato dalle ricerche
     come prova su dati nuovi, così il confronto è fra periodi uguali. Serve
     almeno un secondo mercato: con uno solo non c'è niente da diversificare.
+
+    ``fee_bps`` e ``slippage_bps`` sono quelli con cui è stata misurata la
+    strategia: il confronto ha senso solo se le due parti pagano lo stesso
+    prezzo per operare.
     """
     serie = {nome: s.dropna() for nome, s in chiusure.items() if s is not None and len(s) > 2}
     if len(serie) < 2:
@@ -66,35 +88,29 @@ def costruisci_portafoglio(
     if len(prezzi) < 3:
         return None
 
-    rendimenti = prezzi.pct_change().fillna(0.0)
-    quota = 1.0 / len(prezzi.columns)
+    mercati = {nome: prezzi[[nome]].rename(columns={nome: "close"}) for nome in prezzi.columns}
+    # Sempre dentro, su tutto: è esattamente cosa vuol dire "comprare e tenere".
+    dentro = {nome: pd.Series(1.0, index=prezzi.index) for nome in prezzi.columns}
 
-    # Diviso e fermo: si compra all'inizio e non si tocca piu' niente, quindi
-    # i pesi si sbilanciano da soli man mano che i mercati divergono.
-    fermo = (prezzi / prezzi.iloc[0] * quota).sum(axis=1)
+    def _noioso(ogni: str):
+        return esegui_portafoglio(
+            mercati, dentro, ribilancia_ogni=ogni, fee_bps=fee_bps, slippage_bps=slippage_bps,
+        )
 
-    # Diviso e ribilanciato: ogni mese si riportano le quote in parti uguali.
-    gruppi = prezzi.index.to_period(ribilancia_ogni)
-    ribilanciato = pd.Series(1.0, index=prezzi.index)
-    valore = 1.0
-    for _, blocco in rendimenti.groupby(gruppi, sort=False):
-        andamento = (1.0 + blocco).cumprod().mul(quota).sum(axis=1)
-        ribilanciato.loc[blocco.index] = valore * andamento
-        valore = float(ribilanciato.loc[blocco.index].iloc[-1])
+    fermo = _noioso(MAI)
+    ribilanciato = _noioso(ribilancia_ogni)
 
     return RisultatoPortafoglio(
         mercati=list(prezzi.columns),
         barre=int(len(prezzi)),
-        rendimento_fermo_pct=_rendimento(fermo),
-        calo_peggiore_fermo_pct=_calo_peggiore(fermo),
-        rendimento_ribilanciato_pct=_rendimento(ribilanciato),
-        calo_peggiore_ribilanciato_pct=_calo_peggiore(ribilanciato),
+        rendimento_fermo_pct=float(fermo.summary["total_return_pct"]),
+        calo_peggiore_fermo_pct=float(fermo.summary["max_drawdown_pct"]),
+        rendimento_ribilanciato_pct=float(ribilanciato.summary["total_return_pct"]),
+        calo_peggiore_ribilanciato_pct=float(ribilanciato.summary["max_drawdown_pct"]),
+        quanto_si_muovono_insieme=float(fermo.summary["quanto_si_muovono_insieme"]),
+        costi_ribilanciamento=round(
+            float(ribilanciato.summary["trading_costs_paid"])
+            - float(fermo.summary["trading_costs_paid"]),
+            2,
+        ),
     )
-
-
-def _rendimento(curva: pd.Series) -> float:
-    return round(float(curva.iloc[-1] / curva.iloc[0] - 1.0) * 100, 2)
-
-
-def _calo_peggiore(curva: pd.Series) -> float:
-    return round(float((curva / curva.cummax() - 1.0).min()) * 100, 2)

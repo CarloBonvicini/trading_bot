@@ -91,6 +91,41 @@ def test_il_ribilanciamento_cambia_il_risultato() -> None:
     )
 
 
+def test_il_ribilanciato_paga_le_commissioni_come_le_strategie() -> None:
+    """Finché il portafoglio noioso ribilanciava gratis era un avversario finto:
+    ogni mese vendeva e ricomprava senza che nessuno gli togliesse un euro,
+    mentre alle strategie i costi venivano contati tutti."""
+    rng = np.random.default_rng(17)
+    n = 400
+    a = 100 * np.exp(np.cumsum(rng.normal(0.0008, 0.02, n)))
+    b = 100 * np.exp(np.cumsum(rng.normal(-0.0004, 0.02, n)))
+    mercati = {"A": _serie(list(a)), "B": _serie(list(b))}
+
+    gratis = costruisci_portafoglio(mercati, ultima_frazione=1.0, fee_bps=0.0)
+    caro = costruisci_portafoglio(mercati, ultima_frazione=1.0, fee_bps=20.0, slippage_bps=10.0)
+
+    assert caro.costi_ribilanciamento > 0
+    assert gratis.costi_ribilanciamento == 0.0
+    # Pagando, il ribilanciato rende meno; stare fermi non paga quasi niente e
+    # quindi cambia molto meno.
+    assert caro.rendimento_ribilanciato_pct < gratis.rendimento_ribilanciato_pct
+
+
+def test_dice_quando_i_mercati_sono_lo_stesso_mercato() -> None:
+    """Dividere fra venti titoli che si muovono insieme non ripara niente: il
+    numero che lo dice deve arrivare fino al verdetto."""
+    from trading_bot.application.multi_search import _nota_su_quanto_si_muovono_insieme
+
+    base = _serie(_serve_almeno_venti(100.0, 1.0, n=60))
+    identici = costruisci_portafoglio({"A": base, "B": base * 3}, ultima_frazione=1.0)
+
+    assert identici.quanto_si_muovono_insieme == pytest.approx(1.0, abs=0.001)
+    assert "stessi giorni" in _nota_su_quanto_si_muovono_insieme(
+        identici.quanto_si_muovono_insieme
+    )
+    assert _nota_su_quanto_si_muovono_insieme(0.2) == ""
+
+
 def test_senza_vittorie_riconosciute_non_si_incorona_nessuno() -> None:
     """Regressione: il verdetto diceva "X è la più solida" mentre ogni singolo
     mercato riportava "nessuna vittoria". Il semaforo di affidabilità da solo
