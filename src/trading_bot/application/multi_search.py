@@ -220,7 +220,11 @@ def run_multi_market_search(
 
         _aggrega(per_strategy, result.ranking)
 
-    portafoglio = costruisci_portafoglio(chiusure)
+    # Il confronto ha senso solo se le due parti pagano lo stesso prezzo per
+    # operare: un portafoglio che ribilancia gratis e' un avversario finto.
+    portafoglio = costruisci_portafoglio(
+        chiusure, fee_bps=fee_bps, slippage_bps=slippage_bps,
+    )
     strategy_scores = _aggregate(per_strategy)
     # Quante ricerche hanno riconosciuto una vittoria vera, cioe' una che ha
     # superato la prova del caso e quella dei vicini. Se sono zero non si
@@ -364,6 +368,27 @@ def _mercati(n: int) -> str:
     return "1 mercato" if n == 1 else f"{n} mercati"
 
 
+# Sopra questa soglia i mercati salgono e scendono negli stessi giorni: dividere
+# fra loro non riduce quasi niente, e chi guarda il confronto deve saperlo.
+INSIEME_TROPPO = 0.85
+
+
+def _nota_su_quanto_si_muovono_insieme(insieme: float) -> str:
+    """Avvisa quando i mercati scelti sono, di fatto, lo stesso mercato.
+
+    Venti titoli che si muovono negli stessi giorni sono un titolo solo comprato
+    venti volte: il confronto col portafoglio diviso resta valido, ma chi lo
+    legge crederebbe di avere una protezione che non ha.
+    """
+    if insieme < INSIEME_TROPPO:
+        return ""
+    return (
+        " Attenzione però: questi mercati salgono e scendono quasi sempre negli stessi "
+        "giorni, quindi dividere i soldi fra loro non ripara granché — nel giorno "
+        "brutto vanno giù tutti insieme."
+    )
+
+
 def _overall_note(
     overall: "StrategyAcrossMarkets | None", n_markets: int, portafoglio=None,
     vittorie_riconosciute: int = 0,
@@ -373,8 +398,10 @@ def _overall_note(
         confronto = (
             f" Per confronto, dividendo gli stessi soldi fra tutti i mercati in parti uguali "
             f"e stando fermi si sarebbe ottenuto il {portafoglio.rendimento_fermo_pct:+.1f}% "
-            f"(ribilanciando ogni mese: {portafoglio.rendimento_ribilanciato_pct:+.1f}%), "
+            f"(ribilanciando ogni mese, commissioni comprese: "
+            f"{portafoglio.rendimento_ribilanciato_pct:+.1f}%), "
             f"con un calo peggiore del {abs(portafoglio.calo_peggiore_fermo_pct):.0f}%."
+            + _nota_su_quanto_si_muovono_insieme(portafoglio.quanto_si_muovono_insieme)
         )
     # Nessuna ricerca ha riconosciuto una vittoria: qualunque cosa sia arrivata
     # prima in classifica, non e' un risultato di cui fidarsi. Dirlo chiaro vale

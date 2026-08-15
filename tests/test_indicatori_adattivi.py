@@ -9,7 +9,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from trading_bot.features import efficienza_del_movimento, fisher, kama
+from trading_bot.features import (
+    efficienza_del_movimento,
+    fisher,
+    kama,
+    momentum_normalizzato,
+)
 
 
 def _frame(chiusure: list[float]) -> pd.DataFrame:
@@ -142,6 +147,47 @@ def test_il_fisher_non_esplode_mai() -> None:
 def test_il_fisher_rifiuta_un_periodo_inutile() -> None:
     with pytest.raises(ValueError, match="periodo"):
         fisher(_tendenza(), periodo=1)
+
+
+# ── Il momentum normalizzato ─────────────────────────────────────────────────
+
+def test_a_parita_di_salita_vince_chi_e_salito_piu_tranquillo() -> None:
+    """È tutta la ragione di questo indicatore. Il rendimento nudo darebbe lo
+    stesso voto ai due; qui il secondo deve valere di meno, perché per arrivare
+    allo stesso punto ha fatto sudare chi lo teneva."""
+    n = 200
+    dritto = _frame([100.0 * (1.0 + 0.002) ** i for i in range(n)])
+    scosso = _frame(
+        [100.0 * (1.0 + 0.002) ** i * (1.06 if i % 2 else 0.94) for i in range(n)]
+    )
+
+    calmo = momentum_normalizzato(dritto, periodo=60).iloc[-1]
+    agitato = momentum_normalizzato(scosso, periodo=60).iloc[-1]
+
+    assert calmo > agitato * 3, (
+        "due mercati arrivati allo stesso punto prendono voti simili: la "
+        "normalizzazione non sta facendo niente"
+    )
+
+
+def test_durante_l_avvio_dice_non_lo_so_e_non_zero() -> None:
+    """"Non c'è ancora abbastanza storia" e "è fermo" sono cose diverse: se
+    l'avvio valesse zero, un mercato di cui non si sa niente entrerebbe in
+    classifica a metà gruppo invece di restarne fuori."""
+    dati = _frame([100.0 + 0.5 * i for i in range(200)])
+
+    valori = momentum_normalizzato(dati, periodo=60, finestra_scosse=60)
+
+    assert valori.iloc[:60].isna().all()
+    assert valori.iloc[-1] == valori.iloc[-1]  # non è NaN
+
+
+def test_il_momentum_rifiuta_finestre_senza_senso() -> None:
+    dati = _tendenza()
+    with pytest.raises(ValueError, match="periodo"):
+        momentum_normalizzato(dati, periodo=1)
+    with pytest.raises(ValueError, match="scosse"):
+        momentum_normalizzato(dati, finestra_scosse=1)
 
 
 # ── Le strategie che li usano ────────────────────────────────────────────────

@@ -298,7 +298,19 @@
 
               <div class="button-row" style="margin-top:0.75rem">
                 <button class="action-button auto-search-button" type="submit">Trova la strategia migliore →</button>
+                <button class="ghost-button" type="submit"
+                        formaction="{{ url_for('start_portfolio_search') }}">
+                  Dividi i soldi fra questi mercati →
+                </button>
               </div>
+              <p class="field-hint">
+                Il primo pulsante cerca una strategia e la prova su ogni mercato separatamente.
+                Il secondo fa una cosa diversa: prende <strong>un capitale solo</strong> e lo
+                divide fra i mercati che hai scritto, comprando barra per barra i più forti del
+                gruppo. Serve almeno un secondo mercato, e il confronto non è più col comprare
+                e tenere di un singolo titolo ma col dividere in parti uguali fra tutti e stare
+                fermi — che è quello che una persona farebbe davvero.
+              </p>
             </form>
           </article>
 

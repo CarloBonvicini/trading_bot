@@ -54,6 +54,15 @@ SUMMARY_LABELS = {
     "trading_costs_paid": "Costi totali",
     "fees_paid_pct_initial_capital": "Costi sul capitale iniziale",
     "fee_drag_equity": "Quanto ti sono costati i costi",
+    # ── Quando i mercati sono più di uno ──────────────────────────────────
+    "mercati_count": "Quanti mercati in esame",
+    "mercati_elenco": "Quali mercati",
+    "capitale_impegnato_pct": "Quanta parte dei soldi era investita",
+    "capitale_impegnato_massimo_pct": "Il massimo che hai avuto investito",
+    "mercati_medi_a_mercato": "Su quante cose eri dentro in media",
+    "mercati_insieme_massimo": "Su quante cose sei stato dentro insieme",
+    "quanto_si_muovono_insieme": "Quanto i mercati vanno d'accordo",
+    "ribilanciamenti": "Volte che hai rimesso in riga le quote",
 }
 
 # Glossario tooltip per le metriche e gli strumenti: testo conciso (1-2 frasi)
@@ -98,6 +107,15 @@ METRIC_TOOLTIPS: dict[str, str] = {
     # ── Posizione ─────────────────────────────────────────────────────
     "exposure_pct": "La fetta di tempo in cui i tuoi soldi erano davvero investiti invece che fermi. In gergo: esposizione.",
     "sl_tp_exit_count":      "Numero di uscite forzate da stop loss o take profit. Indica quanto i protettori intervengono.",
+    # ── Quando i mercati sono piu' di uno ─────────────────────────────
+    "mercati_count": "Fra quanti mercati sono stati divisi i soldi.",
+    "mercati_elenco": "I mercati fra cui e' stato diviso il capitale, in ordine.",
+    "capitale_impegnato_pct": "In media, quanta parte dei tuoi soldi era davvero investita invece che ferma. Si sommano i valori assoluti: chi tiene meta' al rialzo e meta' al ribasso ha tutto a rischio, non zero. In gergo: esposizione lorda.",
+    "capitale_impegnato_massimo_pct": "Il momento in cui avevi la fetta piu' grande di soldi investita: e' li' che rischiavi di piu'.",
+    "mercati_medi_a_mercato": "Su quante cose diverse eri dentro contemporaneamente, in media. Se e' vicino a uno, non stavi dividendo niente.",
+    "mercati_insieme_massimo": "Il massimo numero di cose su cui sei stato dentro nello stesso momento.",
+    "quanto_si_muovono_insieme": "Da -1 a +1: quanto i mercati salgono e scendono negli stessi giorni. Vicino a +1 dividere i soldi fra loro non ripara quasi niente, perche' nel giorno brutto vanno giu' tutti insieme. In gergo: correlazione media a coppie.",
+    "ribilanciamenti": "Quante volte le quote sono state riportate a come le volevi. Ogni volta si vende un po' di cio' che e' salito e si compra cio' che e' sceso, e si pagano le commissioni.",
     # ── Strumenti UI ──────────────────────────────────────────────────
     "autosetting":           "Scansiona una griglia di parametri sul training set (70%) e valida i migliori sull'out-of-sample. Evidenzia overfitting.",
     "walkforward":           "Ottimizza i parametri su finestre IS scorrevoli e li testa subito dopo su OOS. Più realistico dell'autosetting singolo.",

@@ -200,6 +200,43 @@ def kama(data: pd.DataFrame, periodo: int = 10, veloce: int = 2, lenta: int = 30
     return pd.Series(valori, index=close.index, name="kama")
 
 
+@registra("momentum_normalizzato")
+def momentum_normalizzato(
+    data: pd.DataFrame, periodo: int = 120, finestra_scosse: int = 60
+) -> pd.Series:
+    """Quanto il prezzo è salito, diviso quanto è stato scosso nel salirci.
+
+    Il rendimento nudo non è confrontabile fra mercati diversi: un titolo che fa
+    +30% muovendosi come una barca in tempesta e uno che fa +20% salendo dritto
+    non stanno dicendo la stessa cosa, e il secondo è quello che sta davvero
+    andando da qualche parte. Dividendo per quanto il prezzo si è agitato, i due
+    numeri tornano paragonabili — che è la condizione per poter mettere venti
+    mercati in fila e dire quale è il più forte.
+
+    Durante l'avvio non c'è ancora abbastanza storia e il valore resta vuoto,
+    invece di essere zero: "non lo so ancora" e "è fermo" sono due cose diverse,
+    e confonderle metterebbe in classifica mercati su cui non si sa niente.
+
+    In gergo: momentum a ``periodo`` barre scalato per la volatilità realizzata.
+    """
+    if periodo <= 1:
+        raise ValueError("Il periodo del momentum deve essere maggiore di 1.")
+    if finestra_scosse < 2:
+        raise ValueError("La finestra delle scosse deve essere almeno 2 barre.")
+
+    close = data["close"].astype(float)
+    salita = close / close.shift(periodo) - 1.0
+    scosse = (
+        close.pct_change()
+        .rolling(window=finestra_scosse, min_periods=finestra_scosse)
+        .std(ddof=0)
+    )
+    # Le scosse sono per barra: per confrontarle con una salita lunga `periodo`
+    # barre vanno riportate alla stessa scala.
+    scala = scosse * math.sqrt(periodo)
+    return (salita / scala.replace(0.0, np.nan)).rename("momentum_normalizzato")
+
+
 @registra("fisher")
 def fisher(data: pd.DataFrame, periodo: int = 10) -> pd.Series:
     """Rende evidenti i punti di svolta, comprimendo il centro e allargando gli estremi.

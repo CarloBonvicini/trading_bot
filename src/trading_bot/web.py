@@ -10,10 +10,12 @@ from flask import Flask, abort, current_app, flash, jsonify, redirect, render_te
 from trading_bot.application.autosetting import run_autosetting
 from trading_bot.application.search_jobs import (
     get_job,
+    get_portfolio_job,
     job_status,
     list_saved_searches,
     resume_search_job,
     start_multi_search_job,
+    start_portfolio_search_job,
 )
 from trading_bot.strategies import STRATEGY_SPECS, build_strategy_signal, parse_strategy_parameters
 from trading_bot.application.chart_lab import (
@@ -32,6 +34,7 @@ from trading_bot.data import INTRADAY_LOOKBACK_DAYS, coerce_interval_date_window
 from trading_bot.errors import FormValidationError
 from trading_bot.reporting import (
     METRIC_TOOLTIPS,
+    SUMMARY_LABELS,
     build_chart_payload,
     build_live_comparison_cards,
     build_result_validation_snapshot,
@@ -94,6 +97,11 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
     # Espone i tooltip come filtro Jinja: {{ "sharpe_ratio" | tooltip }}
     # restituisce la spiegazione, o stringa vuota se la chiave è sconosciuta.
     app.jinja_env.filters["tooltip"] = metric_tooltip
+    # E l'etichetta in italiano corrente: {{ "max_drawdown_pct" | etichetta }}
+    # diventa "Il calo peggiore". Senza, un template che mostra una metrica
+    # dovrebbe riscriverne il nome a mano, e il giorno che cambia resterebbe
+    # indietro in silenzio.
+    app.jinja_env.filters["etichetta"] = lambda chiave: SUMMARY_LABELS.get(chiave, chiave)
     # Mappa completa disponibile come variabile globale per il JS (chart lab).
     app.jinja_env.globals["METRIC_TOOLTIPS"] = METRIC_TOOLTIPS
 
@@ -215,6 +223,60 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
             prove_del_caso=prove_del_caso,
         )
         return redirect(url_for("search_detail", job_id=job_id))
+
+    @app.post("/portfolios/start")
+    def start_portfolio_search():
+        """Avvia in background la ricerca del portafoglio sui mercati indicati."""
+        form = _normalize_intraday_form_window(request.form)
+        _store_home_draft(_resolve_home_form_values(form))
+        symbols = _parse_symbols(str(form.get("symbols") or form.get("symbol") or ""))
+        if len(symbols) < 2:
+            flash(
+                "Per dividere i soldi servono almeno due mercati: aggiungine un altro, "
+                "separato da una virgola.",
+                "error",
+            )
+            return _render_home(form_values=form, view=HOME_VIEW_SETUP, status=400)
+
+        preset_costi = costi_operazione(form)
+        if preset_costi is not None:
+            fee_bps, slippage_bps = preset_costi
+        else:
+            fee_bps = float(str(form.get("fee_bps", "5")).strip() or "5")
+            slippage_bps = float(str(form.get("slippage_bps", "0")).strip() or "0")
+
+        job_id = start_portfolio_search_job(
+            symbols=symbols,
+            interval=str(form.get("interval", "1d")).strip() or "1d",
+            initial_capital=float(str(form.get("initial_capital", "10000")).strip() or "10000"),
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
+            start=str(form.get("start", "")).strip(),
+            end=str(form.get("end", "")).strip(),
+            reports_dir=current_app.config["REPORTS_DIR"],
+            consenti_short=flag_value(form, "consenti_short"),
+            prove_del_caso=PROVE_PREDEFINITE if flag_value(form, "prova_del_caso") else 0,
+        )
+        return redirect(url_for("portfolio_detail", job_id=job_id))
+
+    @app.get("/portfolios/<job_id>")
+    def portfolio_detail(job_id: str):
+        job = get_portfolio_job(job_id, current_app.config["REPORTS_DIR"])
+        if job is None:
+            abort(404)
+        if job["status"] == "done":
+            return render_template("portfolio_result.html", result=job["result"], job=job)
+        return render_template(
+            "search_progress.html", job=job, job_id=job_id,
+            status_url=url_for("portfolio_status", job_id=job_id),
+        )
+
+    @app.get("/portfolios/<job_id>/status")
+    def portfolio_status(job_id: str):
+        status = job_status(job_id, current_app.config["REPORTS_DIR"])
+        if status is None:
+            abort(404)
+        return jsonify(status)
 
     @app.get("/searches/<job_id>")
     def search_detail(job_id: str):
