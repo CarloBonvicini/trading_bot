@@ -197,6 +197,70 @@ def _check_sl_tp_hit(
     return False
 
 
+@dataclass(frozen=True)
+class PosizioneEseguita:
+    """Dal segnale alla posizione realmente tenuta in ciascuna barra.
+
+    Tenerlo in un solo posto non è pulizia: il motore di portafoglio deve
+    ottenere, mercato per mercato, *esattamente* la posizione che otterrebbe il
+    motore a mercato singolo. Se i due percorsi ricostruissero la sequenza
+    ognuno per conto suo, una modifica a uno dei due (una guardia in più sullo
+    shift, una regola di fine giornata) li farebbe divergere senza che nessun
+    test se ne accorga: il portafoglio direbbe numeri diversi dal backtest sullo
+    stesso mercato e nessuno saprebbe quale dei due credere.
+    """
+
+    desiderata: pd.Series      # il segnale ripulito, prima dello shift
+    eseguita: pd.Series        # dopo shift, fine giornata e soglie
+    sl_tp: pd.Series           # barre in cui è scattato lo stop o il target
+    fine_giornata: pd.Series   # barre chiuse perché finiva la giornata
+
+
+def posizione_eseguita(
+    data: pd.DataFrame,
+    signal: pd.Series,
+    *,
+    sl_pct: float | None = None,
+    tp_pct: float | None = None,
+    flat_at_close: bool = False,
+) -> PosizioneEseguita:
+    """Traduce un segnale nella posizione tenuta barra per barra.
+
+    Tre passaggi, in quest'ordine:
+
+    1. **Lo shift di una barra.** Il segnale nato dalla barra ``t`` è eseguibile
+       dalla ``t+1``. È il presidio contro il lookahead bias e non si tocca.
+    2. **Fine giornata.** Con ``flat_at_close`` nessuna posizione sopravvive
+       alla notte: la prima barra di ogni giornata parte piatta. Sulle serie
+       giornaliere la regola viene ignorata, dove azzererebbe tutto.
+    3. **Stop loss e take profit**, che dipendono dal percorso dei prezzi e
+       quindi vanno applicati sulla posizione già shiftata.
+
+    La posizione che esce ha il **verso pieno** (il segno è la direzione, il
+    valore assoluto la convinzione): il dimensionamento arriva dopo, perché una
+    variazione di dimensione non è un'operazione nuova.
+    """
+    desiderata = signal.reindex(data.index).fillna(0.0).clip(lower=-1.0, upper=1.0)
+    # Shift di 1 barra: il segnale generato dalla barra t è eseguibile dalla t+1.
+    # Questo è il presidio chiave contro il lookahead bias — non rimuovere.
+    eseguita = desiderata.shift(1).fillna(0.0)
+
+    # Niente posizioni tenute da un giorno all'altro: la prima barra di ogni
+    # giornata parte piatta, cioè si è chiuso tutto alla chiusura precedente.
+    # Su una serie giornaliera la regola non ha senso (ogni barra è già l'ultima
+    # della sua giornata) e viene ignorata invece di azzerare ogni posizione.
+    fine_giornata = pd.Series(False, index=data.index)
+    if flat_at_close and serie_intraday(data.index):
+        prima_del_giorno = pd.Series(_prima_barra_del_giorno(data.index), index=data.index)
+        fine_giornata = prima_del_giorno & (eseguita != 0.0)
+        eseguita = eseguita.where(~prima_del_giorno, 0.0)
+
+    eseguita, sl_tp = apply_sl_tp(data, eseguita, sl_pct, tp_pct)
+    return PosizioneEseguita(
+        desiderata=desiderata, eseguita=eseguita, sl_tp=sl_tp, fine_giornata=fine_giornata,
+    )
+
+
 def compute_position_size(
     data: pd.DataFrame,
     position: pd.Series,
@@ -258,26 +322,15 @@ def run_backtest(
     close = data["close"].astype(float)
     # Da -1 (tutto al ribasso) a +1 (tutto al rialzo). Un segnale negativo su un
     # motore solo long veniva azzerato qui in silenzio.
-    position = signal.reindex(data.index).fillna(0.0).clip(lower=-1.0, upper=1.0)
-    # Shift di 1 barra: il segnale generato dalla barra t è eseguibile dalla t+1.
-    # Questo è il presidio chiave contro il lookahead bias — non rimuovere.
-    executed_position = position.shift(1).fillna(0.0)
-
-    # Stop loss / take profit (path-dependent, applicato dopo lo shift).
-    # IMPORTANT: SL/TP lavora sulla posizione a verso pieno (-1/0/+1) PRIMA del
-    # sizing, così possiamo distinguere chiaramente trade reali da variazioni
-    # di sizing (vol_target ecc.) ai fini del tracking trade.
-    # Niente posizioni tenute da un giorno all'altro: la prima barra di ogni
-    # giornata parte piatta, cioè si è chiuso tutto alla chiusura precedente.
-    # Su una serie giornaliera la regola non ha senso (ogni barra è già l'ultima
-    # della sua giornata) e viene ignorata invece di azzerare ogni posizione.
-    eod_mask = pd.Series(False, index=data.index)
-    if flat_at_close and serie_intraday(data.index):
-        prima_del_giorno = pd.Series(_prima_barra_del_giorno(data.index), index=data.index)
-        eod_mask = prima_del_giorno & (executed_position != 0.0)
-        executed_position = executed_position.where(~prima_del_giorno, 0.0)
-
-    executed_position, sl_tp_mask = apply_sl_tp(data, executed_position, sl_pct, tp_pct)
+    # SL/TP lavora sulla posizione a verso pieno PRIMA del sizing, così restano
+    # distinguibili le operazioni vere dalle variazioni di dimensione.
+    tenuta = posizione_eseguita(
+        data, signal, sl_pct=sl_pct, tp_pct=tp_pct, flat_at_close=flat_at_close,
+    )
+    position = tenuta.desiderata
+    executed_position = tenuta.eseguita
+    sl_tp_mask = tenuta.sl_tp
+    eod_mask = tenuta.fine_giornata
 
     daily_returns = close.pct_change().fillna(0.0)
 
