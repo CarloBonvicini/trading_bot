@@ -245,6 +245,26 @@ def test_i_tre_piu_forti_fra_venti_stanno_dentro_un_capitale_solo() -> None:
     assert esito.summary["trade_count"] > 0
 
 
+def test_la_classifica_puo_riusare_gli_indicatori_gia_calcolati() -> None:
+    """Ritagliare i dati quando non serve darebbe un oggetto nuovo a ogni
+    chiamata, e il registro — che riconosce i dati per identità — non potrebbe
+    mai riusare niente. Nessuna contaminazione: il riuso resta possibile solo
+    dentro un contesto aperto su quegli stessi identici dati."""
+    from trading_bot.features import contesto_indicatori
+
+    mercati = _gruppo(quanti=3, n=400)
+    primo = next(iter(mercati.values()))
+
+    with contesto_indicatori(primo) as contesto:
+        for _ in range(4):
+            classifica_di_forza(mercati, periodo=120)
+
+    assert contesto.riusi > 0, "la classifica ricalcola ogni volta lo stesso indicatore"
+    # Un solo mercato è quello del contesto: gli altri due devono restare fuori
+    # dalla memoria, altrimenti si starebbero servendo valori di un altro mercato.
+    assert contesto.calcoli == 1
+
+
 def test_la_classifica_lascia_fuori_chi_non_ha_abbastanza_storia() -> None:
     mercati = _gruppo(quanti=3, n=200)
     forza = classifica_di_forza(mercati, periodo=120)

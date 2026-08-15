@@ -132,7 +132,10 @@ def classifica_di_forza(
 
     forze: dict[str, pd.Series] = {}
     for nome, dati in mercati.items():
-        ristretto = dati.loc[indice]
+        # Ritagliare quando non serve non e' solo lavoro sprecato: darebbe un
+        # oggetto nuovo a ogni chiamata, e il registro degli indicatori — che
+        # riconosce i dati per identita' — non potrebbe mai riusare niente.
+        ristretto = dati if dati.index.equals(indice) else dati.loc[indice]
         forze[nome] = indicatore(
             "momentum_normalizzato", ristretto, periodo=periodo,
         ).replace([np.inf, -np.inf], np.nan)
