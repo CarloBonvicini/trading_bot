@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Portafoglio · {{ result.mercati | join(', ') }}{% endblock %}
+{% block body_class %}home-dashboard-body{% endblock %}
+
+{% block content %}
+{% set riepilogo = result.riepilogo_prova or {} %}
+{% set capitale = riepilogo.initial_capital or 0 %}
+{% set finale = riepilogo.final_equity or 0 %}
+{% set noioso = riepilogo.benchmark_final_equity or 0 %}
+{% set margine = result.margine_pct or 0 %}
+{% set caso = result.prova_del_caso %}
+{% set tono = 'positive' if margine > 0.5 else ('negative' if margine < -0.5 else 'neutral') %}
+
+<div class="page-header">
+  <p class="eyebrow">un capitale solo diviso fra più mercati</p>
+  <h1>
+    {% if result.migliore %}Come sarebbe andata dividendo i soldi{% else %}Niente da misurare{% endif %}
+  </h1>
+  <p class="inline-note">
+    Mercati: <strong>{{ result.mercati | join(', ') }}</strong> &middot;
+    {{ result.barre }} barre in comune, di cui {{ result.barre_prova }} mai viste durante la ricerca
+  </p>
+</div>
+
+{# ── Il verdetto in euro ──────────────────────────────────────────────── #}
+<section class="panel report-tone-{{ tono }}" style="border-left:4px solid;">
+  <h2 style="margin-top:0;">In parole semplici</h2>
+  <p style="font-size:15px;line-height:1.7;margin:0;">{{ result.verdetto }}</p>
+  {% if result.migliore %}
+    <p class="inline-note" style="margin-top:0.75rem;">
+      La configurazione scelta: <strong>{{ result.migliore }}</strong>
+    </p>
+  {% endif %}
+</section>
+
+{% if result.migliore %}
+
+{# ── La prova del caso ────────────────────────────────────────────────── #}
+{% if caso and caso.prove %}
+  <section class="panel report-tone-{{ 'positive' if caso.superato else 'negative' }}" style="border-left:4px solid;">
+    <p class="eyebrow">non è fortuna?</p>
+    <h2 style="margin-top:0;">
+      {% if caso.superato %}Ha superato la prova del caso{% else %}Non ha superato la prova del caso{% endif %}
+    </h2>
+    <p style="font-size:15px;line-height:1.7;margin:0;">{{ caso.verdetto }}</p>
+    <details style="margin-top:0.5rem;">
+      <summary class="inline-note" style="cursor:pointer;">Come funziona con più mercati</summary>
+      <p class="inline-note" style="margin-top:8px;">
+        La stessa ricerca viene rifatta su storie rimescolate, ma con <strong>lo stesso
+        rimescolamento per tutti i mercati</strong>. Serve a togliere il tempo lasciando
+        intatto chi si muove insieme a chi: una strategia che mette i mercati in classifica
+        vive proprio di quella somiglianza, e toglierle anche quella vorrebbe dire darle un
+        avversario che non ha mai incontrato — passerebbe chiunque. Su quei dati una
+        classifica di forza non ha niente da trovare, quindi tutto ciò che ci trova è fortuna.
+      </p>
+    </details>
+  </section>
+{% endif %}
+
+{# ── Quanto era facile sembrare bravi ─────────────────────────────────── #}
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <p class="eyebrow">quanto spazio c'era per illudersi</p>
+      <h3>Il risultato onesto e quello col senno di poi</h3>
+    </div>
+  </div>
+  <p class="inline-note">
+    Il primo numero è quello che conta: la configurazione è stata scelta guardando solo la
+    prima parte della storia, e misurata una volta sola sul resto. Il secondo è quello che
+    avrebbe fatto la configurazione migliore <em>sapendo già come andava a finire</em> — non
+    è un risultato, è la misura di quanto sarebbe stato facile raccontarsi una bugia
+    guardando la classifica invece della procedura.
+  </p>
+  <div class="terminal-metric-grid" style="margin-top:0.75rem;">
+    <article class="terminal-metric-card report-tone-{{ tono }}">
+      <p class="inline-note" style="margin:0;">Scelto senza sapere il futuro</p>
+      <p style="margin:2px 0 0;font-size:20px;"><strong>{{ "%+.1f"|format(margine) }} punti</strong></p>
+      <p class="inline-note" style="margin:2px 0 0;">rispetto a dividere in parti uguali e stare fermi</p>
+    </article>
+    <article class="terminal-metric-card report-tone-neutral">
+      <p class="inline-note" style="margin:0;">Il migliore col senno di poi</p>
+      <p style="margin:2px 0 0;font-size:20px;"><strong>{{ "%+.1f"|format(result.margine_col_senno_di_poi_pct or 0) }} punti</strong></p>
+      <p class="inline-note" style="margin:2px 0 0;">
+        {{ result.configurazioni_in_vantaggio }} configurazioni su {{ result.configurazioni_provate }} in vantaggio
+      </p>
+    </article>
+  </div>
+</section>
+
+{# ── I numeri del portafoglio ─────────────────────────────────────────── #}
+<section class="panel">
+  <div class="panel-header">
+    <div>
+      <p class="eyebrow">sul periodo mai visto</p>
+      <h3>Com'è andato il portafoglio</h3>
+    </div>
+  </div>
+  <div class="table-scroll">
+    <table class="data-table">
+      <tbody>
+        {% for chiave in [
+          'final_equity', 'benchmark_final_equity', 'excess_return_pct', 'max_drawdown_pct',
+          'benchmark_max_drawdown_pct', 'capitale_impegnato_pct', 'mercati_medi_a_mercato',
+          'quanto_si_muovono_insieme', 'ribilanciamenti', 'trade_count',
+          'fees_paid', 'slippage_paid'
+        ] %}
+          {% if riepilogo.get(chiave) is not none %}
+            <tr>
+              <td>
+                {{ chiave | etichetta }}
+                {% if chiave | tooltip %}
+                  <span class="inline-note" style="display:block;">{{ chiave | tooltip }}</span>
+                {% endif %}
+              </td>
+              <td><strong>{{ riepilogo.get(chiave) }}</strong></td>
+            </tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if result.cartella_report %}
+    <p class="inline-note" style="margin-top:0.75rem;">
+      La curva giorno per giorno, quanto capitale stava su ogni mercato e l'elenco delle
+      operazioni sono salvati in <code>reports/{{ result.cartella_report }}</code>: si aprono
+      con un foglio di calcolo.
+    </p>
+  {% endif %}
+</section>
+
+{% endif %}
+
+<div class="button-row" style="margin-top:1rem">
+  <a class="action-button" href="{{ url_for('new_backtest_home') }}">Nuova ricerca</a>
+</div>
+{% endblock %}

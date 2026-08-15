@@ -91,6 +91,17 @@ def test_il_margine_deve_staccarsi_di_un_minimo() -> None:
     assert esito.superato is False
 
 
+def test_se_la_fortuna_fa_meglio_non_si_dice_che_hanno_pareggiato() -> None:
+    """Regressione dalla ricerca di portafoglio: col margine vero sotto quello
+    del caso il verdetto diceva "quanto questa strategia", che è falso — la
+    fortuna aveva fatto meglio, ed è il caso in cui c'è meno da fidarsi."""
+    esito = valuta_contro_il_caso(margine_vero_pct=-9.8, margini_del_caso_pct=[0.3])
+
+    assert esito.superato is False
+    assert "quanto questa strategia" not in esito.verdetto
+    assert "10.1 punti più di questa strategia" in esito.verdetto
+
+
 def test_senza_prove_non_si_pronuncia() -> None:
     esito = valuta_contro_il_caso(margine_vero_pct=30.0, margini_del_caso_pct=[])
 

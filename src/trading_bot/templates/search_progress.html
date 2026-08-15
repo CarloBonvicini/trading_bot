@@ -7,11 +7,19 @@
 <div class="page-header">
   <p class="eyebrow">ricerca automatica</p>
   <h1>
-    {% if job.status == 'interrupted' %}Ricerca interrotta{% else %}Sto cercando la strategia migliore…{% endif %}
+    {% if job.status == 'interrupted' %}
+      Ricerca interrotta
+    {% elif job.scan_mode == 'portafoglio' %}
+      Sto cercando come dividere i soldi…
+    {% else %}
+      Sto cercando la strategia migliore…
+    {% endif %}
   </h1>
   <p class="inline-note">
-    Mercati: <strong>{{ job.symbols | join(', ') }}</strong> &middot;
-    profondità: <strong>{{ depth_labels.get(job.scan_mode, job.scan_mode) }}</strong>
+    Mercati: <strong>{{ job.symbols | join(', ') }}</strong>
+    {% if job.scan_mode != 'portafoglio' %}
+      &middot; profondità: <strong>{{ depth_labels.get(job.scan_mode, job.scan_mode) }}</strong>
+    {% endif %}
   </p>
 </div>
 
@@ -55,7 +63,9 @@
 
 <script>
   (function () {
-    var jobId = "{{ job_id }}";
+    // L'indirizzo da interrogare cambia col tipo di ricerca: la stessa pagina
+    // segue sia la ricerca a mercato singolo sia quella di portafoglio.
+    var statusUrl = "{{ status_url or url_for('search_status', job_id=job_id) }}";
     // In stato "interrotta" non c'è nulla da seguire: si riprende col pulsante.
     if (!document.getElementById('search-bar-fill')) return;
     var bar = document.getElementById('search-bar-fill');
@@ -86,7 +96,7 @@
     }
 
     function poll() {
-      fetch('/searches/' + jobId + '/status')
+      fetch(statusUrl)
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (s) {
           if (!s) { setTimeout(poll, 2500); return; }

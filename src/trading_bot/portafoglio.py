@@ -29,8 +29,11 @@ stare fermi. Con un mercato solo coincide col comprare-e-tenere di sempre.
 """
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -279,6 +282,45 @@ def esegui_portafoglio(
     return EsitoPortafoglio(
         summary=summary, equity_curve=equity_curve, trades=trades, pesi=pesi, mercati=nomi,
     )
+
+
+def salva_report_portafoglio(
+    esito: EsitoPortafoglio,
+    output_dir: str | Path,
+    *,
+    nome: str = "portafoglio",
+    configurazione: dict | None = None,
+) -> Path:
+    """Scrive su disco un portafoglio, con le stesse convenzioni di un backtest.
+
+    Gli stessi tre file di sempre (``summary.json``, ``equity_curve.csv``,
+    ``trades.csv``) con le stesse chiavi, più due che esistono solo qui:
+    ``pesi.csv`` dice quanto capitale stava su ogni mercato barra per barra, e
+    in ``trades.csv`` compare la colonna ``symbol``. Aggiungere colonne e file
+    non rompe niente di già salvato; rinominare sì, e infatti non succede.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    cartella = Path(output_dir) / f"{nome}-{timestamp}"
+    cartella.mkdir(parents=True, exist_ok=True)
+
+    with (cartella / "summary.json").open("w", encoding="utf-8") as handle:
+        json.dump(esito.summary, handle, indent=2)
+    with (cartella / "metadata.json").open("w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "artifact_type": "portafoglio",
+                "mercati": esito.mercati,
+                "created_at": datetime.now().isoformat(timespec="seconds"),
+                "report_name": cartella.name,
+                **(configurazione or {}),
+            },
+            handle, indent=2,
+        )
+
+    esito.equity_curve.to_csv(cartella / "equity_curve.csv", index_label="date")
+    esito.trades.to_csv(cartella / "trades.csv", index=False)
+    esito.pesi.to_csv(cartella / "pesi.csv", index_label="date")
+    return cartella
 
 
 # ── I pezzi ──────────────────────────────────────────────────────────────────

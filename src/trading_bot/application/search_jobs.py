@@ -18,7 +18,13 @@ from datetime import datetime
 from pathlib import Path
 
 from trading_bot.application.multi_search import N_STRATEGIES, run_multi_market_search
+from trading_bot.application.ricerca_portafoglio import (
+    cerca_portafoglio,
+    esegui_configurazione,
+)
 from trading_bot.application.strategy_search import to_serializable
+from trading_bot.data import download_price_data
+from trading_bot.portafoglio import salva_report_portafoglio
 
 _JOBS: dict[str, dict] = {}
 _LOCK = threading.Lock()
@@ -26,6 +32,18 @@ _LOCK = threading.Lock()
 
 def _job_dir(reports_dir: str | Path) -> Path:
     directory = Path(reports_dir) / "auto_searches"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
+def _portfolio_dir(reports_dir: str | Path) -> Path:
+    """Cartella a parte per le ricerche di portafoglio.
+
+    Mescolarle a quelle a mercato singolo vorrebbe dire che l'elenco delle
+    ricerche salvate se le ritrova dentro e prova a leggerle con la forma
+    sbagliata: sono due risultati diversi, e stanno in due posti diversi.
+    """
+    directory = Path(reports_dir) / "portfolio_searches"
     directory.mkdir(parents=True, exist_ok=True)
     return directory
 
@@ -159,6 +177,127 @@ def _launch(*, job_id: str, parametri: dict, reports_dir: str | Path, stato: dic
                 job["message"] = "Errore durante la ricerca"
 
     threading.Thread(target=_worker, name=f"search-{job_id}", daemon=True).start()
+
+
+def start_portfolio_search_job(
+    *,
+    symbols: list[str],
+    interval: str,
+    initial_capital: float,
+    fee_bps: float,
+    start: str,
+    end: str,
+    reports_dir: str | Path,
+    consenti_short: bool = False,
+    slippage_bps: float = 0.0,
+    prove_del_caso: int = 0,
+    download_data=None,
+) -> str:
+    """Avvia in background la ricerca del portafoglio e restituisce l'id del job.
+
+    Non ha checkpoint come la ricerca multi-mercato, e per una ragione: il
+    budget qui è dichiarato e piccolo, quindi una ricerca dura minuti e non ore.
+    Riprendere qualcosa che si rifà in due minuti aggiungerebbe una macchina da
+    mantenere in cambio di niente.
+    """
+    job_id = uuid.uuid4().hex[:12]
+    job = {
+        "id": job_id,
+        "status": "running",
+        "progress": 0,
+        "total": 1,
+        "message": "Scarico i dati di mercato…",
+        "symbols": symbols,
+        "interval": interval,
+        "scan_mode": "portafoglio",
+        "started_at": datetime.now().isoformat(timespec="seconds"),
+        "result": None,
+        "error": None,
+    }
+    with _LOCK:
+        _JOBS[job_id] = job
+
+    def _progress(fatte: int, totali: int, messaggio: str) -> None:
+        with _LOCK:
+            job["progress"] = fatte
+            job["total"] = totali
+            job["message"] = messaggio
+
+    def _worker() -> None:
+        try:
+            # Risolto qui e non nella firma: legato come valore predefinito, un
+            # test che sostituisce lo scaricatore non avrebbe alcun effetto,
+            # perche' il nome sarebbe gia' stato catturato alla definizione.
+            scarica = download_data or download_price_data
+            mercati = {
+                simbolo: scarica(symbol=simbolo, start=start, end=end, interval=interval)
+                for simbolo in symbols
+            }
+            esito = cerca_portafoglio(
+                mercati, initial_capital=initial_capital, fee_bps=fee_bps,
+                slippage_bps=slippage_bps, consenti_short=consenti_short,
+                prove_del_caso=prove_del_caso, progress_callback=_progress,
+            )
+            payload = to_serializable(esito)
+            # La curva, i pesi nel tempo e il registro delle operazioni non
+            # stanno in un riepilogo: si salvano a parte, cosi' si possono
+            # aprire con un foglio di calcolo.
+            if esito.parametri:
+                _progress(job["total"], job["total"], "Salvo il portafoglio trovato…")
+                intero = esegui_configurazione(
+                    mercati, esito.parametri, initial_capital=initial_capital,
+                    fee_bps=fee_bps, slippage_bps=slippage_bps,
+                )
+                if intero is not None:
+                    cartella = salva_report_portafoglio(
+                        intero, reports_dir,
+                        nome="portafoglio-" + "_".join(symbols)[:40],
+                        configurazione={**esito.parametri, "job_id": job_id},
+                    )
+                    payload["cartella_report"] = cartella.name
+
+            with (_portfolio_dir(reports_dir) / f"{job_id}.json").open(
+                "w", encoding="utf-8"
+            ) as handle:
+                json.dump(
+                    {"id": job_id, "saved_at": datetime.now().isoformat(timespec="seconds"),
+                     "result": payload},
+                    handle, indent=2,
+                )
+            with _LOCK:
+                job["status"] = "done"
+                job["result"] = payload
+                job["progress"] = job["total"]
+                job["message"] = "Completato"
+        except Exception as exc:  # il thread non deve morire silenziosamente
+            with _LOCK:
+                job["status"] = "error"
+                job["error"] = str(exc)
+                job["message"] = "Errore durante la ricerca"
+
+    threading.Thread(target=_worker, name=f"portafoglio-{job_id}", daemon=True).start()
+    return job_id
+
+
+def get_portfolio_job(job_id: str, reports_dir: str | Path) -> dict | None:
+    """Snapshot del job di portafoglio, in memoria o ricaricato da disco."""
+    with _LOCK:
+        job = _JOBS.get(job_id)
+        if job is not None:
+            return dict(job)
+
+    path = _portfolio_dir(reports_dir) / f"{job_id}.json"
+    if not path.exists():
+        return None
+    with path.open(encoding="utf-8") as handle:
+        salvato = json.load(handle)
+    risultato = salvato.get("result", {})
+    return {
+        "id": job_id, "status": "done", "progress": 1, "total": 1,
+        "message": "Completato", "result": risultato, "error": None,
+        "symbols": risultato.get("mercati", []),
+        "scan_mode": "portafoglio",
+    }
 
 
 def _checkpoint_path(job_id: str, reports_dir: str | Path) -> Path:

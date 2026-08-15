@@ -303,6 +303,41 @@ def _indice_comune(mercati: dict[str, pd.DataFrame]) -> pd.Index:
     return indice.sort_values()
 
 
+def configurazione_da_parametri(parametri: dict) -> ConfigurazionePortafoglio:
+    """Ricostruisce una configurazione dai parametri salvati nell'esito."""
+    strategy_id = str(parametri["strategy_id"])
+    nomi = list(GRIGLIE_PORTAFOGLIO[strategy_id])
+    return ConfigurazionePortafoglio(
+        strategy_id=strategy_id,
+        parametri=tuple((nome, parametri[nome]) for nome in nomi if nome in parametri),
+        allocazione=str(parametri["allocazione"]),
+        ribilancia_ogni=str(parametri["ribilancia_ogni"]),
+        consenti_short=bool(parametri.get("consenti_short", False)),
+    )
+
+
+def esegui_configurazione(
+    mercati: dict[str, pd.DataFrame],
+    parametri: dict,
+    *,
+    initial_capital: float = 10_000.0,
+    fee_bps: float = 5.0,
+    slippage_bps: float = 0.0,
+    solo_indice: pd.Index | None = None,
+):
+    """Riesegue una configurazione già scelta e restituisce il portafoglio intero.
+
+    Serve a chi vuole i pezzi che il riepilogo non contiene — la curva, i pesi
+    nel tempo, il registro delle operazioni — per salvarli o mostrarli.
+    """
+    return _esegui_configurazione(
+        mercati,
+        configurazione_da_parametri(parametri),
+        dict(initial_capital=initial_capital, fee_bps=fee_bps, slippage_bps=slippage_bps),
+        solo_indice=solo_indice,
+    )
+
+
 def _prova_configurazione(
     mercati: dict[str, pd.DataFrame],
     configurazione: ConfigurazionePortafoglio,
@@ -310,7 +345,19 @@ def _prova_configurazione(
     *,
     solo_indice: pd.Index | None = None,
 ) -> dict | None:
-    """Esegue una configurazione e restituisce il riepilogo, o None se non regge.
+    """Il riepilogo di una configurazione, o None se non è valutabile."""
+    esito = _esegui_configurazione(mercati, configurazione, costi, solo_indice=solo_indice)
+    return esito.summary if esito is not None else None
+
+
+def _esegui_configurazione(
+    mercati: dict[str, pd.DataFrame],
+    configurazione: ConfigurazionePortafoglio,
+    costi: dict,
+    *,
+    solo_indice: pd.Index | None = None,
+):
+    """Esegue una configurazione, o restituisce None se non regge.
 
     Con ``solo_indice`` i segnali nascono sull'intera storia e vengono poi
     ritagliati sul tratto richiesto: serve a far scaldare la classifica sulla
@@ -326,7 +373,7 @@ def _prova_configurazione(
         if solo_indice is not None:
             mercati = {nome: dati.loc[solo_indice] for nome, dati in mercati.items()}
             segnali = segnali.loc[solo_indice]
-        esito = esegui_portafoglio(
+        return esegui_portafoglio(
             mercati, {nome: segnali[nome] for nome in mercati},
             allocazione=configurazione.allocazione,
             ribilancia_ogni=configurazione.ribilancia_ogni,
@@ -334,7 +381,6 @@ def _prova_configurazione(
         )
     except Exception:
         return None
-    return esito.summary
 
 
 def _prova_del_caso_portafoglio(
@@ -369,6 +415,16 @@ def _prova_del_caso_portafoglio(
     return valuta_contro_il_caso(margine_vero, margini)
 
 
+def _euro(valore: float) -> str:
+    """Importo con il punto a separare le migliaia, come si scrive in italiano.
+
+    Il separatore va messo sul numero e non sulla frase: sostituendolo su tutto
+    il testo si finisce per trasformare in punti anche le virgole delle frasi,
+    che e' esattamente quello che era successo.
+    """
+    return f"{valore:,.0f}".replace(",", ".") + " €"
+
+
 def _verdetto(esito: EsitoRicercaPortafoglio) -> str:
     """La frase che dice com'è andata, senza gergo."""
     capitale = float(esito.riepilogo_prova.get("initial_capital", 0.0))
@@ -377,13 +433,11 @@ def _verdetto(esito: EsitoRicercaPortafoglio) -> str:
     differenza = finale - noioso
 
     apertura = (
-        f"Su un periodo mai visto durante la ricerca, {capitale:,.0f} € sarebbero "
-        f"diventati {finale:,.0f} €. Dividendo gli stessi soldi in parti uguali fra "
-        f"gli stessi mercati e stando fermi: {noioso:,.0f} €"
-    ).replace(",", ".")
-    apertura += (
-        f", cioè {abs(differenza):,.0f} € {'in più' if differenza >= 0 else 'in meno'}."
-    ).replace(",", ".")
+        f"Su un periodo mai visto durante la ricerca, {_euro(capitale)} sarebbero "
+        f"diventati {_euro(finale)}. Dividendo gli stessi soldi in parti uguali fra "
+        f"gli stessi mercati e stando fermi: {_euro(noioso)}, cioè "
+        f"{_euro(abs(differenza))} {'in più' if differenza >= 0 else 'in meno'}."
+    )
 
     quante = (
         f" La ricerca ha provato {esito.configurazioni_provate} configurazioni: "

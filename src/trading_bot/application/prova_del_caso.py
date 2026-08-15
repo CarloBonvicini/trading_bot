@@ -168,6 +168,16 @@ def valuta_contro_il_caso(
             f"{esito.margine_vero_pct:+.1f}: {vantaggio:.1f} punti in più di quanto si "
             "ottiene per caso. È il segnale più incoraggiante che questo strumento sappia dare."
         )
+    elif vantaggio < 0:
+        # La fortuna ha fatto meglio: dire "quanto questa strategia" sarebbe
+        # falso, ed e' il caso in cui c'e' meno da fidarsi di tutti.
+        esito.verdetto = (
+            f"Rimescolando la storia, cercando fra le stesse identiche opzioni, la fortuna "
+            f"arriva a {caso:+.1f} punti sul mercato, cioè {abs(vantaggio):.1f} punti "
+            f"più di questa strategia ({esito.margine_vero_pct:+.1f}). Su dati in cui non "
+            "c'era niente da trovare si è ottenuto di più che su quelli veri: non c'è "
+            "niente da cui fidarsi."
+        )
     else:
         esito.verdetto = (
             f"Rimescolando la storia, cercando fra le stesse identiche opzioni, la fortuna "
