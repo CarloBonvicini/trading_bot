@@ -151,10 +151,20 @@ def test_le_combinazioni_vietate_non_vengono_mai_provate() -> None:
     assert esito.parametri["veloce"] < esito.parametri["lento"]
 
 
-def test_una_griglia_tutta_vietata_lo_dice() -> None:
-    griglia = {"a": [1, 2], "b": [1, 2]}
+@pytest.mark.parametrize(
+    "griglia",
+    [
+        {"a": [1, 2], "b": [1, 2]},                        # sta nel budget
+        {f"p{i}": list(range(10)) for i in range(6)},      # non ci sta
+    ],
+    ids=["griglia piccola", "griglia enorme"],
+)
+def test_una_griglia_tutta_vietata_lo_dice(griglia: dict) -> None:
+    """Lo stesso messaggio da entrambe le strade: chi passa vincoli che non
+    lasciano passare niente non deve leggere due cose diverse a seconda di
+    quanto era grande la griglia."""
     with pytest.raises(ValueError, match="Nessuna combinazione valida"):
-        esplora(griglia, lambda p: 1.0, ammessa=lambda p: False)
+        esplora(griglia, lambda p: 1.0, budget=50, ammessa=lambda p: False)
 
 
 # ── Le combinazioni che non si possono valutare ──────────────────────────────

@@ -366,7 +366,10 @@ class _Visitati:
 
     def esito(self, *, spazio: int, esaustiva: bool) -> EsitoRicerca:
         if not self._punteggi:
-            raise ValueError("Nessuna combinazione provata.")
+            # Stesso messaggio del percorso a enumerazione: chi passa vincoli
+            # che non lasciano passare niente deve leggere la stessa cosa, che
+            # la griglia sia da dieci combinazioni o da un milione.
+            raise ValueError("Nessuna combinazione valida in questa griglia.")
         chiave = max(self._punteggi, key=lambda k: self._punteggi[k])
         return EsitoRicerca(
             parametri=self._punti[chiave],
