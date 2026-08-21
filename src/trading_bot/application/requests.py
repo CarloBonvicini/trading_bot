@@ -548,7 +548,13 @@ class SweepRequest:
         }
 
     def iter_parameter_combinations(self) -> list[dict[str, int | float]]:
-        """Produce dict di parametri (chiave→valore) per ogni combinazione del grid."""
+        """Produce dict di parametri (chiave→valore) per ogni combinazione del grid.
+
+        Qui l'enumerazione totale resta di proposito: gli intervalli li ha
+        scritti l'utente, uno per uno, e "provali tutti" è letteralmente quello
+        che ha chiesto. Sostituirlo con una ricerca a budget vorrebbe dire
+        rispondere a una domanda diversa da quella posta — e senza dirlo.
+        """
         import itertools
 
         names = list(self.parameter_ranges.keys())

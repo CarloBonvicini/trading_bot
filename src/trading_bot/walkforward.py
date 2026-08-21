@@ -26,9 +26,15 @@ import pandas as pd
 from trading_bot.application.autosetting import AUTOSETTING_GRIDS, AUTOSETTING_GRIDS_BY_MODE
 from trading_bot.backtest import SIZING_FULL, run_backtest
 from trading_bot.features import contesto_indicatori
+from trading_bot.ricerca import BUDGET_PREDEFINITO, esplora
 from trading_bot.strategies import STRATEGY_SPECS, build_strategy_signal, validate_strategy_parameters
 
 TRADING_DAYS_PER_YEAR = 252
+
+# Quante combinazioni provare per finestra walk-forward. Sotto questa taglia le
+# griglie di oggi vengono enumerate tutte, quindi le ricerche esistenti danno
+# esattamente le stesse risposte di prima.
+BUDGET_RICERCA = 600
 
 # Una combinazione che non apre nemmeno un'operazione ha rendimenti tutti nulli
 # e quindi Sharpe esattamente 0: senza questa guardia batterebbe ogni strategia
@@ -86,12 +92,19 @@ def run_walk_forward(
     scan_mode: str = "rapida",
     consenti_short: bool = False,
     flat_at_close: bool = False,
+    budget: int = BUDGET_RICERCA,
     on_combination: "Callable[[], None] | None" = None,
 ) -> WalkForwardResult:
     """Esegue la walk-forward validation su ``data`` per la strategia indicata.
 
     ``scan_mode`` seleziona la densità della griglia parametri (rapida → xl):
     profondità maggiori provano molte più combinazioni ma sono più lente.
+
+    ``budget`` è quante combinazioni si è disposti a provare: se la griglia ci
+    sta dentro viene enumerata tutta, altrimenti la ricerca si concentra dove i
+    primi tentativi hanno funzionato. Ogni finestra continua a scegliersi la sua
+    combinazione migliore fra quelle provate — è il budget a decidere *quali*
+    guardare, non chi vince in ciascuna finestra.
     """
     spec = STRATEGY_SPECS.get(strategy_id)
     if spec is None:
@@ -125,51 +138,79 @@ def run_walk_forward(
 
     selezioni = [_SelezioneFinestra(param_grid[0]) for _ in limiti]
 
+    def prova_combinazione(params: dict) -> float | None:
+        """Valuta una combinazione su **tutte** le finestre in un colpo solo.
+
+        Il segnale si calcola una volta sull'intera serie e si ritaglia: è il
+        warm-up degli indicatori, e non va perso solo perché ora la ricerca
+        sceglie quali combinazioni guardare. Ogni finestra continua a tenersi la
+        sua migliore, come sempre.
+
+        Il punteggio restituito alla ricerca è la **media** sulle finestre, e
+        serve solo a decidere dove cercare ancora: è una scelta con un prezzo
+        dichiarato, cioè una combinazione ottima in una sola finestra e pessima
+        altrove ha meno probabilità di essere esplorata. In cambio, non ci si
+        avvicina nemmeno a una combinazione che va bene ovunque per caso.
+        """
+        try:
+            signal_full = build_strategy_signal(
+                strategy_id=strategy_id, data=data, parameters=params,
+                consenti_short=consenti_short,
+            )
+        except Exception:
+            # Inutilizzabile: conta come provata su ogni finestra, altrimenti
+            # l'avanzamento mostrato non tornerebbe.
+            if on_combination is not None:
+                for _ in limiti:
+                    on_combination()
+            return None
+
+        punteggi: list[float] = []
+        for selezione, (start_i, split_i, end_i) in zip(selezioni, limiti):
+            is_data = data.iloc[start_i:split_i]
+            try:
+                result = run_backtest(
+                    data=is_data,
+                    signal=signal_full.iloc[start_i:split_i],
+                    initial_capital=initial_capital,
+                    fee_bps=fee_bps,
+                    slippage_bps=slippage_bps,
+                    sl_pct=sl_pct,
+                    tp_pct=tp_pct,
+                    sizing_method=sizing_method,
+                    sizing_param=sizing_param,
+                    flat_at_close=flat_at_close,
+                )
+            except Exception:
+                continue
+            finally:
+                if on_combination is not None:
+                    on_combination()
+
+            selezione.considera(
+                params=params,
+                summary=result.summary,
+                optimize_by=optimize_by,
+                oos_signal=signal_full.iloc[split_i:end_i],
+            )
+            if int(result.summary.get("trade_count", 0)) >= MIN_TRADE_PER_SCELTA:
+                punteggi.append(float(result.summary.get(optimize_by, 0.0)))
+
+        if not punteggi:
+            return None
+        media = sum(punteggi) / len(punteggi)
+        return -media if optimize_by == "max_drawdown_pct" else media
+
     # Tutte le combinazioni girano sulla stessa identica serie: gli indicatori
     # che condividono i parametri si calcolano una volta sola.
     with contesto_indicatori(data):
-      for params in param_grid:
-          try:
-              # Warm-up: il segnale nasce sull'intera serie e viene poi ritagliato.
-              signal_full = build_strategy_signal(
-                  strategy_id=strategy_id, data=data, parameters=params,
-                  consenti_short=consenti_short,
-              )
-          except Exception:
-              # La combinazione è inutilizzabile: conta comunque come provata su
-              # ogni finestra, altrimenti l'avanzamento mostrato non tornerebbe.
-              if on_combination is not None:
-                  for _ in limiti:
-                      on_combination()
-              continue
-
-          for selezione, (start_i, split_i, end_i) in zip(selezioni, limiti):
-              is_data = data.iloc[start_i:split_i]
-              try:
-                  result = run_backtest(
-                      data=is_data,
-                      signal=signal_full.iloc[start_i:split_i],
-                      initial_capital=initial_capital,
-                      fee_bps=fee_bps,
-                      slippage_bps=slippage_bps,
-                      sl_pct=sl_pct,
-                      tp_pct=tp_pct,
-                      sizing_method=sizing_method,
-                      sizing_param=sizing_param,
-                      flat_at_close=flat_at_close,
-                  )
-              except Exception:
-                  continue
-              finally:
-                  if on_combination is not None:
-                      on_combination()
-
-              selezione.considera(
-                  params=params,
-                  summary=result.summary,
-                  optimize_by=optimize_by,
-                  oos_signal=signal_full.iloc[split_i:end_i],
-              )
+        esplora(
+            _griglia_per_ricerca(spec, scan_mode),
+            prova_combinazione,
+            budget=budget,
+            ammessa=lambda p: _combinazione_valida(spec.key, p),
+            seme=0,
+        )
 
     windows: list[WalkForwardWindow] = []
     oos_curves: list[pd.DataFrame] = []
@@ -244,6 +285,21 @@ def run_walk_forward(
 
 
 # ── Helpers interni ──────────────────────────────────────────────────────────
+
+def _griglia_per_ricerca(spec, scan_mode: str) -> dict[str, list]:
+    """La griglia grezza (nome → valori), che è la forma che la ricerca vuole."""
+    grids = AUTOSETTING_GRIDS_BY_MODE.get(scan_mode, AUTOSETTING_GRIDS)
+    return dict(grids.get(spec.key) or {})
+
+
+def _combinazione_valida(strategy_id: str, params: dict) -> bool:
+    """I vincoli relazionali (``fast < slow``, ``exit < entry``)."""
+    try:
+        validate_strategy_parameters(strategy_id, params)
+    except ValueError:
+        return False
+    return True
+
 
 def _build_param_grid(spec, scan_mode: str = "rapida") -> list[dict[str, int | float]]:
     """Costruisce la griglia di parametri da testare per la strategia.

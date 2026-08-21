@@ -42,11 +42,19 @@ def _accidentato(centro: dict, seme: int = 0) -> callable:
     """Come la collina, ma con dei sassi: cime finte sparse ovunque.
 
     È il caso che smaschera una ricerca che si incastra sul primo rilievo.
+
+    I sassi nascono da un indice calcolato sulle coordinate, non da ``hash()``:
+    Python randomizza l'hash delle stringhe a ogni processo, quindi il paesaggio
+    sarebbe diverso a ogni lancio e il test passerebbe o fallirebbe a caso. Ci
+    sono cascato: passava da solo e falliva dentro la suite.
     """
     liscio = _collina(centro)
 
     def punteggio(punto: dict) -> float:
-        rng = np.random.default_rng(abs(hash(tuple(sorted(punto.items())))) % (2**32) + seme)
+        indice = 0
+        for posto, nome in enumerate(sorted(punto)):
+            indice += int(punto[nome]) * (997 ** (posto + 1))
+        rng = np.random.default_rng(abs(indice) % (2**32) + seme)
         return liscio(punto) + float(rng.normal(0.0, 3.0))
     return punteggio
 
@@ -245,3 +253,98 @@ def test_combinazioni_rispetta_i_vincoli() -> None:
     griglia = {"veloce": [1, 2, 3], "lento": [1, 2, 3]}
     tutte = combinazioni(griglia, ammessa=lambda p: p["veloce"] < p["lento"])
     assert len(tutte) == 3
+
+
+def test_lo_spazio_si_misura_senza_costruirlo() -> None:
+    """Su un milione di combinazioni costruire l'elenco per poi provarne
+    cinquecento sarebbe esattamente il problema da risolvere."""
+    from trading_bot.ricerca import quante_combinazioni
+
+    griglia = {f"p{i}": list(range(10)) for i in range(9)}   # un miliardo
+    assert quante_combinazioni(griglia) == 10**9
+
+
+def test_un_miliardo_di_combinazioni_non_blocca_la_ricerca() -> None:
+    """Il test che dimostra che il modulo mantiene la promessa: uno spazio che
+    non si può nemmeno elencare viene comunque esplorato dentro il budget."""
+    griglia = {f"p{i}": list(range(10)) for i in range(9)}
+    centro = {nome: 3 for nome in griglia}
+    contati: list[int] = []
+
+    def valuta(punto: dict) -> float:
+        contati.append(1)
+        return -float(sum((punto[n] - centro[n]) ** 2 for n in centro))
+
+    esito = esplora(griglia, valuta, budget=300)
+
+    assert len(contati) <= 300
+    assert esito.spazio == 10**9
+    assert esito.quota_esplorata_pct == 0.0    # tre decimali di niente
+
+
+# ── Il budget e la prova del caso ────────────────────────────────────────────
+
+def test_il_budget_arriva_alla_ricerca_delle_strategie() -> None:
+    """Se il budget non arrivasse fin qui resterebbe una decorazione."""
+    from trading_bot.application.strategy_search import _optimize_on_development
+
+    provati: list[dict] = []
+    dati = _mercato_finto()
+
+    def conta(*_args, **_kwargs):
+        provati.append({})
+
+    _optimize_on_development(
+        data=dati, strategy_id="rsi_mean_reversion", fee_bps=5.0, initial_capital=10_000.0,
+        optimize_by="sharpe_ratio", scan_mode="lunga", budget=25, on_combination=conta,
+    )
+
+    assert len(provati) <= 25
+
+
+def test_la_fortuna_cerca_fra_gli_stessi_punti_della_strategia() -> None:
+    """Se sui dati rimescolati si cercasse fra meno punti, il confronto sarebbe
+    truccato in favore della strategia vera: più punti si esplorano, più alto è
+    il vantaggio che il caso riesce a fabbricare."""
+    from trading_bot.application import strategy_search
+
+    budget_visti: list[int] = []
+    vera = strategy_search.run_strategy_search
+
+    def spia(*args, **kwargs):
+        budget_visti.append(int(kwargs.get("budget", -1)))
+        if kwargs.get("prove_del_caso"):
+            return vera(*args, **kwargs)
+        # La ricerca sui dati finti non serve eseguirla davvero: qui interessa
+        # solo con quale budget viene chiamata.
+        raise RuntimeError("interrotta di proposito")
+
+    strategy_search.run_strategy_search = spia
+    try:
+        try:
+            vera(
+                data=_mercato_finto(n=400), symbol="X", fee_bps=0.0,
+                strategy_ids=["sma_cross"], prove_del_caso=2, max_workers=1, budget=37,
+            )
+        except Exception:
+            pass
+    finally:
+        strategy_search.run_strategy_search = vera
+
+    # Le chiamate sui dati rimescolati devono aver ricevuto lo stesso budget.
+    assert budget_visti, "la prova del caso non è mai stata avviata"
+    assert set(budget_visti) == {37}
+
+
+def _mercato_finto(n: int = 700):
+    import pandas as pd
+
+    rng = np.random.default_rng(3)
+    close = pd.Series(
+        100 * np.exp(np.cumsum(rng.normal(0.0004, 0.011, n))),
+        index=pd.bdate_range("2020-01-02", periods=n),
+    )
+    return pd.DataFrame(
+        {"open": close, "high": close * 1.006, "low": close * 0.994, "close": close,
+         "volume": pd.Series(1000.0, index=close.index)}
+    )

@@ -123,6 +123,9 @@ class EsitoRicercaPortafoglio:
     barre_sviluppo: int
     barre_prova: int
     configurazioni_provate: int
+    # Quante ne aveva lo spazio: se le provate sono meno, la ricerca ha scelto
+    # dove guardare, e chi legge il risultato deve saperlo.
+    configurazioni_possibili: int
     budget: int
     migliore: str | None = None
     parametri: dict = field(default_factory=dict)
@@ -203,16 +206,16 @@ def cerca_portafoglio(
     indice_prova = indice[barre_sviluppo:]
     sviluppo = {nome: dati.iloc[:barre_sviluppo] for nome, dati in allineati.items()}
 
-    configurazioni = elenca_configurazioni(
-        strategy_ids=strategy_ids, consenti_short=consenti_short
-    )
-    if len(configurazioni) > budget:
-        raise ValueError(
-            f"La griglia contiene {len(configurazioni)} configurazioni ma il budget è "
-            f"{budget}. Alzalo di proposito, o riduci la griglia: una ricerca senza "
-            "tetto dichiarato è una ricerca di cui non si può sapere quanto sia facile "
-            "vincere per caso."
-        )
+    tutte = elenca_configurazioni(strategy_ids=strategy_ids, consenti_short=consenti_short)
+    if not tutte:
+        raise ValueError("Nessuna configurazione di portafoglio da provare.")
+    # Se ci stanno nel budget si provano tutte; altrimenti se ne prova un
+    # sottoinsieme sparso, deciso in modo ripetibile perché due lanci della
+    # stessa ricerca devono restare confrontabili — compreso il confronto con
+    # la fortuna, che rifà questa identica scelta sui dati rimescolati.
+    configurazioni = tutte
+    if len(tutte) > budget:
+        configurazioni = _sottoinsieme_sparso(tutte, budget)
 
     costi = dict(
         initial_capital=initial_capital, fee_bps=fee_bps, slippage_bps=slippage_bps,
@@ -252,6 +255,7 @@ def cerca_portafoglio(
         barre_sviluppo=int(barre_sviluppo),
         barre_prova=int(barre_prova),
         configurazioni_provate=len(configurazioni),
+        configurazioni_possibili=len(tutte),
         budget=int(budget),
         margine_col_senno_di_poi_pct=round(max(margini_di_prova), 2) if margini_di_prova else 0.0,
         configurazioni_in_vantaggio=sum(1 for m in margini_di_prova if m > 0),
@@ -293,6 +297,22 @@ def cerca_portafoglio(
 
 
 # ── I pezzi ──────────────────────────────────────────────────────────────────
+
+def _sottoinsieme_sparso(
+    tutte: list[ConfigurazionePortafoglio], quante: int
+) -> list[ConfigurazionePortafoglio]:
+    """``quante`` configurazioni prese a passo costante lungo l'elenco.
+
+    Non a caso e non le prime: le prime sarebbero tutte con lo stesso periodo e
+    la stessa allocazione — l'elenco nasce da un prodotto, quindi il suo inizio
+    è un angolo dello spazio, non un campione. A passo costante si attraversa
+    tutto, e il risultato è lo stesso a ogni lancio.
+    """
+    if quante >= len(tutte):
+        return list(tutte)
+    passo = len(tutte) / quante
+    return [tutte[min(len(tutte) - 1, int(i * passo))] for i in range(quante)]
+
 
 def _indice_comune(mercati: dict[str, pd.DataFrame]) -> pd.Index:
     indice: pd.Index | None = None
@@ -440,8 +460,13 @@ def _verdetto(esito: EsitoRicercaPortafoglio) -> str:
     )
 
     quante = (
-        f" La ricerca ha provato {esito.configurazioni_provate} configurazioni: "
-        "più se ne provano, più è facile che la migliore sembri buona per caso."
+        f" La ricerca ha provato {esito.configurazioni_provate} configurazioni"
+        + (
+            f" delle {esito.configurazioni_possibili} possibili"
+            if esito.configurazioni_possibili > esito.configurazioni_provate
+            else ""
+        )
+        + ": più se ne provano, più è facile che la migliore sembri buona per caso."
     )
     if esito.configurazioni_in_vantaggio:
         quante += (

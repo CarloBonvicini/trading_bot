@@ -113,12 +113,36 @@ def test_la_griglia_e_piccola_e_dichiarata() -> None:
     assert len(elenca_configurazioni(consenti_short=True)) == 2 * len(elenca_configurazioni())
 
 
-def test_una_griglia_oltre_il_budget_si_ferma_e_lo_dice() -> None:
-    """Senza tetto dichiarato non si può sapere quanto sia facile vincere per
-    caso: meglio fermarsi che girare per un'ora e presentare un numero
-    ininterpretabile."""
-    with pytest.raises(ValueError, match="budget"):
-        cerca_portafoglio(_mercati(quanti=3, n=400), budget=10)
+@pytest.mark.lento
+def test_una_griglia_oltre_il_budget_ne_prova_un_campione_e_lo_dice() -> None:
+    """Il budget non fa più fallire la ricerca: la fa scegliere dove guardare.
+
+    Ma chi legge il risultato deve sapere che è stata una scelta, perché una
+    ricerca che ha guardato 20 punti su 192 e una che li ha guardati tutti non
+    dicono la stessa cosa sulla facilità di vincere per caso."""
+    mercati = _mercati(quanti=4, n=900)
+
+    esito = cerca_portafoglio(mercati, budget=20)
+
+    assert esito.configurazioni_provate == 20
+    assert esito.configurazioni_possibili == len(elenca_configurazioni())
+    assert "delle 192 possibili" in esito.verdetto
+
+
+def test_il_campione_e_sparso_e_ripetibile() -> None:
+    """Prendere le prime N darebbe tutte configurazioni con lo stesso periodo:
+    l'elenco nasce da un prodotto, quindi il suo inizio è un angolo dello
+    spazio, non un campione."""
+    from trading_bot.application.ricerca_portafoglio import _sottoinsieme_sparso
+
+    tutte = elenca_configurazioni()
+    campione = _sottoinsieme_sparso(tutte, 12)
+
+    assert len(campione) == 12
+    assert campione == _sottoinsieme_sparso(tutte, 12)
+    # Attraversa lo spazio invece di fermarsi in un angolo.
+    assert len({tuple(c.parametri) for c in campione}) > 1
+    assert len({c.ribilancia_ogni for c in campione}) > 1
 
 
 def test_un_portafoglio_ha_senso_da_due_mercati_in_su() -> None:
