@@ -7,6 +7,7 @@ import pytest
 
 from trading_bot.application.prova_del_caso import (
     MARGINE_SUL_CASO_MINIMO,
+    PROVE_MINIME_PER_VITTORIA,
     mescola_serie,
     valuta_contro_il_caso,
 )
@@ -77,16 +78,62 @@ def test_non_si_vince_se_la_fortuna_fa_altrettanto() -> None:
 
 
 def test_si_vince_se_si_stacca_dal_caso() -> None:
-    esito = valuta_contro_il_caso(margine_vero_pct=18.0, margini_del_caso_pct=[4.0, 2.0])
+    esito = valuta_contro_il_caso(
+        margine_vero_pct=18.0, margini_del_caso_pct=[4.0, 2.0, 3.0, 1.0, 2.5]
+    )
 
     assert esito.superato is True
     assert "punti in più di quanto si ottiene per caso" in esito.verdetto
 
 
+def test_con_poche_prove_non_si_dice_di_si() -> None:
+    """Il difetto che la fase 5 ha fatto emergere, e il presidio che lo chiude.
+
+    Su un mercato costruito senza struttura, cercando a fondo, i margini della
+    fortuna andavano da −2 a +21 su otto rimescolamenti: il massimo delle prime
+    due era −2,2, e la vittoria sarebbe stata riconosciuta mentre il soffitto
+    vero era +20,8. Il massimo di poche estrazioni così sparse non è un metro.
+    """
+    poche = valuta_contro_il_caso(margine_vero_pct=18.0, margini_del_caso_pct=[4.0, 2.0])
+
+    assert poche.superato is False
+    assert "non si può dire" in poche.verdetto
+    assert str(PROVE_MINIME_PER_VITTORIA) in poche.verdetto
+
+
+def test_bocciare_con_poche_prove_invece_si_puo() -> None:
+    """Aggiungendo rimescolamenti l'asticella può solo alzarsi: un no dato con
+    poche prove resta un no. È il sì che va protetto, non il no."""
+    esito = valuta_contro_il_caso(margine_vero_pct=2.0, margini_del_caso_pct=[9.0, 7.5])
+
+    assert esito.superato is False
+    assert "non c'è niente da cui fidarsi" in esito.verdetto
+    assert "non si può dire" not in esito.verdetto
+
+
+def test_l_asticella_si_alza_quando_la_fortuna_balla() -> None:
+    """Due situazioni con lo stesso massimo, ma una molto più ballerina: la
+    seconda deve pretendere di più, perché lì il massimo osservato dice meno su
+    quello possibile."""
+    stabile = valuta_contro_il_caso(
+        margine_vero_pct=9.0, margini_del_caso_pct=[5.0, 4.8, 5.0, 4.9, 5.1]
+    )
+    ballerina = valuta_contro_il_caso(
+        margine_vero_pct=9.0, margini_del_caso_pct=[5.0, -8.0, 2.0, -3.0, 4.0]
+    )
+
+    assert stabile.dispersione_pct < 1.0
+    assert ballerina.dispersione_pct > 4.0
+    assert ballerina.asticella_pct > stabile.asticella_pct
+    assert stabile.superato is True
+    assert ballerina.superato is False
+
+
 def test_il_margine_deve_staccarsi_di_un_minimo() -> None:
     """Battere il caso per un decimo di punto non è battere il caso."""
     esito = valuta_contro_il_caso(
-        margine_vero_pct=5.0 + MARGINE_SUL_CASO_MINIMO / 2, margini_del_caso_pct=[5.0]
+        margine_vero_pct=5.0 + MARGINE_SUL_CASO_MINIMO / 2,
+        margini_del_caso_pct=[5.0] * PROVE_MINIME_PER_VITTORIA,
     )
     assert esito.superato is False
 
@@ -141,14 +188,20 @@ def test_su_un_mercato_senza_struttura_non_si_vince() -> None:
 
 @pytest.mark.lento
 def test_su_un_mercato_con_tendenze_vere_si_vince() -> None:
-    """Il controllo opposto: se la prova bocciasse anche una struttura vera
-    sarebbe inutile, perché direbbe sempre di no."""
+    """Il controllo opposto, ed è quello che tiene onesta l'asticella nuova.
+
+    Un metro che boccia sempre è inutile quanto uno che promuove sempre. Qui la
+    struttura c'è davvero (rendimenti autocorrelati a 0,55), e la vittoria deve
+    essere riconosciuta **nonostante** l'asticella tenga conto della dispersione
+    dei margini della fortuna.
+    """
+    from trading_bot.application.prova_del_caso import PROVE_MINIME_PER_VITTORIA
     from trading_bot.application.strategy_search import run_strategy_search
 
     res = run_strategy_search(
         data=_serie_con_tendenza(), symbol="TENDENZA", fee_bps=0.0,
         strategy_ids=["sma_cross", "ema_cross", "rsi_mean_reversion"],
-        prove_del_caso=3, max_workers=1,
+        prove_del_caso=PROVE_MINIME_PER_VITTORIA, max_workers=1,
     )
 
     assert res.prova_del_caso["superato"] is True
@@ -156,6 +209,37 @@ def test_su_un_mercato_con_tendenze_vere_si_vince() -> None:
     assert res.prova_del_caso["margine_vero_pct"] > max(
         res.prova_del_caso["margini_del_caso_pct"]
     )
+
+
+@pytest.mark.lento
+def test_anche_cercando_a_fondo_il_rumore_non_produce_vittorie() -> None:
+    """La prova del caso deve reggere anche dove la ricerca è **guidata**.
+
+    Alle profondità basse la griglia sta nel budget e viene enumerata, quindi la
+    prova del caso lavora esattamente come prima. A profondità alta invece la
+    ricerca sceglie dove guardare, e potrebbe farlo meglio proprio nel trovare
+    coincidenze: se cercare meglio rendesse più facile vincere sul rumore, la
+    fase 5 avrebbe indebolito la difesa costruita nelle fasi precedenti.
+    """
+    from trading_bot.application.strategy_search import run_strategy_search
+
+    rng = np.random.default_rng(1)
+    close = 100 * np.exp(np.cumsum(rng.normal(0.0002, 0.012, 600)))
+    idx = pd.bdate_range("2021-01-04", periods=600)
+    rumore = pd.DataFrame(
+        {"open": close, "high": close * 1.006, "low": close * 0.994, "close": close,
+         "volume": np.full(600, 1000.0)},
+        index=idx,
+    )
+
+    res = run_strategy_search(
+        data=rumore, symbol="RUMORE", fee_bps=5.0, scan_mode="lunga",
+        strategy_ids=["sma_cross", "rsi_mean_reversion"],
+        prove_del_caso=2, max_workers=1,
+    )
+
+    assert res.prova_del_caso["superato"] is False
+    assert res.tipo_vittoria == ""
 
 
 @pytest.mark.lento
