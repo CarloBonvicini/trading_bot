@@ -23,11 +23,29 @@ import numpy as np
 import pandas as pd
 
 # Quante volte rimescolare la storia. Ogni prova costa quanto una ricerca
-# intera: due bastano per accorgersi dei casi palesi, cinque danno una misura
-# più stabile.
-PROVE_PREDEFINITE = 2
+# intera, quindi la tentazione di farne poche è forte — ed è esattamente la
+# tentazione che va tolta di mezzo (vedi PROVE_MINIME_PER_VITTORIA).
+PROVE_PREDEFINITE = 5
 # Sotto questo margine di vantaggio sul caso non c'è niente da festeggiare.
 MARGINE_SUL_CASO_MINIMO = 2.0
+
+# Quante prove servono **come minimo** per poter dire di sì.
+#
+# Misurato, e la misura è il motivo per cui questo numero esiste: su un mercato
+# costruito senza alcuna struttura, cercando a fondo, i margini che la fortuna
+# produce su otto rimescolamenti andavano da −2 a +21, con uno scarto di **nove
+# punti** — contro un margine minimo di due. Il massimo di due estrazioni così
+# sparse non è un metro, è un sorteggio: nel caso misurato le prime due prove
+# avevano dato −2,2 e la vittoria sarebbe stata riconosciuta, mentre il soffitto
+# vero della fortuna era +20,8 e batteva il campione in metà dei rimescolamenti.
+#
+# Con meno prove di così non si dice "no": si dice **non lo so**, che è una
+# risposta diversa e onesta.
+PROVE_MINIME_PER_VITTORIA = 5
+# Quanto pesa la dispersione dei margini della fortuna nel fissare l'asticella.
+# Con margini molto sparsi il massimo osservato dice poco su quello possibile, e
+# battere il massimo di qualche estrazione non basta più.
+PESO_DISPERSIONE = 1.0
 
 
 @dataclass
@@ -42,8 +60,41 @@ class EsitoProvaDelCaso:
 
     @property
     def margine_del_caso_pct(self) -> float:
-        """Il meglio che la fortuna è riuscita a fare: è il metro da battere."""
+        """Il meglio che la fortuna è riuscita a fare in queste prove."""
         return max(self.margini_del_caso_pct) if self.margini_del_caso_pct else 0.0
+
+    @property
+    def dispersione_pct(self) -> float:
+        """Quanto sono sparsi fra loro i margini che la fortuna ha prodotto.
+
+        È il numero che dice quanto fidarsi del massimo osservato: se da un
+        rimescolamento all'altro la fortuna passa da −2 a +21, il massimo di
+        poche prove non descrive il suo soffitto, lo sfiora per caso.
+        """
+        if len(self.margini_del_caso_pct) < 2:
+            return 0.0
+        media = sum(self.margini_del_caso_pct) / len(self.margini_del_caso_pct)
+        varianza = sum((m - media) ** 2 for m in self.margini_del_caso_pct) / len(
+            self.margini_del_caso_pct
+        )
+        return round(varianza**0.5, 2)
+
+    @property
+    def asticella_pct(self) -> float:
+        """Il margine che bisogna superare per parlare di vittoria.
+
+        Non è solo il meglio che la fortuna ha fatto: è quello **più** un
+        margine, **più** un'allowance per quanto le prove erano sparse fra loro.
+        Con margini stabili l'asticella coincide quasi col massimo osservato;
+        con margini ballerini si alza, perché lì il massimo osservato è una
+        misura debole di quello possibile.
+        """
+        return round(
+            self.margine_del_caso_pct
+            + MARGINE_SUL_CASO_MINIMO
+            + PESO_DISPERSIONE * self.dispersione_pct,
+            2,
+        )
 
 
 def mescola_serie(data: pd.DataFrame, seed: int = 0) -> pd.DataFrame:
@@ -159,14 +210,34 @@ def valuta_contro_il_caso(
 
     caso = esito.margine_del_caso_pct
     vantaggio = esito.margine_vero_pct - caso
-    esito.superato = vantaggio >= MARGINE_SUL_CASO_MINIMO
+    supera_asticella = esito.margine_vero_pct >= esito.asticella_pct
+    esito.superato = supera_asticella and esito.prove >= PROVE_MINIME_PER_VITTORIA
+
+    # Poche prove non possono produrre un sì, ma possono benissimo produrre un
+    # no: bocciare con pochi rimescolamenti è sicuro, perché aggiungendone altri
+    # l'asticella può solo alzarsi. È il sì che va protetto — il massimo di due
+    # estrazioni molto sparse promuove per sorteggio, e misurandolo su un mercato
+    # senza struttura le prime due prove davano −2,2 mentre il soffitto vero
+    # della fortuna era +20,8.
+    if supera_asticella and esito.prove < PROVE_MINIME_PER_VITTORIA:
+        esito.verdetto = (
+            f"Con {esito.prove} rimescolament{'o' if esito.prove == 1 else 'i'} non si può "
+            f"dire se questo risultato ({esito.margine_vero_pct:+.1f} punti sul mercato) "
+            f"valga più della fortuna: quello che la fortuna produce cambia molto da una "
+            f"prova all'altra, e il meglio di poche prove non descrive quanto può arrivare "
+            f"a fare. Servono almeno {PROVE_MINIME_PER_VITTORIA} rimescolamenti per "
+            f"pronunciarsi. Finora la fortuna è arrivata a {caso:+.1f}."
+        )
+        return esito
 
     if esito.superato:
         esito.verdetto = (
-            f"Rimescolando la storia, cercando fra le stesse identiche opzioni, la fortuna "
-            f"arriva al massimo a {caso:+.1f} punti sul mercato. Questa strategia ne fa "
-            f"{esito.margine_vero_pct:+.1f}: {vantaggio:.1f} punti in più di quanto si "
-            "ottiene per caso. È il segnale più incoraggiante che questo strumento sappia dare."
+            f"Rimescolando la storia {esito.prove} volte, cercando ogni volta fra le stesse "
+            f"identiche opzioni, la fortuna arriva al massimo a {caso:+.1f} punti sul "
+            f"mercato. Questa strategia ne fa {esito.margine_vero_pct:+.1f}: "
+            f"{vantaggio:.1f} punti in più di quanto si ottiene per caso, abbastanza da "
+            f"restare davanti anche tenendo conto di quanto la fortuna balla fra una prova "
+            f"e l'altra. È il segnale più incoraggiante che questo strumento sappia dare."
         )
     elif vantaggio < 0:
         # La fortuna ha fatto meglio: dire "quanto questa strategia" sarebbe
@@ -179,11 +250,17 @@ def valuta_contro_il_caso(
             "niente da cui fidarsi."
         )
     else:
+        ballo = (
+            f" Da una prova all'altra la fortuna ha ballato di {esito.dispersione_pct:.1f} "
+            f"punti, quindi per parlare di vittoria ne servivano {esito.asticella_pct:+.1f}."
+            if esito.dispersione_pct
+            else ""
+        )
         esito.verdetto = (
             f"Rimescolando la storia, cercando fra le stesse identiche opzioni, la fortuna "
             f"arriva a {caso:+.1f} punti sul mercato — quanto questa strategia "
             f"({esito.margine_vero_pct:+.1f}). Vuol dire che il risultato trovato è quello che "
             "salta fuori comunque quando si provano migliaia di combinazioni: non c'è niente "
-            "da cui fidarsi."
+            "da cui fidarsi." + ballo
         )
     return esito

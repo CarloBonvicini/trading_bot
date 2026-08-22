@@ -176,6 +176,12 @@ def run_autosetting(
     test_data = data.iloc[split_index:]
 
     # --- Grid search: raccoglie Sharpe e rendimento per ogni combinazione valida ---
+    # Qui l'enumerazione totale resta, e non per dimenticanza: il risultato di
+    # questa funzione È la mappa completa (`all_scores` alimenta la heatmap e il
+    # punteggio di robustezza confronta ogni combinazione coi suoi vicini). Una
+    # ricerca a budget restituirebbe una mappa con dei buchi, cioè un'altra
+    # cosa. Se un giorno la griglia diventasse troppo grande per essere
+    # disegnata, il problema da risolvere sarebbe il disegno, non la ricerca.
     # scores_map: tuple di valori parametro → sharpe
     scores_map: dict[tuple, float] = {}
     return_map: dict[tuple, float] = {}

@@ -47,6 +47,7 @@ from trading_bot.application.prova_del_caso import (
 )
 from trading_bot.backtest import run_backtest
 from trading_bot.features import contesto_indicatori
+from trading_bot.ricerca import esplora, quante_combinazioni
 from trading_bot.strategies import (
     STRATEGY_SPECS,
     build_strategy_signal,
@@ -79,14 +80,34 @@ PROGRESS_EVERY = 50
 # recupera. Una ricerca completa sulle 15 strategie sta sempre sopra.
 SOGLIA_PARALLELO = 2_000
 
+# Quante combinazioni si è disposti a provare per strategia. Sotto questa
+# taglia le griglie vengono enumerate tutte, quindi le ricerche di oggi danno
+# esattamente le stesse risposte; sopra, la ricerca semina largo e affina dove
+# promette invece di camminare ovunque. Il numero è generoso di proposito: serve
+# a rendere possibili le strategie con molti parametri, non a tagliare quelle
+# che già si esploravano per intero.
+BUDGET_RICERCA = 600
+
 
 @lru_cache(maxsize=None)
-def count_valid_combinations(strategy_id: str, scan_mode: str) -> int:
-    """Quante combinazioni di parametri valide ha una strategia a una profondità."""
+def count_valid_combinations(strategy_id: str, scan_mode: str, budget: int = BUDGET_RICERCA) -> int:
+    """Quante combinazioni verranno davvero provate, a questa profondità.
+
+    Non è più solo "quante ne ha la griglia": con un budget se ne provano al
+    massimo quelle, e il contatore mostrato all'utente deve dire il lavoro vero.
+    Un contatore che promette diecimila passi e ne fa seicento è un contatore
+    rotto, anche se la ricerca funziona.
+    """
     grids = AUTOSETTING_GRIDS_BY_MODE.get(scan_mode, AUTOSETTING_GRIDS)
     grid = grids.get(strategy_id)
     if not grid:
         return 0
+
+    # Contare quelle valide richiede di enumerarle. Se lo spazio è enorme non lo
+    # si fa: sapere che sono più del budget basta a sapere quante se ne proveranno.
+    if quante_combinazioni(grid) > budget:
+        return budget
+
     names = list(grid.keys())
     values = [grid[name] for name in names]
     valide = 0
@@ -96,7 +117,7 @@ def count_valid_combinations(strategy_id: str, scan_mode: str) -> int:
         except ValueError:
             continue
         valide += 1
-    return valide
+    return min(valide, budget)
 
 
 def count_windows(dev_len: int, is_days: int, oos_days: int) -> int:
@@ -274,6 +295,7 @@ def run_strategy_search(
     consenti_short: bool = False,
     flat_at_close: bool = False,
     prove_del_caso: int = 0,
+    budget: int = BUDGET_RICERCA,
     progress_callback: ProgressCallback | None = None,
     max_workers: int | None = None,
     precomputed_rows: dict[str, dict] | None = None,
@@ -337,6 +359,7 @@ def run_strategy_search(
         data=data, dev_len=dev_len, is_days=is_days, oos_days=oos_days,
         fee_bps=fee_bps, slippage_bps=slippage_bps, initial_capital=initial_capital,
         optimize_by=optimize_by, scan_mode=scan_mode, flat_at_close=flat_at_close,
+        budget=budget,
     )
 
     # Ripresa: i candidati già valutati prima dell'interruzione non si rifanno.
@@ -475,6 +498,11 @@ def run_strategy_search(
             target_windows=target_windows, optimize_by=optimize_by, scan_mode=scan_mode,
             strategy_ids=strategy_ids, consenti_short=consenti_short,
             flat_at_close=flat_at_close, max_workers=max_workers,
+            # Stesso budget sui dati rimescolati: se la fortuna cercasse fra
+            # meno punti della strategia vera, il confronto sarebbe truccato in
+            # favore della strategia — piu' punti si esplorano, piu' alto e' il
+            # vantaggio che il caso riesce a fabbricare.
+            budget=budget,
         ),
     )
     tipo = classifica_vittoria(champion, esito_caso, esito_vicini)
@@ -704,6 +732,7 @@ class _LavoroStrategia:
     optimize_by: str
     scan_mode: str
     flat_at_close: bool = False
+    budget: int = BUDGET_RICERCA
 
     @cached_property
     def dev_data(self) -> pd.DataFrame:
@@ -744,6 +773,7 @@ def _valuta_strategia(
             scan_mode=lavoro.scan_mode,
             consenti_short=candidato.consenti_short,
             flat_at_close=lavoro.flat_at_close,
+            budget=lavoro.budget,
             on_combination=on_combination,
         )
         # Parametri di produzione + prova su dati nuovi (holdout).
@@ -752,7 +782,8 @@ def _valuta_strategia(
             slippage_bps=lavoro.slippage_bps,
             initial_capital=lavoro.initial_capital, optimize_by=lavoro.optimize_by,
             scan_mode=lavoro.scan_mode, consenti_short=candidato.consenti_short,
-            flat_at_close=lavoro.flat_at_close, on_combination=on_combination,
+            flat_at_close=lavoro.flat_at_close, budget=lavoro.budget,
+            on_combination=on_combination,
         )
         holdout_result = _evaluate_on_holdout(
             full_data=data, dev_len=lavoro.dev_len, holdout_index=holdout_index,
@@ -935,6 +966,7 @@ def _optimize_on_development(
     *, data: pd.DataFrame, strategy_id: str, fee_bps: float, slippage_bps: float = 0.0,
     initial_capital: float, optimize_by: str, scan_mode: str = "rapida",
     consenti_short: bool = False, flat_at_close: bool = False,
+    budget: int = BUDGET_RICERCA,
     on_combination: Callable[[], None] | None = None,
 ) -> dict[str, int | float]:
     """Trova i parametri migliori della strategia sull'intero set di sviluppo.
@@ -942,57 +974,61 @@ def _optimize_on_development(
     Come nella walk-forward, a parità di punteggio vince chi ha davvero operato:
     una combinazione che non apre nessuna operazione totalizza 0 secco e
     verrebbe altrimenti preferita a ogni combinazione in perdita.
+
+    La ricerca ha un ``budget``: sotto quella taglia la griglia viene enumerata
+    tutta (stesse risposte di sempre), sopra si semina largo e si affina dove
+    promette invece di camminare ovunque.
     """
     grids = AUTOSETTING_GRIDS_BY_MODE.get(scan_mode, AUTOSETTING_GRIDS)
     grid = grids[strategy_id]
-    names = list(grid.keys())
-    values = [grid[name] for name in names]
     ascending = optimize_by == "max_drawdown_pct"
 
-    best_params: dict[str, int | float] = dict(zip(names, (v[0] for v in values)))
-    best_score = float("-inf")
-    best_attiva = False
+    def valuta(params: dict) -> float | None:
+        """Il punteggio di una combinazione, o None se non è utilizzabile.
 
-    contesto = contesto_indicatori(data)
-    with contesto:
-      for combo in itertools.product(*values):
-          params = dict(zip(names, combo))
-          # I vincoli si controllano prima: le combinazioni impossibili non
-          # costano un backtest e quindi non entrano nel conteggio mostrato.
-          try:
-              validate_strategy_parameters(strategy_id, params)
-          except ValueError:
-              continue
-          try:
-              signal = build_strategy_signal(
-                  strategy_id=strategy_id, data=data, parameters=params,
-                  consenti_short=consenti_short,
-              )
-              result = run_backtest(
-                  data=data, signal=signal, initial_capital=initial_capital,
-                  fee_bps=fee_bps, slippage_bps=slippage_bps, flat_at_close=flat_at_close,
-              )
-          except Exception:
-              continue
-          finally:
-              if on_combination is not None:
-                  on_combination()
-          raw = float(result.summary.get(optimize_by, 0.0))
-          score = -raw if ascending else raw
-          attiva = int(result.summary.get("trade_count", 0)) >= MIN_TRADE_PER_SCELTA
+        Una combinazione che non apre nemmeno un'operazione ha punteggio 0
+        secco e batterebbe ogni combinazione in perdita senza aver fatto niente:
+        qui vale None, cioè finisce in fondo e non vince mai per inerzia.
+        """
+        try:
+            signal = build_strategy_signal(
+                strategy_id=strategy_id, data=data, parameters=params,
+                consenti_short=consenti_short,
+            )
+            result = run_backtest(
+                data=data, signal=signal, initial_capital=initial_capital,
+                fee_bps=fee_bps, slippage_bps=slippage_bps, flat_at_close=flat_at_close,
+            )
+        except Exception:
+            return None
+        finally:
+            if on_combination is not None:
+                on_combination()
+        if int(result.summary.get("trade_count", 0)) < MIN_TRADE_PER_SCELTA:
+            return None
+        raw = float(result.summary.get(optimize_by, 0.0))
+        return -raw if ascending else raw
 
-          if attiva and not best_attiva:
-              migliore = True
-          elif attiva == best_attiva:
-              migliore = score > best_score
-          else:
-              migliore = False
+    with contesto_indicatori(data):
+        esito = esplora(
+            grid, valuta, budget=budget, ammessa=_ammessa(strategy_id), seme=0,
+        )
+    return esito.parametri
 
-          if migliore:
-              best_score = score
-              best_params = params
-              best_attiva = attiva
-    return best_params
+
+def _ammessa(strategy_id: str):
+    """I vincoli fra parametri, nella forma che la ricerca sa usare.
+
+    Si controllano **prima** di provare: una combinazione impossibile non deve
+    costare un backtest né consumare budget.
+    """
+    def dentro(params: dict) -> bool:
+        try:
+            validate_strategy_parameters(strategy_id, params)
+        except ValueError:
+            return False
+        return True
+    return dentro
 
 
 def _evaluate_on_holdout(
