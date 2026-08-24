@@ -28,7 +28,7 @@ from trading_bot.application.dashboard import build_dashboard_context, build_ses
 from trading_bot.application.execution import build_backtest_result
 from trading_bot.application.forms import as_form_values_from_saved_metadata
 from trading_bot.application.constants import COSTI_OPERAZIONE
-from trading_bot.application.prova_del_caso import PROVE_PREDEFINITE
+from trading_bot.application.prova_del_caso import PROVE_PREDEFINITE, euro
 from trading_bot.application.requests import costi_operazione, flag_value
 from trading_bot.data import INTRADAY_LOOKBACK_DAYS, coerce_interval_date_window
 from trading_bot.errors import FormValidationError
@@ -102,6 +102,8 @@ def create_app(config: dict[str, object] | None = None) -> Flask:
     # dovrebbe riscriverne il nome a mano, e il giorno che cambia resterebbe
     # indietro in silenzio.
     app.jinja_env.filters["etichetta"] = lambda chiave: SUMMARY_LABELS.get(chiave, chiave)
+    # E gli importi come li scrive una persona: 10.000 € invece di 10000.
+    app.jinja_env.filters["euro"] = euro
     # Mappa completa disponibile come variabile globale per il JS (chart lab).
     app.jinja_env.globals["METRIC_TOOLTIPS"] = METRIC_TOOLTIPS
 

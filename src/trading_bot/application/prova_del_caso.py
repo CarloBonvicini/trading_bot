@@ -195,10 +195,44 @@ def _rimescola_con(data: pd.DataFrame, ordine: np.ndarray) -> pd.DataFrame:
     return mescolata
 
 
+def euro(valore: float) -> str:
+    """Un importo scritto come lo scrive una persona: 10.000 €."""
+    return f"{valore:,.0f}".replace(",", ".") + " €"
+
+
+def punti_in_euro(punti: float, capitale: float | None) -> str:
+    """Traduce un vantaggio in punti nella cifra che si avrebbe in tasca.
+
+    "Venti punti" non dice niente a chi non fa questo di mestiere; "circa
+    2.000 € su 10.000 €" sì. Senza sapere il capitale non si inventa una cifra:
+    si tace, che è meglio di un numero verosimile e falso.
+    """
+    if not capitale or capitale <= 0:
+        return ""
+    return f"circa {euro(abs(punti) / 100.0 * capitale)} su {euro(capitale)}"
+
+
+def _fra_parentesi(frase: str) -> str:
+    return f" ({frase})" if frase else ""
+
+
+def _incastonato(frase: str) -> str:
+    """Dopo una parentesi già chiusa: due parentesi di fila si leggono male."""
+    return f", {frase}" if frase else ""
+
+
 def valuta_contro_il_caso(
-    margine_vero_pct: float, margini_del_caso_pct: list[float]
+    margine_vero_pct: float,
+    margini_del_caso_pct: list[float],
+    capitale: float | None = None,
 ) -> EsitoProvaDelCaso:
-    """Confronta il margine vero con quello che la fortuna ha saputo produrre."""
+    """Confronta il margine vero con quello che la fortuna ha saputo produrre.
+
+    ``capitale`` serve solo a scrivere i punti **anche in euro**: il paragrafo
+    che apre il report parla di soldi, e cambiare unità di misura a metà
+    discorso — passando a una mai definita — è il modo più semplice di perdere
+    chi legge proprio nel punto che conta.
+    """
     esito = EsitoProvaDelCaso(
         prove=len(margini_del_caso_pct),
         margine_vero_pct=round(float(margine_vero_pct), 2),
@@ -222,7 +256,8 @@ def valuta_contro_il_caso(
     if supera_asticella and esito.prove < PROVE_MINIME_PER_VITTORIA:
         esito.verdetto = (
             f"Con {esito.prove} rimescolament{'o' if esito.prove == 1 else 'i'} non si può "
-            f"dire se questo risultato ({esito.margine_vero_pct:+.1f} punti sul mercato) "
+            f"dire se questo risultato ({esito.margine_vero_pct:+.1f} punti sul mercato"
+            f"{_incastonato(punti_in_euro(esito.margine_vero_pct, capitale))}) "
             f"valga più della fortuna: quello che la fortuna produce cambia molto da una "
             f"prova all'altra, e il meglio di poche prove non descrive quanto può arrivare "
             f"a fare. Servono almeno {PROVE_MINIME_PER_VITTORIA} rimescolamenti per "
@@ -235,7 +270,8 @@ def valuta_contro_il_caso(
             f"Rimescolando la storia {esito.prove} volte, cercando ogni volta fra le stesse "
             f"identiche opzioni, la fortuna arriva al massimo a {caso:+.1f} punti sul "
             f"mercato. Questa strategia ne fa {esito.margine_vero_pct:+.1f}: "
-            f"{vantaggio:.1f} punti in più di quanto si ottiene per caso, abbastanza da "
+            f"{vantaggio:.1f} punti in più di quanto si ottiene per caso"
+            f"{_fra_parentesi(punti_in_euro(vantaggio, capitale))}, abbastanza da "
             f"restare davanti anche tenendo conto di quanto la fortuna balla fra una prova "
             f"e l'altra. È il segnale più incoraggiante che questo strumento sappia dare."
         )
@@ -245,7 +281,8 @@ def valuta_contro_il_caso(
         esito.verdetto = (
             f"Rimescolando la storia, cercando fra le stesse identiche opzioni, la fortuna "
             f"arriva a {caso:+.1f} punti sul mercato, cioè {abs(vantaggio):.1f} punti "
-            f"più di questa strategia ({esito.margine_vero_pct:+.1f}). Su dati in cui non "
+            f"più di questa strategia ({esito.margine_vero_pct:+.1f})"
+            f"{_incastonato(punti_in_euro(vantaggio, capitale))}. Su dati in cui non "
             "c'era niente da trovare si è ottenuto di più che su quelli veri: non c'è "
             "niente da cui fidarsi."
         )
@@ -258,7 +295,8 @@ def valuta_contro_il_caso(
         )
         esito.verdetto = (
             f"Rimescolando la storia, cercando fra le stesse identiche opzioni, la fortuna "
-            f"arriva a {caso:+.1f} punti sul mercato — quanto questa strategia "
+            f"arriva a {caso:+.1f} punti sul mercato"
+            f"{_fra_parentesi(punti_in_euro(caso, capitale))} — quanto questa strategia "
             f"({esito.margine_vero_pct:+.1f}). Vuol dire che il risultato trovato è quello che "
             "salta fuori comunque quando si provano migliaia di combinazioni: non c'è niente "
             "da cui fidarsi." + ballo
