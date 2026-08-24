@@ -432,7 +432,9 @@ def _prova_del_caso_portafoglio(
         except Exception:
             continue
         margini.append(finta.margine_pct)
-    return valuta_contro_il_caso(margine_vero, margini)
+    return valuta_contro_il_caso(
+        margine_vero, margini, capitale=argomenti.get("initial_capital"),
+    )
 
 
 def _euro(valore: float) -> str:

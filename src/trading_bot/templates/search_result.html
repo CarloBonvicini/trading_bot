@@ -48,6 +48,11 @@
         <strong>{{ m.symbol }}</strong> — {{ m.prova_del_caso.verdetto }}
       </p>
     {% endfor %}
+    <p class="inline-note" style="margin-top:0.5rem;">
+      <strong>Un punto</strong> è un punto percentuale in più o in meno rispetto a comprare il primo
+      giorno e non fare più niente: su {{ capital | euro }} investiti, dieci punti sono
+      circa {{ (capital * 0.10) | euro }}.
+    </p>
     <details style="margin-top:0.5rem;">
       <summary class="inline-note" style="cursor:pointer;">Come funziona questa prova</summary>
       <p class="inline-note" style="margin-top:8px;">
@@ -56,6 +61,15 @@
         e ogni ritorno alla media spariscono. Su quei dati non c'è niente da trovare per costruzione,
         quindi tutto quello che una strategia ci guadagna è fortuna. Se la fortuna arriva dove è
         arrivata la strategia sui dati veri, non abbiamo trovato niente.
+      </p>
+      <p class="inline-note" style="margin-top:8px;">
+        <strong>Quanto arriva a fare la fortuna, per darti un metro.</strong> Su mercati costruiti
+        apposta perché non ci sia niente da trovare, provando qualche migliaio di combinazioni, la
+        più fortunata arriva regolarmente a <strong>venti punti</strong> di vantaggio sul mercato —
+        circa {{ (capital * 0.20) | euro }} su {{ capital | euro }},
+        guadagnati da nessuno. Non è un difetto di questo programma: è quello che succede a chiunque
+        provi tante cose e tenga la migliore. Perciò un vantaggio di cinque o dieci punti, da solo,
+        non vuol dire ancora niente — ed è esattamente il motivo per cui esiste questa prova.
       </p>
     </details>
   </section>
@@ -83,8 +97,8 @@
 
   <div class="terminal-metric-grid" style="margin-top:0.75rem;">
     {% for m in result.markets %}
-      {% set final_eq = (capital * (1 + (m.holdout_return_pct or 0) / 100)) | round(0) | int %}
-      {% set bench_eq = (capital * (1 + (m.benchmark_return_pct or 0) / 100)) | round(0) | int %}
+      {% set final_eq = capital * (1 + (m.holdout_return_pct or 0) / 100) %}
+      {% set bench_eq = capital * (1 + (m.benchmark_return_pct or 0) / 100) %}
       <article class="terminal-metric-card report-tone-{{ rel_tone.get(m.reliability, 'neutral') }}">
         <p style="font-size:15px;font-weight:500;margin:0;">{{ m.symbol }}</p>
         {% if m.error %}
@@ -93,10 +107,10 @@
           {% if not result.overall_champion_label and m.champion_label %}
             <p class="inline-note" style="margin:2px 0 6px;">{{ m.champion_label }}</p>
           {% endif %}
-          <p style="margin:0;font-size:15px;">Su dati nuovi: €{{ capital | round(0) | int }} → <strong>€{{ final_eq }}</strong></p>
+          <p style="margin:0;font-size:15px;">Su dati nuovi: {{ capital | euro }} → <strong>{{ final_eq | euro }}</strong></p>
           <p class="inline-note" style="margin:2px 0 0;">
             {{ "%+.1f"|format(m.holdout_return_pct or 0) }}% ·
-            comprando e basta €{{ bench_eq }} ({{ "%+.1f"|format(m.benchmark_return_pct or 0) }}%)
+            comprando e basta {{ bench_eq | euro }} ({{ "%+.1f"|format(m.benchmark_return_pct or 0) }}%)
           </p>
           <span class="strategy-chip" style="margin-top:6px;">{{ rel_label.get(m.reliability, m.reliability) }}</span>
         {% endif %}
@@ -125,7 +139,7 @@
           <th>Affidabile su</th>
           <th>Meglio del mercato su</th>
           <th>Resa media su dati nuovi</th>
-          <th>Differenza col mercato</th>
+          <th title="{{ 'excess_return_pct' | tooltip }}">Differenza col mercato</th>
         </tr>
       </thead>
       <tbody>

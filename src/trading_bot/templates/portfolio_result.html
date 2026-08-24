@@ -53,6 +53,15 @@
         avversario che non ha mai incontrato — passerebbe chiunque. Su quei dati una
         classifica di forza non ha niente da trovare, quindi tutto ciò che ci trova è fortuna.
       </p>
+      <p class="inline-note" style="margin-top:8px;">
+        <strong>Quanto arriva a fare la fortuna, per darti un metro.</strong> Su mercati costruiti
+        apposta perché non ci sia niente da trovare, provando qualche centinaio di configurazioni,
+        la più fortunata arriva a <strong>venti punti</strong> di vantaggio — circa
+        {{ (capitale * 0.20) | euro }} su {{ capitale | euro }}, guadagnati
+        da nessuno. Non è un difetto di questo programma: è quello che succede a chiunque provi
+        tante cose e tenga la migliore. Perciò un vantaggio di cinque o dieci punti, da solo, non
+        vuol dire ancora niente.
+      </p>
     </details>
   </section>
 {% endif %}
@@ -72,16 +81,27 @@
     è un risultato, è la misura di quanto sarebbe stato facile raccontarsi una bugia
     guardando la classifica invece della procedura.
   </p>
+  <p class="inline-note">
+    <strong>Un punto</strong> è un punto percentuale in più o in meno rispetto a dividere i soldi
+    in parti uguali fra questi mercati e stare fermi: su {{ capitale | euro }}
+    investiti, dieci punti sono circa {{ (capitale * 0.10) | euro }}.
+  </p>
   <div class="terminal-metric-grid" style="margin-top:0.75rem;">
     <article class="terminal-metric-card report-tone-{{ tono }}">
       <p class="inline-note" style="margin:0;">Scelto senza sapere il futuro</p>
       <p style="margin:2px 0 0;font-size:20px;"><strong>{{ "%+.1f"|format(margine) }} punti</strong></p>
-      <p class="inline-note" style="margin:2px 0 0;">rispetto a dividere in parti uguali e stare fermi</p>
+      <p class="inline-note" style="margin:2px 0 0;">
+        circa {{ (capitale * margine / 100) | abs | euro }}
+        {{ 'in più' if margine >= 0 else 'in meno' }} rispetto a dividere in parti uguali e
+        stare fermi
+      </p>
     </article>
     <article class="terminal-metric-card report-tone-neutral">
       <p class="inline-note" style="margin:0;">Il migliore col senno di poi</p>
       <p style="margin:2px 0 0;font-size:20px;"><strong>{{ "%+.1f"|format(result.margine_col_senno_di_poi_pct or 0) }} punti</strong></p>
       <p class="inline-note" style="margin:2px 0 0;">
+        circa {{ (capitale * (result.margine_col_senno_di_poi_pct or 0) / 100) | abs | euro }}
+        {{ 'in più' if (result.margine_col_senno_di_poi_pct or 0) >= 0 else 'in meno' }} ·
         {{ result.configurazioni_in_vantaggio }} configurazioni su {{ result.configurazioni_provate }} in vantaggio
       </p>
     </article>

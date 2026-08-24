@@ -710,7 +710,10 @@ def _prova_del_caso(
         )
         margini.append(migliore)
 
-    return valuta_contro_il_caso(campione.holdout_excess_return_pct, margini)
+    return valuta_contro_il_caso(
+        campione.holdout_excess_return_pct, margini,
+        capitale=argomenti.get("initial_capital"),
+    )
 
 
 @dataclass

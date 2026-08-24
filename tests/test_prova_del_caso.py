@@ -9,6 +9,7 @@ from trading_bot.application.prova_del_caso import (
     MARGINE_SUL_CASO_MINIMO,
     PROVE_MINIME_PER_VITTORIA,
     mescola_serie,
+    punti_in_euro,
     valuta_contro_il_caso,
 )
 
@@ -260,3 +261,48 @@ def test_l_esito_arriva_fino_alla_scheda_del_mercato() -> None:
     assert scheda.prova_del_caso is not None
     assert "verdetto" in scheda.prova_del_caso
     assert scheda.prova_del_caso["prove"] == 2
+
+
+# ── I punti devono essere leggibili da chi non fa questo di mestiere ─────────
+
+def test_i_punti_arrivano_anche_in_euro() -> None:
+    """"Venti punti" non dice niente a chi non conosce la finanza. Il paragrafo
+    apre parlando di euro: cambiare unità a metà discorso, verso una mai
+    definita, perde chi legge proprio nel punto che conta."""
+    esito = valuta_contro_il_caso(
+        margine_vero_pct=25.0,
+        margini_del_caso_pct=[4.0, 2.0, 3.0, 1.0, 2.5],
+        capitale=10_000.0,
+    )
+
+    assert esito.superato is True
+    assert "€" in esito.verdetto
+    # 25 - 4 = 21 punti di vantaggio su 10.000 € fanno circa 2.100 €.
+    assert "2.100 €" in esito.verdetto
+    assert "su 10.000 €" in esito.verdetto
+
+
+def test_senza_capitale_non_si_inventa_una_cifra() -> None:
+    """Un numero verosimile e falso è peggio di nessun numero."""
+    esito = valuta_contro_il_caso(margine_vero_pct=25.0, margini_del_caso_pct=[4.0] * 5)
+
+    assert "€" not in esito.verdetto
+    assert esito.superato is True
+
+
+def test_anche_le_bocciature_dicono_gli_euro() -> None:
+    """Il caso più frequente è il no: se gli euro comparissero solo nei sì,
+    mancherebbero proprio dove servono di più."""
+    esito = valuta_contro_il_caso(
+        margine_vero_pct=-9.8, margini_del_caso_pct=[0.3], capitale=10_000.0,
+    )
+
+    assert "non c'è niente da cui fidarsi" in esito.verdetto
+    assert "1.010 €" in esito.verdetto
+
+
+def test_punti_in_euro_e_una_traduzione_non_un_arrotondamento() -> None:
+    assert punti_in_euro(20.0, 10_000.0) == "circa 2.000 € su 10.000 €"
+    assert punti_in_euro(-20.0, 10_000.0) == "circa 2.000 € su 10.000 €"
+    assert punti_in_euro(20.0, None) == ""
+    assert punti_in_euro(20.0, 0.0) == ""
