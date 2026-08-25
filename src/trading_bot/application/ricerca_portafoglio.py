@@ -39,6 +39,7 @@ import pandas as pd
 
 from trading_bot.application.prova_del_caso import (
     EsitoProvaDelCaso,
+    punti_in_euro,
     mescola_mercati,
     valuta_contro_il_caso,
 )
@@ -474,7 +475,8 @@ def _verdetto(esito: EsitoRicercaPortafoglio) -> str:
         quante += (
             f" Guardando col senno di poi, {esito.configurazioni_in_vantaggio} di quelle "
             f"configurazioni avrebbero chiuso il periodo di prova in vantaggio, e la "
-            f"più fortunata di {esito.margine_col_senno_di_poi_pct:+.1f} punti: è quanto "
+            f"più fortunata di {esito.margine_col_senno_di_poi_pct:+.1f} punti "
+            f"({punti_in_euro(esito.margine_col_senno_di_poi_pct, capitale)}): è quanto "
             "si può sembrare bravi scegliendo dopo aver visto il risultato."
         )
 

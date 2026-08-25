@@ -42,6 +42,7 @@ import pandas as pd
 from trading_bot.application.autosetting import AUTOSETTING_GRIDS, AUTOSETTING_GRIDS_BY_MODE
 from trading_bot.application.prova_del_caso import (
     EsitoProvaDelCaso,
+    punti_in_euro,
     mescola_serie,
     valuta_contro_il_caso,
 )
@@ -513,7 +514,7 @@ def run_strategy_search(
         champion_params=champion.params, champion_consenti_short=champion.consenti_short,
         holdout=holdout, development=development,
         reliability=champion.reliability,
-        verdict_note=_verdict_note(champion, benchmark_return_pct),
+        verdict_note=_verdict_note(champion, benchmark_return_pct, initial_capital),
         holdout_benchmark_return_pct=round(benchmark_return_pct, 2),
         data_span=data_span, settings=settings,
         prova_del_caso=dataclasses.asdict(esito_caso) if esito_caso else None,
@@ -1093,22 +1094,34 @@ def _reliability(
     return RELIABILITY_MEDIUM
 
 
-def _verdict_note(champion: "StrategyRanking", benchmark_return_pct: float) -> str:
-    """Frase di sintesi in lingua semplice sul campione."""
+def _verdict_note(
+    champion: "StrategyRanking", benchmark_return_pct: float,
+    capitale: float | None = None,
+) -> str:
+    """Frase di sintesi in lingua semplice sul campione.
+
+    ``capitale`` serve a dire i punti anche in euro: un punto percentuale non
+    è un'unità che l'utente di questa app conosce, e introdurla senza
+    tradurla lascia la frase a metà.
+    """
     r = champion.holdout_return_pct
     margine = champion.holdout_excess_return_pct
+    in_euro = punti_in_euro(margine, capitale)
     confronto = f" (comprando e basta: {benchmark_return_pct:+.1f}%)"
 
     if champion.reliability == RELIABILITY_NONE:
         return "Sul periodo di prova non ha aperto operazioni: risultato non conclusivo."
     if champion.reliability == RELIABILITY_HIGH:
         return (f"Su dati nuovi mai visti ha reso il {r:+.1f}%{confronto}, "
-                f"cioè {margine:+.1f} punti sul mercato, e ha retto bene: "
+                f"cioè {margine:+.1f} punti sul mercato"
+                + (f" ({in_euro})" if in_euro else "") + ", e ha retto bene: "
                 "è la più solida fra quelle testate.")
     if champion.reliability == RELIABILITY_MEDIUM:
         if r <= 0:
             return (f"Su dati nuovi ha perso il {abs(r):.1f}%{confronto}: ha limitato i danni "
-                    f"({margine:+.1f} punti sul mercato) ma il capitale è comunque sceso.")
+                    f"({margine:+.1f} punti sul mercato"
+                    + (f", {in_euro}" if in_euro else "")
+                    + ") ma il capitale è comunque sceso.")
         return (f"Su dati nuovi ha reso il {r:+.1f}%{confronto}, ma meno di quanto prometteva "
                 "sul passato: promettente, da prendere con cautela.")
     # bassa

@@ -19,6 +19,7 @@ import pandas as pd
 
 from trading_bot.application.autosetting import AUTOSETTING_GRIDS
 from trading_bot.application.portafoglio import costruisci_portafoglio
+from trading_bot.application.prova_del_caso import punti_in_euro
 from trading_bot.application.strategy_search import (
     MARGINE_MINIMO_PCT,
     RELIABILITY_HIGH,
@@ -257,7 +258,8 @@ def run_multi_market_search(
         overall_champion_consenti_short=bool(campione.consenti_short) if campione else False,
         portafoglio=dataclasses.asdict(portafoglio) if portafoglio else None,
         verdict_note=_overall_note(
-            overall, len(clean_symbols), portafoglio, vittorie_riconosciute
+            overall, len(clean_symbols), portafoglio, vittorie_riconosciute,
+            capitale=initial_capital,
         ),
         settings={
             "initial_capital": float(initial_capital),
@@ -364,6 +366,12 @@ def _aggregate(per_strategy: dict[str, dict[str, list]]) -> list[StrategyAcrossM
     return scores
 
 
+def _in_euro(punti: float, capitale: float | None) -> str:
+    """La traduzione in euro, incastonata dopo un testo già iniziato."""
+    tradotto = punti_in_euro(punti, capitale)
+    return f", {tradotto}" if tradotto else ""
+
+
 def _mercati(n: int) -> str:
     return "1 mercato" if n == 1 else f"{n} mercati"
 
@@ -391,7 +399,7 @@ def _nota_su_quanto_si_muovono_insieme(insieme: float) -> str:
 
 def _overall_note(
     overall: "StrategyAcrossMarkets | None", n_markets: int, portafoglio=None,
-    vittorie_riconosciute: int = 0,
+    vittorie_riconosciute: int = 0, capitale: float | None = None,
 ) -> str:
     confronto = ""
     if portafoglio is not None:
@@ -421,7 +429,8 @@ def _overall_note(
             f"{overall.label} è la più solida: affidabile su dati nuovi in "
             f"{_mercati(overall.markets_reliable)} su {n_markets} testati, "
             f"con una resa media su dati nuovi del {overall.avg_holdout_return_pct:+.1f}% "
-            f"({overall.avg_holdout_excess_pct:+.1f} punti rispetto a comprare e tenere)."
+            f"({overall.avg_holdout_excess_pct:+.1f} punti rispetto a comprare e tenere"
+            + _in_euro(overall.avg_holdout_excess_pct, capitale) + ")."
          + confronto
         )
     if overall.markets_beat_market > 0:
